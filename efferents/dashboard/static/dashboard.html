@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="color-scheme" content="light dark">
+  <meta name="color-scheme" content="light">
   <title>efferents — local lab</title>
   <link rel="stylesheet" href="/static/dashboard.css">
 </head>
@@ -11,30 +11,20 @@
   <a class="skip-link" href="#app">Skip to workspace</a>
 
   <header id="topbar">
-    <a class="identity" href="#connect" aria-label="efferents connection page">
+    <a class="identity" href="#connect" aria-label="efferents lab gateway">
       <span class="brand-mark" aria-hidden="true">ℯ</span>
       <span class="identity-copy">
-        <span class="eyebrow">efferents / lab</span>
-        <span class="lab-title">
-          <strong id="lab-id">connect a lab</strong>
-          <span id="domain" class="domain-tag">local</span>
-        </span>
+        <span class="eyebrow">lab gateway</span>
+        <span class="lab-title"><strong class="wordmark">efferents</strong></span>
       </span>
     </a>
 
-    <nav class="workspace-nav" aria-label="Lab workspace">
+    <nav class="workspace-nav" aria-label="Lab gateway">
       <a href="#connect" data-route-link="connect">Connect</a>
-      <a href="#steer" data-route-link="steer" aria-disabled="true">Steer</a>
-      <a href="#observe" data-route-link="observe" aria-disabled="true">Observe</a>
       <a href="#network" data-route-link="network">Network</a>
     </nav>
 
     <div class="topbar-right">
-      <button id="theme-toggle" class="quiet-button" type="button"
-              aria-label="Switch to dark theme">
-        <span class="theme-icon" aria-hidden="true">◐</span>
-        <span id="theme-label">Dark</span>
-      </button>
       <span id="status-badge" class="status-badge disconnected">
         <span class="status-dot" aria-hidden="true"></span>
         <span id="status-text">disconnected</span>
@@ -61,7 +51,6 @@
   <div id="workspace-frame">
     <aside id="lab-rail" class="lab-rail" aria-label="Local lab portfolio" hidden>
       <header class="lab-rail-header">
-        <span class="route-kicker">Local portfolio</span>
         <div>
           <h2>Labs</h2>
           <span id="lab-portfolio-count">0</span>
@@ -70,29 +59,49 @@
       <div id="lab-list" class="lab-list" role="list"></div>
       <nav class="lab-rail-actions" aria-label="Portfolio actions">
         <a href="#connect">+ Connect lab</a>
-        <a href="#network">Open topology ↗</a>
       </nav>
     </aside>
 
     <main id="app">
+    <nav id="lab-tabs" class="lab-tabs" aria-label="Open labs" hidden></nav>
     <section id="connect-view" class="app-view" data-route-view="connect">
       <div class="entry-layout">
         <div class="entry-intro">
-          <div class="route-kicker">00 / Intake</div>
           <h1>Connect a lab.</h1>
-          <p>README → contract → local workspace</p>
-          <div class="intake-boundary">
-            <span>Connection is non-executing</span>
-            <p>Clone + validate only. Start is explicit.</p>
-          </div>
         </div>
 
         <section class="connector panel" aria-labelledby="connector-heading">
-          <header class="panel-header">
-            <span class="section-index">01</span>
-            <h2 id="connector-heading">GitHub source</h2>
-            <span class="header-meta">README → lab</span>
-          </header>
+          <h2 id="connector-heading" class="visually-hidden">Connect a lab</h2>
+          <div class="intake-tabs" role="tablist" aria-label="Ways to connect">
+            <button class="intake-tab" type="button" role="tab" id="intake-tab-agent"
+                    data-intake-tab="agent" aria-selected="true"
+                    aria-controls="intake-panel-agent">Launch via agent</button>
+            <button class="intake-tab" type="button" role="tab" id="intake-tab-submit"
+                    data-intake-tab="submit" aria-selected="false"
+                    aria-controls="intake-panel-submit">Submit a repo</button>
+          </div>
+
+          <div id="intake-panel-agent" class="intake-panel" role="tabpanel"
+               aria-labelledby="intake-tab-agent" data-intake-panel="agent">
+            <ol class="intake-steps">
+              <li>Open a terminal.</li>
+              <li>Go to your research repo — or a fresh folder.</li>
+              <li>Start your coding agent.</li>
+              <li>Paste this one instruction:</li>
+            </ol>
+            <div class="command-block">
+              <code id="agent-command">Read https://raw.githubusercontent.com/Entangled-Research/efferents/main/intake.md and follow it</code>
+              <button id="copy-command" class="compact-button" type="button">Copy</button>
+            </div>
+            <p class="form-hint">The agent installs efferents, configures the lab
+            around your code, gates a first hypothesis, and runs a bounded first
+            cycle — private by default.</p>
+            <a class="repo-link" href="https://github.com/Entangled-Research/efferents"
+               target="_blank" rel="noopener">github.com/Entangled-Research/efferents ↗</a>
+          </div>
+
+          <div id="intake-panel-submit" class="intake-panel" role="tabpanel"
+               aria-labelledby="intake-tab-submit" data-intake-panel="submit" hidden>
           <form id="connect-form" class="connector-form">
             <label for="github-source">GitHub README URL</label>
             <div class="url-entry">
@@ -124,93 +133,21 @@
             </li>
           </ol>
           <div id="connect-message" class="form-message" role="status" aria-live="polite"></div>
+          </div>
         </section>
       </div>
 
-      <section id="connected-summary" class="connected-summary panel" hidden>
-        <header class="panel-header">
-          <span class="section-index">02</span>
-          <h2>Connected lab</h2>
-          <span id="connected-summary-status" class="header-meta">stopped</span>
-        </header>
-        <div class="connected-summary-body">
-          <div>
-            <span class="field-label">Lab identity</span>
-            <strong id="connected-summary-name">—</strong>
-            <span id="connected-summary-domain" class="summary-domain">—</span>
-          </div>
-          <div>
-            <span class="field-label">Submission</span>
-            <code id="connected-summary-path">—</code>
-          </div>
-          <div class="summary-actions">
-            <a class="primary-button" href="#steer">Steer research</a>
-            <a class="secondary-button" href="#observe">Open observer</a>
-          </div>
-        </div>
-      </section>
-    </section>
-
-    <section id="steer-view" class="app-view" data-route-view="steer" hidden>
-      <header class="view-heading">
-        <div class="route-kicker">01 / Direction</div>
-        <h1>Steer next cycle.</h1>
-        <p>Append-only direction · one-shot mode override</p>
-      </header>
-
-      <div class="steer-layout">
-        <section class="panel">
-          <header class="panel-header">
-            <span class="section-index">01</span>
-            <h2>New direction</h2>
-            <span id="steer-runtime-state" class="header-meta">queued locally</span>
-          </header>
-          <form id="steer-form" class="steer-form">
-            <label for="steer-message">Research instruction</label>
-            <textarea id="steer-message" name="message" maxlength="4000" required
-              placeholder="Example: Verify the current best result on a held-out seed before broadening the sweep."></textarea>
-            <div class="steer-options">
-              <label for="steer-mode">
-                Researcher mode
-                <select id="steer-mode" name="mode">
-                  <option value="auto">Auto-select</option>
-                  <option value="refine">Refine</option>
-                  <option value="moonshot">Moonshot</option>
-                  <option value="devils_advocate">Devil’s advocate</option>
-                  <option value="escape_to_code">Escape to code</option>
-                </select>
-              </label>
-              <span class="char-count"><span id="steer-count">0</span> / 4000</span>
-              <button class="primary-button" type="submit">Record direction</button>
-            </div>
-          </form>
-          <div id="steer-message-state" class="form-message" role="status" aria-live="polite"></div>
-        </section>
-
-        <section class="panel steering-history-panel">
-          <header class="panel-header">
-            <span class="section-index">02</span>
-            <h2>Direction log</h2>
-            <span id="steering-count" class="header-meta">0 records</span>
-          </header>
-          <div id="steering-history" class="steering-history"></div>
-        </section>
-      </div>
     </section>
 
     <section id="observe-view" class="app-view" data-route-view="observe" hidden>
       <header class="detail-strip">
-        <div>
-          <span class="field-label">Lab / evidence</span>
-          <strong id="observe-lab-title">—</strong>
-        </div>
+        <strong id="observe-lab-title">—</strong>
         <span id="observe-lab-meta">Waiting for local state</span>
       </header>
 
       <section class="overview-grid" aria-label="Current research state">
         <article class="panel hypothesis-panel">
           <header class="panel-header">
-            <span class="section-index">01</span>
             <h1>Active hypothesis</h1>
             <span id="student" class="header-meta"></span>
           </header>
@@ -231,7 +168,6 @@
 
         <article class="panel metric-panel">
           <header class="panel-header">
-            <span class="section-index">02</span>
             <h2 id="metric-label">Headline metric</h2>
             <span id="metric-direction" class="header-meta">—</span>
           </header>
@@ -267,10 +203,46 @@
         </article>
       </section>
 
+      <div class="steer-layout">
+        <section class="panel">
+          <header class="panel-header">
+            <h2>Steer</h2>
+            <span id="steer-runtime-state" class="header-meta">queued locally</span>
+          </header>
+          <form id="steer-form" class="steer-form">
+            <label for="steer-message">Research instruction</label>
+            <textarea id="steer-message" name="message" maxlength="4000" required
+              placeholder="Example: Verify the current best result on a held-out seed before broadening the sweep."></textarea>
+            <div class="steer-options">
+              <label for="steer-mode">
+                Researcher mode
+                <select id="steer-mode" name="mode">
+                  <option value="auto">Auto-select</option>
+                  <option value="refine">Refine</option>
+                  <option value="moonshot">Moonshot</option>
+                  <option value="devils_advocate">Devil’s advocate</option>
+                  <option value="escape_to_code">Escape to code</option>
+                </select>
+              </label>
+              <span class="char-count"><span id="steer-count">0</span> / 4000</span>
+              <button class="primary-button" type="submit">Record direction</button>
+            </div>
+          </form>
+          <div id="steer-message-state" class="form-message" role="status" aria-live="polite"></div>
+        </section>
+
+        <section class="panel steering-history-panel">
+          <header class="panel-header">
+            <h2>Direction log</h2>
+            <span id="steering-count" class="header-meta">0 records</span>
+          </header>
+          <div id="steering-history" class="steering-history"></div>
+        </section>
+      </div>
+
       <section id="evidence-panel" class="panel evidence-panel" hidden
                aria-labelledby="evidence-title">
         <header class="panel-header">
-          <span class="section-index">03</span>
           <h2 id="evidence-title">Lab evidence</h2>
           <span id="evidence-count" class="header-meta">0 visual records</span>
         </header>
@@ -281,7 +253,6 @@
       <section class="data-grid" aria-label="Lab records">
         <article class="panel runs-panel">
           <header class="panel-header">
-            <span class="section-index">04</span>
             <h2>Run ledger</h2>
             <span id="run-count" class="header-meta">0 records</span>
           </header>
@@ -304,7 +275,6 @@
         <aside class="side-stack">
           <section class="panel papers-panel">
             <header class="panel-header">
-              <span class="section-index">05</span>
               <h2>Paper register</h2>
               <span id="paper-count" class="header-meta">0 records</span>
               <button class="panel-toggle" type="button" data-panel-toggle
@@ -315,9 +285,8 @@
 
           <section class="panel activity-panel">
             <header class="panel-header">
-              <span class="section-index">06</span>
               <h2>Agent log</h2>
-              <span class="live-mark"><span aria-hidden="true"></span> live</span>
+              <span id="activity-state" class="live-mark"><span aria-hidden="true"></span> live</span>
               <button class="panel-toggle" type="button" data-panel-toggle
                       aria-controls="activity" aria-expanded="true">Hide</button>
             </header>
@@ -328,16 +297,9 @@
     </section>
 
       <section id="network-view" class="app-view" data-route-view="network" hidden>
-        <header class="view-heading network-heading">
-          <div class="route-kicker">03 / Topology</div>
-          <h1>Lab network.</h1>
-          <p>Private nodes · authorized links only</p>
-        </header>
-
         <div class="network-grid">
           <section class="panel network-map-panel" aria-labelledby="network-map-title">
             <header class="panel-header">
-              <span class="section-index">01</span>
               <h2 id="network-map-title">Connected lab map</h2>
               <span id="network-node-count" class="header-meta">0 nodes</span>
             </header>
@@ -366,27 +328,9 @@
               <span><i class="legend-dot running"></i> running</span>
               <span><i class="legend-dot stopped"></i> stopped</span>
               <span><i class="legend-line"></i> shared research domain</span>
+              <span id="public-network-message" class="legend-note">Private until authorized.</span>
             </footer>
           </section>
-
-          <aside class="panel network-inspector" aria-labelledby="network-detail-title">
-            <header class="panel-header">
-              <span class="section-index">02</span>
-              <h2 id="network-detail-title">Node intelligence</h2>
-              <span id="network-detail-status" class="header-meta">private</span>
-            </header>
-            <div id="network-detail" class="network-detail">
-              <span class="route-kicker">Select a lab node</span>
-              <h3>Select a node.</h3>
-              <p>Hypothesis · signal · budget · artifacts</p>
-            </div>
-            <div class="publication-boundary">
-              <span>Publication boundary</span>
-              <p id="public-network-message">
-                Private until authorized.
-              </p>
-            </div>
-          </aside>
         </div>
       </section>
     </main>
@@ -411,11 +355,6 @@
       </div>
     </form>
   </dialog>
-
-  <footer>
-    <span>local / bounded / auditable</span>
-    <span>last sync <time id="last-sync">—</time></span>
-  </footer>
 
   <script src="/static/dashboard.js"></script>
 </body>

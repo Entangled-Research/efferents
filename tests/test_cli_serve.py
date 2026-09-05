@@ -8,6 +8,7 @@ def test_serve_subcommand_parses():
     assert args.lab_root == "lab"
     assert args.port == 9001
     assert args.no_open is True
+    assert args.paused_demo is False
 
 
 def test_serve_defaults():
@@ -16,6 +17,12 @@ def test_serve_defaults():
     assert args.lab_root == "lab"
     assert args.port == 8800
     assert args.no_open is False
+    assert args.paused_demo is False
+
+
+def test_serve_paused_demo_parses():
+    args = cli.build_parser().parse_args(["serve", "--paused-demo"])
+    assert args.paused_demo is True
 
 
 def test_cmd_serve_loads_config_and_starts(tmp_path, monkeypatch):
@@ -36,10 +43,11 @@ def test_cmd_serve_loads_config_and_starts(tmp_path, monkeypatch):
 
     called = {}
 
-    def fake_serve(lab_root, port, open_browser):
+    def fake_serve(lab_root, port, open_browser, *, paused_demo):
         called["lab_root"] = str(lab_root)
         called["port"] = port
         called["open_browser"] = open_browser
+        called["paused_demo"] = paused_demo
 
     monkeypatch.setattr("efferents.dashboard.server.serve", fake_serve)
 
@@ -49,14 +57,16 @@ def test_cmd_serve_loads_config_and_starts(tmp_path, monkeypatch):
     assert rc == 0
     assert called["port"] == 8800
     assert called["open_browser"] is False
+    assert called["paused_demo"] is False
 
 
 def test_cmd_serve_starts_entry_page_without_existing_lab(tmp_path, monkeypatch):
     called = {}
 
-    def fake_serve(lab_root, port, open_browser):
+    def fake_serve(lab_root, port, open_browser, *, paused_demo):
         called["lab_root"] = lab_root
         called["port"] = port
+        called["paused_demo"] = paused_demo
 
     monkeypatch.setattr("efferents.dashboard.server.serve", fake_serve)
 

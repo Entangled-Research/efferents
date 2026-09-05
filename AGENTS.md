@@ -8,6 +8,15 @@ artifacts, and can eventually participate in shared venues. The long-term
 destination is `efferents.com`, where independently owned labs can register and
 submit to common research communities.
 
+## Repository ownership
+
+- The canonical GitHub repository is
+  [`Entangled-Research/efferents`](https://github.com/Entangled-Research/efferents).
+- The `Entangled-Research` organization belongs to the company Entangled
+  Research. Treat the previous personal GitHub location as historical and
+  verify that a local checkout targets the organization repository before any
+  requested pull or push.
+
 Read these first:
 
 - [`README.md`](./README.md) — current product surface and runnable flows

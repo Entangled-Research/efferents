@@ -281,14 +281,25 @@ def _recent_steering(path: Path, limit: int = 8) -> list[dict]:
 class ControlContext:
     """Thread-safe active-lab state shared by dashboard request handlers."""
 
-    def __init__(self, connected: ConnectedLab | None = None):
+    def __init__(
+        self,
+        connected: ConnectedLab | None = None,
+        *,
+        paused_demo: bool = False,
+    ):
         self._connected = connected
+        self.paused_demo = paused_demo
         self._lock = threading.RLock()
 
     @classmethod
-    def from_initial_root(cls, lab_root: Path | None) -> "ControlContext":
+    def from_initial_root(
+        cls,
+        lab_root: Path | None,
+        *,
+        paused_demo: bool = False,
+    ) -> "ControlContext":
         if lab_root is None:
-            return cls()
+            return cls(paused_demo=paused_demo)
         lab_root = Path(lab_root).resolve()
         submission = lab_root.parent
         cfg: LabConfig | None = None
@@ -301,10 +312,20 @@ class ControlContext:
             try:
                 cfg = lab_mod.get_config()
             except RuntimeError:
-                return cls()
+                return cls(paused_demo=paused_demo)
             if not (submission / "context").exists():
                 submission = lab_root
-        return cls(ConnectedLab(cfg=cfg, submission_dir=submission, lab_root=lab_root))
+        return cls(
+            ConnectedLab(cfg=cfg, submission_dir=submission, lab_root=lab_root),
+            paused_demo=paused_demo,
+        )
+
+    def _require_mutable(self) -> None:
+        if self.paused_demo:
+            raise ControlError(
+                "Paused demo mode is read-only; execution and state changes are disabled.",
+                status=409,
+            )
 
     def snapshot(self) -> ConnectedLab | None:
         with self._lock:
@@ -347,6 +368,8 @@ class ControlContext:
                 "visibility": "private",
                 **summary,
             })
+            if self.paused_demo and selected is not None and cfg.lab_id == selected.cfg.lab_id:
+                labs[-1]["status"] = "paused"
 
         # Registry order is the persistent rail order. Selection changes only
         # the highlighted row; it must not move that row underneath the cursor.
@@ -402,6 +425,7 @@ class ControlContext:
         return self.info()
 
     def connect(self, value: str) -> dict:
+        self._require_mutable()
         value = value.strip()
         if not value or len(value) > 2048:
             raise ControlError("Paste a GitHub README URL or local submission path.")
@@ -456,6 +480,7 @@ class ControlContext:
         if connected is None:
             return {
                 "connected": False,
+                "paused_demo": self.paused_demo,
                 "modes": list(STEERING_MODES),
                 "contract": {
                     "readme": False,
@@ -466,6 +491,7 @@ class ControlContext:
         pid = daemon.read_pidfile(connected.lab_root / "daemon.pid")
         running = pid is not None and daemon.is_pid_alive(pid)
         research_log = connected.submission_dir / "context" / "research_log.md"
+        status = "paused" if self.paused_demo else ("running" if running else "stopped")
         return {
             "connected": True,
             "lab_id": connected.cfg.lab_id,
@@ -475,8 +501,11 @@ class ControlContext:
             "source": connected.source,
             "repository": connected.repository or connected.cfg.code_repo,
             "readme_path": connected.readme_path,
-            "status": "running" if running else "stopped",
-            "has_api_key": _dotenv_has_key(connected.submission_dir),
+            "status": status,
+            "has_api_key": (
+                False if self.paused_demo else _dotenv_has_key(connected.submission_dir)
+            ),
+            "paused_demo": self.paused_demo,
             "modes": list(STEERING_MODES),
             "steering": _recent_steering(research_log),
             "contract": {
@@ -487,6 +516,7 @@ class ControlContext:
         }
 
     def steer(self, message: str, mode: str = "auto") -> dict:
+        self._require_mutable()
         connected = self.snapshot()
         if connected is None:
             raise ControlError("Connect a lab before steering it.", status=409)
@@ -517,6 +547,7 @@ class ControlContext:
         }
 
     def start(self, confirmed: bool) -> dict:
+        self._require_mutable()
         connected = self.snapshot()
         if connected is None:
             raise ControlError("Connect a lab before starting it.", status=409)
@@ -562,6 +593,7 @@ class ControlContext:
         return self.info()
 
     def stop(self, confirmed: bool) -> dict:
+        self._require_mutable()
         connected = self.snapshot()
         if connected is None:
             raise ControlError("Connect a lab before stopping it.", status=409)

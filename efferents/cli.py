@@ -351,7 +351,12 @@ def _cmd_serve(args: argparse.Namespace) -> int:
         connected_root = None
     else:
         lab_mod.set_config(cfg)
-    dash_server.serve(connected_root, port=args.port, open_browser=not args.no_open)
+    dash_server.serve(
+        connected_root,
+        port=args.port,
+        open_browser=not args.no_open,
+        paused_demo=getattr(args, "paused_demo", False),
+    )
     return 0
 
 
@@ -461,6 +466,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_serve.add_argument("--port", type=int, default=8800)
     p_serve.add_argument("--no-open", action="store_true",
                          help="Do not auto-open the browser")
+    p_serve.add_argument(
+        "--paused-demo",
+        action="store_true",
+        help=(
+            "Serve a read-only historical snapshot labelled paused; disable "
+            "connection, steering, and lab execution"
+        ),
+    )
     p_serve.set_defaults(func=_cmd_serve)
 
     p_public = sub.add_parser(

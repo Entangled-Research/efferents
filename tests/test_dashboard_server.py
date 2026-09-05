@@ -49,6 +49,24 @@ def test_api_state(running_server):
     assert body["status"] == "stopped"
 
 
+def test_paused_demo_reports_read_only_paused_state(tmp_path, smoke_lab_config):
+    _make_runs_db(tmp_path / "runs.sqlite")
+    httpd = server.make_server(tmp_path, port=0, paused_demo=True)
+    port = httpd.server_address[1]
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    try:
+        _, control = _get(port, "/api/control")
+        _, state = _get(port, "/api/state")
+        assert control["paused_demo"] is True
+        assert control["status"] == "paused"
+        assert control["has_api_key"] is False
+        assert state["status"] == "paused"
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
 def test_api_runs(running_server):
     status, body = _get(running_server, "/api/runs")
     assert status == 200

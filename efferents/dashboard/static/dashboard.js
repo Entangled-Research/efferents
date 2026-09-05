@@ -4,8 +4,51 @@ let portfolioState = { labs: [], edges: [], public_network: {} };
 let isConnecting = false;
 let runtimeAction = "start";
 let networkScope = "internal";
-let networkFocusLabId = "";
 let renderedRoute = "";
+
+function readStored(key, fallback) {
+  try {
+    const value = localStorage.getItem(key);
+    return value == null ? fallback : JSON.parse(value);
+  } catch (error) {
+    return fallback;
+  }
+}
+
+function writeStored(key, value) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch (error) {
+    /* per-viewer convenience only */
+  }
+}
+
+let openTabs = Array.isArray(readStored("efferents-open-labs", []))
+  ? readStored("efferents-open-labs", [])
+  : [];
+let labBudget = { spent: 0, cap: 0 };
+let portfolioBudget = { spent: 0, cap: 0 };
+
+function renderBudget() {
+  const route = currentRoute();
+  const meta = document.getElementById("budget-meta");
+  const isNetwork = route === "network";
+  const budget = isNetwork ? portfolioBudget : labBudget;
+  const show = isNetwork
+    ? portfolioState.labs.length > 0
+    : route === "observe" && controlState.connected;
+  meta.hidden = !show;
+  if (!show) return;
+  const percent = budget.cap > 0
+    ? Math.min(100, Math.max(0, (budget.spent / budget.cap) * 100))
+    : 0;
+  text(
+    "budget",
+    `${isNetwork ? "all labs" : "this lab"} · ` +
+      `$${budget.spent.toFixed(2)} / $${budget.cap.toFixed(2)} daily`,
+  );
+  document.getElementById("budget-fill").style.width = `${percent}%`;
+}
 
 async function getJSON(path) {
   const response = await fetch(path);
@@ -113,27 +156,10 @@ function formatRelativeTime(value) {
   return `${Math.floor(hours / 24)}d ago`;
 }
 
-function setTheme(theme) {
-  const dark = theme === "dark";
-  document.documentElement.dataset.theme = dark ? "dark" : "light";
-  text("theme-label", dark ? "Light" : "Dark");
-  const toggle = document.getElementById("theme-toggle");
-  toggle.setAttribute("aria-label", dark ? "Switch to light theme" : "Switch to dark theme");
-}
-
-function initTheme() {
-  const stored = localStorage.getItem("efferents-theme");
-  setTheme(stored === "dark" ? "dark" : "light");
-  document.getElementById("theme-toggle").addEventListener("click", () => {
-    const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
-    localStorage.setItem("efferents-theme", next);
-    setTheme(next);
-  });
-}
-
 function currentRoute() {
   const route = window.location.hash.replace(/^#/, "");
-  return ["connect", "steer", "observe", "network"].includes(route) ? route : "connect";
+  if (route === "steer") return "observe";
+  return ["connect", "observe", "network"].includes(route) ? route : "connect";
 }
 
 function renderRoute() {
@@ -161,6 +187,8 @@ function renderRoute() {
   if (renderedRoute && renderedRoute !== route) window.scrollTo(0, 0);
   renderedRoute = route;
   document.title = `efferents — ${route}`;
+  renderLabTabs();
+  renderBudget();
 }
 
 function initRouting() {
@@ -181,8 +209,14 @@ function setRuntimeStatus(status) {
   const badge = document.getElementById("status-badge");
   badge.className = `status-badge ${normalized}`;
   text("status-text", normalized);
-  text("connected-summary-status", normalized);
-  text("steer-runtime-state", normalized === "running" ? "agent is running" : "queued locally");
+  text(
+    "steer-runtime-state",
+    normalized === "running"
+      ? "agent is running"
+      : normalized === "paused"
+        ? "paused snapshot"
+        : "queued locally",
+  );
 }
 
 function setContractState(contract, phase = "result") {
@@ -226,23 +260,15 @@ function renderControl(info) {
   if (info.csrf_token) csrfToken = info.csrf_token;
   controlState = { ...controlState, ...info };
   const connected = Boolean(info.connected);
+  const pausedDemo = Boolean(info.paused_demo);
   controlState.connected = connected;
   controlState.hydrated = true;
 
-  document.querySelectorAll('[data-route-link="steer"], [data-route-link="observe"]').forEach((link) => {
-    link.setAttribute("aria-disabled", connected ? "false" : "true");
-  });
-
   const connectionBar = document.getElementById("connection-bar");
-  const summary = document.getElementById("connected-summary");
-  const budget = document.getElementById("budget-meta");
   connectionBar.hidden = !connected;
-  summary.hidden = !connected;
-  budget.hidden = !connected;
+  renderBudget();
 
   if (!connected) {
-    text("lab-id", "connect a lab");
-    text("domain", "local");
     setRuntimeStatus("disconnected");
     if (!isConnecting) setContractState(info.contract);
     renderSteering([]);
@@ -250,28 +276,106 @@ function renderControl(info) {
     return;
   }
 
-  text("lab-id", info.lab_id || "unnamed-lab");
-  text("domain", info.domain || "unclassified");
   text("observe-lab-title", info.lab_id || "unnamed-lab");
   text("observe-lab-meta", `${info.domain || "unclassified"} / ${info.status || "stopped"}`);
   text("connection-source", info.source || info.submission_dir || "local submission");
-  text("connected-summary-name", info.lab_id || "unnamed-lab");
-  text("connected-summary-domain", info.domain || "unclassified");
-  text("connected-summary-path", info.submission_dir || "—");
   setRuntimeStatus(info.status);
   setContractState(info.contract);
   renderSteering(info.steering);
 
   const keyState = document.getElementById("api-key-state");
-  keyState.textContent = info.has_api_key ? "API key ready" : "API key missing";
-  keyState.classList.toggle("ready", Boolean(info.has_api_key));
-  document.getElementById("start-lab").hidden = info.status === "running";
-  document.getElementById("stop-lab").hidden = info.status !== "running";
+  keyState.textContent = pausedDemo
+    ? "Paused demo · no model calls"
+    : info.has_api_key ? "API key ready" : "API key missing";
+  keyState.classList.toggle("ready", Boolean(info.has_api_key) && !pausedDemo);
+  document.getElementById("activity-state").innerHTML = pausedDemo
+    ? '<span aria-hidden="true"></span> history'
+    : '<span aria-hidden="true"></span> live';
+  document.getElementById("start-lab").hidden = pausedDemo || info.status === "running";
+  document.getElementById("stop-lab").hidden = pausedDemo || info.status !== "running";
+  document.getElementById("connect-submit").disabled = pausedDemo;
+  const steerForm = document.getElementById("steer-form");
+  steerForm.querySelectorAll("textarea, select, button").forEach((control) => {
+    control.disabled = pausedDemo;
+  });
+  const activityPanel = document.querySelector(".activity-panel");
+  if (pausedDemo && !activityPanel.dataset.pausedDefault) {
+    activityPanel.dataset.pausedDefault = "collapsed";
+    activityPanel.classList.add("collapsed");
+    const activityToggle = activityPanel.querySelector("[data-panel-toggle]");
+    activityToggle.setAttribute("aria-expanded", "false");
+    activityToggle.textContent = "Show";
+  }
   renderRoute();
 }
 
 function selectedPortfolioLab() {
   return portfolioState.labs.find((lab) => lab.selected) || null;
+}
+
+function renderLabTabs() {
+  const strip = document.getElementById("lab-tabs");
+  const route = currentRoute();
+  const known = new Map(portfolioState.labs.map((lab) => [lab.lab_id, lab]));
+  openTabs = openTabs.filter((labId) => known.has(labId));
+  const selected = selectedPortfolioLab();
+  if (selected && route === "observe" && !openTabs.includes(selected.lab_id)) {
+    openTabs.push(selected.lab_id);
+  }
+  writeStored("efferents-open-labs", openTabs);
+  strip.hidden = route === "connect" || portfolioState.labs.length === 0;
+  const networkActive = route === "network";
+  strip.innerHTML =
+    `<button class="lab-tab home${networkActive ? " active" : ""}" type="button" ` +
+    `data-tab-network aria-current="${networkActive ? "true" : "false"}">` +
+    `<span class="tab-name">network</span></button>` +
+    openTabs.map((labId) => {
+      const lab = known.get(labId);
+      const active = Boolean(lab.selected) && route === "observe";
+      return `<button class="lab-tab${active ? " active" : ""}" type="button" ` +
+        `data-tab="${esc(labId)}" aria-current="${active ? "true" : "false"}">` +
+        `<i class="tab-led ${esc(lab.status || "stopped")}" aria-hidden="true"></i>` +
+        `<span class="tab-name">${esc(labId)}</span>` +
+        `<span class="tab-close" data-close="${esc(labId)}" title="Close tab">×</span></button>`;
+    }).join("");
+  strip.querySelector("[data-tab-network]").addEventListener("click", () => {
+    window.location.hash = "network";
+  });
+  strip.querySelectorAll("[data-tab]").forEach((tab) => {
+    tab.addEventListener("click", async (event) => {
+      const close = event.target.closest("[data-close]");
+      if (close) {
+        event.stopPropagation();
+        await closeLabTab(close.dataset.close);
+        return;
+      }
+      if (tab.dataset.tab === selectedPortfolioLab()?.lab_id) {
+        window.location.hash = "observe";
+      } else {
+        await selectPortfolioLab(tab.dataset.tab, true);
+      }
+    });
+  });
+}
+
+async function closeLabTab(labId) {
+  const wasActive = selectedPortfolioLab()?.lab_id === labId;
+  openTabs = openTabs.filter((openId) => openId !== labId);
+  writeStored("efferents-open-labs", openTabs);
+  if (wasActive && openTabs.length) {
+    await selectPortfolioLab(openTabs[openTabs.length - 1], true);
+    return;
+  }
+  if (wasActive) {
+    window.location.hash = "network";
+  }
+  renderLabTabs();
+}
+
+async function openLabTab(labId) {
+  if (!openTabs.includes(labId)) openTabs.push(labId);
+  writeStored("efferents-open-labs", openTabs);
+  await selectPortfolioLab(labId, true);
 }
 
 function renderLabRail() {
@@ -301,7 +405,7 @@ function renderLabRail() {
   }).join("");
   list.querySelectorAll("[data-lab-select]").forEach((button) => {
     button.addEventListener("click", async () => {
-      await selectPortfolioLab(button.dataset.labSelect, false);
+      await openLabTab(button.dataset.labSelect);
     });
   });
   renderRoute();
@@ -313,35 +417,6 @@ function portfolioNodePosition(index, count) {
     x: 50 + Math.cos(angle) * (count < 3 ? 29 : 35),
     y: 50 + Math.sin(angle) * (count < 3 ? 27 : 34),
   };
-}
-
-function renderNetworkDetail(lab) {
-  const detail = document.getElementById("network-detail");
-  if (!lab) {
-    text("network-detail-status", networkScope === "public" ? "not connected" : "private");
-    detail.innerHTML = `<span class="route-kicker">${networkScope === "public" ? "Public registry" : "Lab node"}</span>` +
-      `<h3>${networkScope === "public" ? "No linked labs." : "Select a node."}</h3>` +
-      `<p>${networkScope === "public" ? "Private until authorized." : "Hypothesis · signal · budget · artifacts"}</p>`;
-    return;
-  }
-  const headline = lab.headline || {};
-  const budget = lab.budget || {};
-  const hypothesis = lab.hypothesis || {};
-  text("network-detail-status", lab.visibility || "private");
-  detail.innerHTML = `<span class="route-kicker">${esc(lab.domain || "unclassified")} / ${esc(lab.status || "stopped")}</span>` +
-    `<h3>${esc(lab.lab_id)}</h3>` +
-    `<p>${esc(hypothesis.question || "No open campaign.")}</p>` +
-    `<dl class="node-facts">` +
-      `<div><dt>Best signal</dt><dd>${esc(headline.column || "metric")} / ${esc(formatMetric(headline.best))}</dd></div>` +
-      `<div><dt>Evidence</dt><dd>${headline.observations || 0} runs / ${lab.papers || 0} papers</dd></div>` +
-      `<div><dt>Budget</dt><dd>$${Number(budget.spent || 0).toFixed(2)} / $${Number(budget.cap || 0).toFixed(2)}</dd></div>` +
-      `<div><dt>Last signal</dt><dd>${esc(formatRelativeTime(lab.last_activity))}</dd></div>` +
-    `</dl>` +
-    `<button class="primary-button node-inspect-button" type="button" data-network-inspect="${esc(lab.lab_id)}">Inspect node</button>`;
-  const inspect = detail.querySelector("[data-network-inspect]");
-  inspect.addEventListener("click", async () => {
-    await selectPortfolioLab(inspect.dataset.networkInspect, true);
-  });
 }
 
 function renderNetwork() {
@@ -366,7 +441,6 @@ function renderNetwork() {
     empty.hidden = false;
     empty.textContent = networkScope === "public" ? "No public nodes" : "Connect a lab";
     hub.hidden = networkScope === "public";
-    renderNetworkDetail(null);
     return;
   }
   empty.hidden = true;
@@ -390,9 +464,8 @@ function renderNetwork() {
     button.style.top = `${position.y}%`;
     button.innerHTML = `<span class="map-node-state"><i aria-hidden="true"></i>${esc(lab.status || "stopped")}</span>` +
       `<strong>${esc(lab.lab_id)}</strong><small>${esc(lab.domain || "unclassified")}</small>`;
-    button.addEventListener("click", () => {
-      networkFocusLabId = lab.lab_id;
-      renderNetwork();
+    button.addEventListener("click", async () => {
+      await openLabTab(lab.lab_id);
     });
     nodes.appendChild(button);
   });
@@ -410,13 +483,6 @@ function renderNetwork() {
     }));
   });
 
-  const focused = labs.find((lab) => lab.lab_id === networkFocusLabId) ||
-    labs.find((lab) => lab.selected) || labs[0];
-  networkFocusLabId = focused.lab_id;
-  nodes.querySelectorAll("[data-map-lab]").forEach((button) => {
-    button.classList.toggle("focused", button.dataset.mapLab === networkFocusLabId);
-  });
-  renderNetworkDetail(focused);
 }
 
 function renderPortfolio(payload) {
@@ -425,12 +491,19 @@ function renderPortfolio(payload) {
     edges: Array.isArray(payload?.edges) ? payload.edges : [],
     public_network: payload?.public_network || {},
   };
-  const selected = selectedPortfolioLab();
-  if (!networkFocusLabId && selected) networkFocusLabId = selected.lab_id;
+  portfolioBudget = portfolioState.labs.reduce(
+    (sum, lab) => ({
+      spent: sum.spent + Number(lab.budget?.spent || 0),
+      cap: sum.cap + Number(lab.budget?.cap || 0),
+    }),
+    { spent: 0, cap: 0 },
+  );
   text("public-network-message", portfolioState.public_network.connected
     ? "Public registry connected."
     : "Private until authorized.");
   renderLabRail();
+  renderLabTabs();
+  renderBudget();
   renderNetwork();
 }
 
@@ -441,20 +514,44 @@ async function refreshPortfolio() {
 async function selectPortfolioLab(labId, openObserver) {
   const info = await postJSON("/api/labs/select", { lab_id: labId });
   renderControl(info);
-  networkFocusLabId = labId;
   await Promise.all([refreshPortfolio(), refreshObserver()]);
   if (openObserver) window.location.hash = "observe";
+}
+
+const CLAMP_THRESHOLD = 260;
+
+function applyThesisClamp(id) {
+  const copy = document.getElementById(id);
+  const block = copy.closest(".thesis-block");
+  const long = (copy.textContent || "").length > CLAMP_THRESHOLD;
+  let button = block.querySelector(".clamp-toggle");
+  if (!button) {
+    button = document.createElement("button");
+    button.type = "button";
+    button.className = "clamp-toggle";
+    button.addEventListener("click", () => {
+      const expanded = block.dataset.expanded !== "true";
+      block.dataset.expanded = String(expanded);
+      copy.classList.toggle("clamped", !expanded);
+      button.textContent = expanded ? "Collapse" : "Read in full";
+    });
+    block.appendChild(button);
+  }
+  const expanded = block.dataset.expanded === "true";
+  copy.classList.toggle("clamped", long && !expanded);
+  button.hidden = !long;
+  if (!expanded) button.textContent = "Read in full";
 }
 
 function renderState(state) {
   if (!controlState.connected) return;
   setRuntimeStatus(state.status || controlState.status);
 
-  const spent = Number(state.budget?.spent || 0);
-  const cap = Number(state.budget?.cap || 0);
-  const percent = cap > 0 ? Math.min(100, Math.max(0, (spent / cap) * 100)) : 0;
-  text("budget", `$${spent.toFixed(2)} / $${cap.toFixed(2)} daily`);
-  document.getElementById("budget-fill").style.width = `${percent}%`;
+  labBudget = {
+    spent: Number(state.budget?.spent || 0),
+    cap: Number(state.budget?.cap || 0),
+  };
+  renderBudget();
 
   const hypothesis = state.hypothesis || {};
   text("student", hypothesis.student ? `student / ${hypothesis.student}` : "student / —");
@@ -465,6 +562,8 @@ function renderState(state) {
     ? "Matches the active hypothesis above."
     : claim);
   text("falsifier", hypothesis.falsifier || "No falsifier.");
+  applyThesisClamp("claim");
+  applyThesisClamp("falsifier");
 }
 
 function renderRuns(data) {
@@ -892,10 +991,36 @@ async function refresh() {
     const info = await getJSON("/api/control");
     renderControl(info);
     await Promise.all([refreshPortfolio(), refreshObserver()]);
-    text("last-sync", `${new Date().toISOString().slice(0, 19).replace("T", " ")} UTC`);
   } catch (error) {
     console.error(error);
   }
+}
+
+function initIntakeTabs() {
+  const tabs = document.querySelectorAll("[data-intake-tab]");
+  tabs.forEach((tab) => {
+    tab.addEventListener("click", () => {
+      tabs.forEach((other) => {
+        const active = other === tab;
+        other.setAttribute("aria-selected", String(active));
+      });
+      document.querySelectorAll("[data-intake-panel]").forEach((panel) => {
+        panel.hidden = panel.dataset.intakePanel !== tab.dataset.intakeTab;
+      });
+    });
+  });
+
+  const copy = document.getElementById("copy-command");
+  copy.addEventListener("click", async () => {
+    const command = document.getElementById("agent-command").textContent;
+    try {
+      await navigator.clipboard.writeText(command);
+      copy.textContent = "Copied";
+    } catch (error) {
+      copy.textContent = "Select + copy";
+    }
+    setTimeout(() => { copy.textContent = "Copy"; }, 1600);
+  });
 }
 
 function initConnectForm() {
@@ -917,7 +1042,7 @@ function initConnectForm() {
         `${info.lab_id} connected · not executed`,
         "success",
       );
-      window.location.hash = "steer";
+      window.location.hash = "observe";
       await Promise.all([refreshPortfolio(), refreshObserver()]);
     } catch (error) {
       setContractState({});
@@ -1034,10 +1159,10 @@ function initNetworkScope() {
   });
 }
 
-initTheme();
 initRouting();
 initPanelToggles();
 initNetworkScope();
+initIntakeTabs();
 initConnectForm();
 initSteeringForm();
 initRuntimeControls();

@@ -66,9 +66,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
             if path == "/api/state":
                 if connected is None:
                     return self._send_json(_empty_state())
-                return self._send_json(
-                    reader.read_state(connected.lab_root, cfg=connected.cfg)
-                )
+                payload = reader.read_state(connected.lab_root, cfg=connected.cfg)
+                if self.control.paused_demo:
+                    payload["status"] = "paused"
+                return self._send_json(payload)
             if path == "/api/runs":
                 if connected is None:
                     return self._send_json(_empty_runs())
@@ -237,8 +238,12 @@ def make_server(
     port: int = 8800,
     *,
     control: ControlContext | None = None,
+    paused_demo: bool = False,
 ) -> ThreadingHTTPServer:
-    control = control or ControlContext.from_initial_root(lab_root)
+    control = control or ControlContext.from_initial_root(
+        lab_root,
+        paused_demo=paused_demo,
+    )
     csrf_token = secrets.token_urlsafe(32)
     handler = partial(
         DashboardHandler,
@@ -253,10 +258,14 @@ def serve(
     lab_root: Path | None,
     port: int = 8800,
     open_browser: bool = True,
+    *,
+    paused_demo: bool = False,
 ) -> None:
-    httpd = make_server(lab_root, port)
-    url = f"http://localhost:{httpd.server_address[1]}"
-    print(f"efferents dashboard: {url}  (Ctrl-C to stop)")
+    httpd = make_server(lab_root, port, paused_demo=paused_demo)
+    base_url = f"http://localhost:{httpd.server_address[1]}"
+    url = f"{base_url}/#observe" if paused_demo else base_url
+    mode = "paused read-only demo" if paused_demo else "local workspace"
+    print(f"efferents dashboard: {url}  ({mode}; Ctrl-C to stop)")
     if open_browser:
         webbrowser.open(url)
     try:

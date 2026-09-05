@@ -115,6 +115,25 @@ def test_start_requires_explicit_confirmation_and_api_key(tmp_path, monkeypatch)
         control.start(True)
 
 
+def test_paused_demo_rejects_mutations(tmp_path, monkeypatch):
+    monkeypatch.setenv("EFFERENTS_HOME", str(tmp_path / "home"))
+    sub = _submission(tmp_path)
+    mutable = ControlContext()
+    mutable.connect(str(sub / "README.md"))
+    control = ControlContext(mutable.snapshot(), paused_demo=True)
+
+    assert control.info()["status"] == "paused"
+    assert control.info()["has_api_key"] is False
+    for action in (
+        lambda: control.connect(str(sub / "README.md")),
+        lambda: control.steer("Change course."),
+        lambda: control.start(True),
+        lambda: control.stop(True),
+    ):
+        with pytest.raises(ControlError, match="read-only"):
+            action()
+
+
 @pytest.fixture
 def entry_server(tmp_path, monkeypatch):
     monkeypatch.setenv("EFFERENTS_HOME", str(tmp_path / "home"))
