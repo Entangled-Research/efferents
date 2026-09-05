@@ -672,16 +672,25 @@ main#app {
 
 .entry-layout {
   display: grid;
-  align-items: start;
-  gap: clamp(24px, 4vw, 64px);
-  grid-template-columns: minmax(260px, 5fr) minmax(360px, 7fr);
-  padding-top: clamp(12px, 3vh, 40px);
+  max-width: 860px;
+  margin: 0 auto;
+  gap: 30px;
+  justify-items: center;
+  padding-top: clamp(20px, 6vh, 72px);
+}
+
+.entry-intro {
+  text-align: center;
 }
 
 .entry-intro h1 {
-  margin: 10px 0 8px;
+  margin: 0;
   font: 700 clamp(24px, 3vw, 38px)/1.1 var(--mono);
   letter-spacing: -0.02em;
+}
+
+.connector {
+  width: 100%;
 }
 
 .entry-intro > p {
@@ -2077,10 +2086,6 @@ tr.is-excluded td {
 
   #workspace-frame.with-lab-rail {
     grid-template-columns: 232px minmax(0, 1fr);
-  }
-
-  .entry-layout {
-    grid-template-columns: minmax(0, 1fr);
   }
 }
 
