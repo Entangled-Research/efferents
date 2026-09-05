@@ -10,19 +10,18 @@ a code diff.
 
 > Not a chatbot and not an automatic code/data upload. The point is
 > **reproducible, budgeted experiment loops** and a **research memory** your team
-> actually trusts. A lab starts private; public publication is a separate,
-> artifact-level choice.
+> actually trusts.
 
-![The Efferents local research workspace in its default light theme: repository connection, lab-contract validation, and Connect, Steer, and Observe navigation](docs/img/local-lab-workspace.png)
+![A lab page in the efferents gateway: VS Code-style lab tabs, a docked lab rail, the active hypothesis with its falsification condition, a validity-aware metric panel, and the steering log](docs/img/local-lab-workspace.png)
 
-The local website is the operating surface for the lab’s funder: connect a
-repository without executing it, inject auditable research direction, start or
-stop spending explicitly, and inspect progress without reading every run or
-paper. It uses the same minimal navy (`#003b80`) and white research console
-across the core workspace and bundled examples, with mustard (`#d4a017`) and
-Sainsbury-inspired orange (`#f06c00`) reserved for sparse visual signals. It pairs blocky
-Petra/typewriter headings with monospaced evidence metadata—light by default,
-with dark mode as a remembered opt-in.
+The lab gateway is the operating surface for the lab’s funder: connect a
+repository without executing it, flip between running labs like editor tabs,
+inject auditable research direction, start or stop spending explicitly, and
+inspect progress without reading every run or paper. The workspace is a
+light-only paper ground with azulejo cobalt (`#2d5379`) as the single signal
+accent and terracotta (`#a8502b`) reserved for falsification conditions and
+warnings — mono-led type for headings, slugs, and evidence; plain sans for
+prose.
 
 ## Launch with your agent
 
@@ -30,34 +29,43 @@ Open your coding agent in an existing research repo or a fresh project folder
 and give it this one instruction:
 
 ```text
-Read https://raw.githubusercontent.com/mashathepotato/efferents/main/intake.md and follow it
+Read https://raw.githubusercontent.com/Entangled-Research/efferents/main/intake.md and follow it
 ```
 
 The agent-facing [`intake.md`](./intake.md) leads through framework installation,
-lab configuration, a Popper-probed first hypothesis, validation, a bounded first
-cycle, and the final choice between a private research group and a public lab.
+lab configuration, a Popper-probed first hypothesis, validation, and a bounded
+first cycle. The same instruction — with copy button — is the default tab of the
+gateway's Connect page.
 
-The local/private path works today. The hosted public registry is not live yet,
-so a public choice currently ends as **ready to link**, without uploading
-anything or pretending registration succeeded.
+### Open the lab gateway
 
-### Open the local website
-
-Once Efferents is installed, launch the website independently:
+Once Efferents is installed, launch the gateway independently:
 
 ```bash
 efferents serve
 ```
 
-Paste a GitHub repository or README URL into **Connect**. The website validates
-the lab contract but does not execute repository commands. After connection,
-**Steer** records funder direction in the append-only research log and
-**Observe** presents the active thesis, evidence, resource burn, run ledger,
-papers, and agent activity. A persistent lab rail switches among every lab in
-the local portfolio, while **Network** maps their operational relationships and
-keeps the future public-journal boundary visible without publishing anything.
+The gateway has two top-level views:
 
-![The Efferents lab-network view: local labs in a persistent left rail, a crisp electric-cyan-and-white topology, unsquished node statistics, and an explicit publication boundary](docs/img/lab-network-workspace.png)
+- **Connect** is the landing page, with two tabs. *Launch via agent* (default)
+  gives the one-line intake instruction to paste into a coding agent; *Submit a
+  repo* takes a GitHub repository/README URL or a local path and validates the
+  lab contract — checkout, `lab.yaml`, falsifiability gate — without executing
+  repository commands.
+- **Network** is a near-fullscreen map of every lab in the local registry, with
+  a docked rail listing them. The topbar budget shows the summed spend and caps
+  across all labs here.
+
+Clicking any lab — in the rail or on the map — opens it as a **tab**, VS Code
+style, next to the permanent NETWORK tab. Each lab page carries the active
+hypothesis with its falsification condition, a validity-aware metric panel and
+trend, the **Steer** form and append-only direction log, lab-declared visual
+evidence with eligibility gates, the run ledger, paper register, and agent
+activity. The topbar budget switches to that lab's own spend and daily cap.
+Open tabs persist across reloads, so flipping between several steering
+sessions stays cheap.
+
+![The efferents network view: a full-width map of local labs around the control-plane hub, with the docked lab rail and the permanent NETWORK tab](docs/img/lab-network-workspace.png)
 
 ## Why automate the whole research loop
 
@@ -97,7 +105,7 @@ nontrivial claim in a memo points at evidence.
 ## 60-second quickstart (no API key needed)
 
 ```bash
-git clone https://github.com/mashathepotato/efferents && cd efferents
+git clone https://github.com/Entangled-Research/efferents && cd efferents
 uv venv --python 3.12 .venv && uv pip install --python .venv/bin/python -e .
 .venv/bin/efferents demo smoke-lab        # or: python -m efferents demo smoke-lab
 open efferents-demo/dashboard.html
@@ -187,10 +195,10 @@ prints `{"metrics": {"<metric>": <value>}}`.
   conservatively against `max_gpu_hours`; this is a guardrail, not GPU
   telemetry. The live loop records model-token spend (Sonnet by default; Opus
   only where configured). External tool fees are recorded where reported.
-- **Explicit local execution:** `efferents serve` opens a local Connect → Steer
-  → Observe workspace. Connecting a repository clones and validates it but
-  never runs its commands. Starting and stopping require an explicit
-  confirmation; steering is appended to the auditable research log.
+- **Explicit local execution:** `efferents serve` opens the local lab gateway.
+  Connecting a repository clones and validates it but never runs its commands.
+  Starting and stopping require an explicit confirmation; steering is appended
+  to the auditable research log.
 - **Public-release preflight:** `efferents public-check <repo>` scans the tracked
   tree and reachable git history for high-confidence disclosure risks, requires
   explicit licence terms and a clean release commit, and cannot pass until a
@@ -225,25 +233,19 @@ at a custom endpoint. Local providers such as `ollama/...` do not require an
 API key.
 
 
-Paste a GitHub repository or README URL into the entry page. A valid lab
+Submit a GitHub repository or README URL on the Connect page. A valid lab
 submission has a `README`, `lab.yaml`, and Popper-passed `hypothesis.md`.
-Efferents checks the repository out under `~/.efferents/checkouts/`, initializes
-its file-backed state, and exposes three local views:
+Efferents checks the repository out under `~/.efferents/checkouts/`,
+initializes its file-backed state, and opens the lab as a tab in the gateway —
+hypothesis, metrics, evidence, run ledger, papers, agent activity, and
+steering on one page, with the network map one tab away.
 
-- **Connect** validates the submission contract without executing repository
-  code.
-- **Steer** records human direction and an optional one-cycle Researcher mode
-  in `context/research_log.md`.
-- **Observe** shows the current hypothesis, validity-aware metrics, lab-specific
-  visual evidence, run ledger, paper register, budget, and agent activity.
-
-The workspace defaults to navy on white; mustard and orange are rare graphical
-accents. Dark mode is an opt-in preference remembered by the browser. To open a known lab directly, use
+To open a known lab directly, use
 `efferents serve --lab-root examples/smoke-lab/lab`.
 
 See [`intake.md`](./intake.md) for the canonical agent-led launch flow and
 [`the user-flow design`](./docs/superpowers/specs/2026-07-19-user-entry-and-lab-visibility-flow-design.md)
-for the private/public product boundary.
+for the longer-term product boundary.
 
 ## Contact
 

@@ -10,12 +10,15 @@ def test_readme_leads_with_the_interactive_research_workspace():
 
     assert "docs/img/local-lab-workspace.png" in readme
     assert "docs/img/lab-network-workspace.png" in readme
-    assert "### Open the local website" in readme
+    assert "### Open the lab gateway" in readme
     assert "efferents serve" in readme
     assert "**Connect**" in readme
+    assert "**Network**" in readme
     assert "**Steer**" in readme
-    assert "**Observe**" in readme
-    assert "light by default" in readme
+    assert "VS Code" in readme
+    # Publication choice stays out of the README's product story.
+    assert "private by default" not in readme
+    assert "public registry" not in readme
 
 
 def test_readme_workspace_previews_are_wide_png_files():
