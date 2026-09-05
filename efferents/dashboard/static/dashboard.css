@@ -429,6 +429,7 @@ main#app {
 .app-view {
   display: grid;
   gap: 22px;
+  grid-template-columns: minmax(0, 1fr);
 }
 
 /* -------------------------------------------------------------- lab rail */
@@ -672,10 +673,11 @@ main#app {
 
 .entry-layout {
   display: grid;
+  width: 100%;
   max-width: 860px;
   margin: 0 auto;
   gap: 30px;
-  justify-items: center;
+  grid-template-columns: minmax(0, 1fr);
   padding-top: clamp(20px, 6vh, 72px);
 }
 
