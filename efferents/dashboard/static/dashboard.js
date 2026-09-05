@@ -1,9 +1,8 @@
 let csrfToken = "";
 let controlState = { connected: false, hydrated: false };
-let portfolioState = { labs: [], edges: [], public_network: {} };
+let portfolioState = { labs: [], edges: [] };
 let isConnecting = false;
 let runtimeAction = "start";
-let networkScope = "internal";
 let renderedRoute = "";
 
 function readStored(key, fallback) {
@@ -420,9 +419,7 @@ function portfolioNodePosition(index, count) {
 }
 
 function renderNetwork() {
-  const labs = (portfolioState.labs || []).filter((lab) =>
-    networkScope === "internal" || lab.visibility === "public"
-  );
+  const labs = portfolioState.labs || [];
   const lines = document.getElementById("network-lines");
   const nodes = document.getElementById("network-nodes");
   const empty = document.getElementById("network-empty");
@@ -431,16 +428,11 @@ function renderNetwork() {
   lines.innerHTML = "";
   nodes.innerHTML = "";
   text("network-node-count", `${labs.length} ${labs.length === 1 ? "node" : "nodes"}`);
-  text("network-scope-note", networkScope === "internal" ? "file-backed local registry" : "authorized publication layer");
-  text("network-hub-label", networkScope === "internal" ? "local control plane" : "public journal");
-  document.querySelectorAll("[data-network-scope]").forEach((button) => {
-    button.setAttribute("aria-pressed", String(button.dataset.networkScope === networkScope));
-  });
 
   if (!labs.length) {
     empty.hidden = false;
-    empty.textContent = networkScope === "public" ? "No public nodes" : "Connect a lab";
-    hub.hidden = networkScope === "public";
+    empty.textContent = "Connect a lab";
+    hub.hidden = true;
     return;
   }
   empty.hidden = true;
@@ -489,7 +481,6 @@ function renderPortfolio(payload) {
   portfolioState = {
     labs: Array.isArray(payload?.labs) ? payload.labs : [],
     edges: Array.isArray(payload?.edges) ? payload.edges : [],
-    public_network: payload?.public_network || {},
   };
   portfolioBudget = portfolioState.labs.reduce(
     (sum, lab) => ({
@@ -498,9 +489,6 @@ function renderPortfolio(payload) {
     }),
     { spent: 0, cap: 0 },
   );
-  text("public-network-message", portfolioState.public_network.connected
-    ? "Public registry connected."
-    : "Private until authorized.");
   renderLabRail();
   renderLabTabs();
   renderBudget();
@@ -1150,18 +1138,8 @@ function initPanelToggles() {
   });
 }
 
-function initNetworkScope() {
-  document.querySelectorAll("[data-network-scope]").forEach((button) => {
-    button.addEventListener("click", () => {
-      networkScope = button.dataset.networkScope;
-      renderNetwork();
-    });
-  });
-}
-
 initRouting();
 initPanelToggles();
-initNetworkScope();
 initIntakeTabs();
 initConnectForm();
 initSteeringForm();

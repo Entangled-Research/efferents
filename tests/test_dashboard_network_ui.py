@@ -15,8 +15,10 @@ def test_dashboard_has_portfolio_rail_and_network_map():
     assert 'id="lab-list"' in html
     assert 'data-route-view="network"' in html
     assert 'id="lab-map"' in html
-    assert 'data-network-scope="internal"' in html
-    assert 'data-network-scope="public"' in html
+    # No public/private choice is surfaced; publication stays out of UI scope.
+    assert "data-network-scope" not in html
+    assert "Private until authorized" not in html
+    assert "private by default" not in html
     assert 'getJSON("/api/labs")' in javascript
     assert 'postJSON("/api/labs/select"' in javascript
     assert "renderNetwork();" in javascript
