@@ -17,6 +17,6 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install
-        run: uv pip install --system -e ".[dev]"
+        run: uv sync --extra dev
       - name: Test
-        run: pytest -m "not integration and not slow" -q
+        run: uv run pytest -m "not integration and not slow" -q
