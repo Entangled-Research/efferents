@@ -22,17 +22,18 @@ def test_dashboard_has_portfolio_rail_and_network_map():
     assert "renderNetwork();" in javascript
 
 
-def test_shared_visual_contract_is_minimal_blue_and_white_research_console():
+def test_shared_visual_contract_is_minimal_paper_and_ink_research_ledger():
     css = (STATIC / "dashboard.css").read_text()
     html = (STATIC / "dashboard.html").read_text()
     progress = PROGRESS.read_text()
 
-    assert "--bg: #ffffff;" in css
-    assert "--panel: #ffffff;" in css
-    assert "--panel-raised: #f6f8fa;" in css
-    assert "--signal: #003b80;" in css
-    assert "--mustard: #d4a017;" in css
-    assert "--orange: #f06c00;" in css
+    assert "--bg: #f1ede2;" in css
+    assert "--panel: #faf8f0;" in css
+    assert "--panel-raised: #f3efe3;" in css
+    assert "--signal: #2d5379;" in css
+    assert "--terracotta: #a8502b;" in css
+    assert "--mustard: #a8842d;" in css
+    assert "--orange: #c05a2e;" in css
     assert "#03befc" not in css
     assert "#0057ff" not in css
     assert "--shadow: none;" in css
