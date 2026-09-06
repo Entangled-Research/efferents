@@ -32,6 +32,12 @@ efferents-demo/
 efferents-run/
 demo-output/
 
+# Local manuscript sources and rendered workshop artifacts belong in
+# https://github.com/Entangled-Research/paper, not this framework repository.
+/paper/
+/output/
+/tmp/
+
 # IDE / OS
 .DS_Store
 .idea/
