@@ -88,17 +88,56 @@ def cost_usd(model: str, usage: CallUsage) -> float:
     )
 
 
+def estimate_call_cost_usd(model: str, max_tokens: int, input_estimate: int = 0) -> float:
+    """Worst-case cost of one call: every input token billed at the cache-write
+    rate and the full ``max_tokens`` output budget consumed.  Used by
+    ``BudgetTracker.reserve`` so a cap is enforced *before* money is spent."""
+    base = cost_usd(model, CallUsage(input_tokens=input_estimate, output_tokens=max_tokens))
+    input_only = cost_usd(model, CallUsage(input_tokens=input_estimate, output_tokens=0))
+    return base + input_only * (CACHE_WRITE_MULT - 1.0)
+
+
 def utc_date_str(ts: str | None = None) -> str:
     dt = datetime.fromisoformat(ts) if ts else datetime.now(timezone.utc)
     return dt.strftime("%Y-%m-%d")
 
 
-class BudgetTracker:
-    """Append-only estimated spend ledger; pauses at the next call boundary."""
+class BudgetExhausted(RuntimeError):
+    """Raised by ``BudgetTracker.reserve`` when the next call would breach a cap.
 
-    def __init__(self, ledger_path: Path, daily_cap_usd: float = 100.0):
+    ``scope`` is ``"daily"`` or ``"total"``; ``spend``/``cap``/``estimate`` are
+    USD so callers can log an auditable line without re-reading the ledger.
+    """
+
+    def __init__(self, scope: str, *, spend: float, cap: float, estimate: float):
+        self.scope = scope
+        self.spend = spend
+        self.cap = cap
+        self.estimate = estimate
+        super().__init__(
+            f"{scope} cap reached: spent ${spend:.2f} of ${cap:.2f}; "
+            f"next call could cost up to ${estimate:.4f}"
+        )
+
+
+class BudgetTracker:
+    """Append-only estimated spend ledger with a hard pre-call cap.
+
+    ``should_pause`` is the coarse loop-level check; ``reserve`` is the hard
+    check the model client runs before every request, so spend can overshoot
+    a cap by at most one call's actual cost (and only when that call's true
+    cost exceeds its worst-case estimate).
+    """
+
+    def __init__(
+        self,
+        ledger_path: Path,
+        daily_cap_usd: float = 100.0,
+        total_cap_usd: float | None = None,
+    ):
         self.path = ledger_path
         self.daily_cap = daily_cap_usd
+        self.total_cap = total_cap_usd
 
     def record(
         self,
@@ -154,7 +193,26 @@ class BudgetTracker:
         }
 
     def should_pause(self) -> bool:
-        return self.spend_today() >= self.daily_cap
+        if self.spend_today() >= self.daily_cap:
+            return True
+        return self.total_cap is not None and self.spend_total() >= self.total_cap
+
+    def reserve(self, model: str, max_tokens: int | None, input_estimate: int = 0) -> float:
+        """Refuse the next call unless its worst-case cost fits under every cap.
+
+        Returns the estimate (USD) on success; raises ``BudgetExhausted``
+        otherwise.  A cap that is already met refuses even a zero-priced
+        (unknown-model) call so an unpriced provider cannot bypass the cap.
+        """
+        estimate = estimate_call_cost_usd(model, int(max_tokens or 0), input_estimate)
+        today = self.spend_today()
+        if today >= self.daily_cap or today + estimate > self.daily_cap:
+            raise BudgetExhausted("daily", spend=today, cap=self.daily_cap, estimate=estimate)
+        if self.total_cap is not None:
+            total = self.spend_total()
+            if total >= self.total_cap or total + estimate > self.total_cap:
+                raise BudgetExhausted("total", spend=total, cap=self.total_cap, estimate=estimate)
+        return estimate
 
 
 def model_for(role: str, override: str | None = None) -> str | None:

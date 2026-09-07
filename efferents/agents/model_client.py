@@ -7,11 +7,14 @@ research loop to every provider's message and tool-call representation.
 """
 from __future__ import annotations
 
+import base64
 import json
 import os
 from copy import deepcopy
 from types import SimpleNamespace
 from typing import Any
+
+from efferents.agents.budget import BudgetTracker
 
 
 PROVIDER_KEY_ENV = {
@@ -92,7 +95,7 @@ def credential_help(model: str | None = None) -> str:
     return f"credentials are not available for provider {provider!r}"
 
 
-def make_client() -> Any:
+def make_client(budget: BudgetTracker | None = None) -> Any:
     """Construct the routing client.
 
     The routing client dispatches each ``messages.create`` call to the provider
@@ -100,8 +103,149 @@ def make_client() -> Any:
     LiteLLM adapter for everything else — so different roles can run on
     different providers within one process, and comma-separated model chains
     fail over across providers.
+
+    When ``budget`` is given, every request is first reserved against it
+    (``BudgetTracker.reserve``), making the spend caps hard at the call level.
     """
-    return RoutingMessagesClient()
+    return RoutingMessagesClient(budget=budget)
+
+
+# --- provider error classification -------------------------------------------
+
+PROVIDER_ERROR_KINDS = ("credit", "auth", "rate_limit", "transient")
+
+_CREDIT_PHRASES = (
+    "credit balance",
+    "insufficient credit",
+    "insufficient funds",
+    "insufficient_quota",
+    "billing",
+    "payment required",
+    "purchase credits",
+)
+
+
+class ProviderError(RuntimeError):
+    """A provider failure the loop must react to rather than blindly retry.
+
+    ``kind`` is one of ``credit`` (billing/no credit), ``auth`` (bad or revoked
+    key), ``rate_limit`` (back off per ``retry_after`` seconds when known).
+    Transient errors are never wrapped; they propagate as the SDK raised them.
+    """
+
+    def __init__(self, kind: str, message: str, *, retry_after: float | None = None):
+        self.kind = kind
+        self.retry_after = retry_after
+        super().__init__(f"{kind}: {message}")
+
+
+def _status_code(exc: BaseException) -> int | None:
+    code = getattr(exc, "status_code", None)
+    if code is None:
+        response = getattr(exc, "response", None)
+        code = getattr(response, "status_code", None)
+    try:
+        return int(code) if code is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _retry_after_seconds(exc: BaseException) -> float | None:
+    response = getattr(exc, "response", None)
+    headers = getattr(response, "headers", None)
+    if headers is None:
+        return None
+    try:
+        raw = headers.get("retry-after")
+    except Exception:
+        return None
+    if raw is None:
+        return None
+    try:
+        return max(0.0, float(raw))
+    except (TypeError, ValueError):
+        return None
+
+
+def classify_provider_error(exc: BaseException) -> tuple[str, float | None]:
+    """Map any exception to ``(kind, retry_after)``.
+
+    Works on ``ProviderError`` (returns its own kind), native Anthropic and
+    LiteLLM exceptions (via ``status_code`` and message text), and anything
+    else (``transient``).
+    """
+    if isinstance(exc, ProviderError):
+        return exc.kind, exc.retry_after
+    text = str(exc).lower()
+    code = _status_code(exc)
+    if any(phrase in text for phrase in _CREDIT_PHRASES) and code in (None, 400, 402, 403):
+        return "credit", None
+    if code == 402:
+        return "credit", None
+    if code in (401, 403):
+        return "auth", None
+    name = type(exc).__name__
+    if name in {"AuthenticationError", "PermissionDeniedError"}:
+        return "auth", None
+    if code == 429 or name == "RateLimitError":
+        return "rate_limit", _retry_after_seconds(exc)
+    return "transient", None
+
+
+def probe_request(model: str | None = None) -> dict[str, Any]:
+    """The cheapest request that still exercises billing and auth for ``model``."""
+    return {
+        "model": model or configured_model(),
+        "max_tokens": 1,
+        "messages": [{"role": "user", "content": "ping"}],
+    }
+
+
+# Anthropic bills an image at (width * height) / 750 tokens and downscales
+# anything above ~1.15 megapixels, so ~1,600 tokens is the documented ceiling
+# per image regardless of file size. Base64 bytes are not tokens.
+IMAGE_TOKEN_ESTIMATE = 1600
+
+
+def image_block(data: bytes, media_type: str = "image/png") -> dict[str, Any]:
+    """An Anthropic base64 image content block for a user message."""
+    return {
+        "type": "image",
+        "source": {
+            "type": "base64",
+            "media_type": media_type,
+            "data": base64.standard_b64encode(data).decode("ascii"),
+        },
+    }
+
+
+def _without_image_data(value: Any) -> tuple[Any, int]:
+    """Copy of ``value`` with image payloads removed, plus the image count."""
+    if isinstance(value, dict):
+        if value.get("type") == "image":
+            return {"type": "image"}, 1
+        out: dict[str, Any] = {}
+        n = 0
+        for k, v in value.items():
+            out[k], m = _without_image_data(v)
+            n += m
+        return out, n
+    if isinstance(value, (list, tuple)):
+        items = [_without_image_data(v) for v in value]
+        return [item for item, _ in items], sum(m for _, m in items)
+    return value, 0
+
+
+def _estimate_input_tokens(kwargs: dict[str, Any]) -> int:
+    """Conservative (over-)estimate of prompt tokens from serialized size;
+    images are counted at the per-image ceiling rather than by their bytes."""
+    parts = [kwargs.get("system"), kwargs.get("messages"), kwargs.get("tools")]
+    stripped, n_images = _without_image_data([p for p in parts if p is not None])
+    try:
+        text = json.dumps(stripped, default=str)
+    except (TypeError, ValueError):
+        text = str(stripped)
+    return len(text) // 3 + n_images * IMAGE_TOKEN_ESTIMATE
 
 
 def _has_explicit_cache_control(value: Any) -> bool:
@@ -177,12 +321,21 @@ def _convert_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
             converted.append({"role": role, "content": content})
             continue
         text_parts: list[str] = []
+        parts: list[dict[str, Any]] = []  # multimodal (OpenAI-style) content parts
         tool_calls: list[dict[str, Any]] = []
         tool_results: list[dict[str, Any]] = []
         for block in content:
             kind = block.get("type")
             if kind == "text":
                 text_parts.append(str(block.get("text", "")))
+                parts.append({"type": "text", "text": str(block.get("text", ""))})
+            elif kind == "image":
+                source = block.get("source") or {}
+                if source.get("type") == "base64":
+                    url = f"data:{source.get('media_type', 'image/png')};base64,{source.get('data', '')}"
+                else:
+                    url = str(source.get("url", ""))
+                parts.append({"type": "image_url", "image_url": {"url": url}})
             elif kind == "tool_use":
                 tool_calls.append({
                     "id": block["id"],
@@ -198,10 +351,14 @@ def _convert_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
                     "tool_call_id": block["tool_use_id"],
                     "content": str(block.get("content", "")),
                 })
-        item: dict[str, Any] = {"role": role, "content": "".join(text_parts) or None}
+        has_images = any(p["type"] == "image_url" for p in parts)
+        item: dict[str, Any] = {
+            "role": role,
+            "content": parts if has_images else ("".join(text_parts) or None),
+        }
         if tool_calls:
             item["tool_calls"] = tool_calls
-        if text_parts or tool_calls:
+        if has_images or text_parts or tool_calls:
             converted.append(item)
         converted.extend(tool_results)
     return converted
@@ -280,6 +437,13 @@ class _RoutingMessages:
             if provider == "anthropic" and candidate.lower().startswith("anthropic/"):
                 model_id = candidate.split("/", 1)[1]
             delegate = self._parent.delegate_for(provider)
+            budget = self._parent.budget
+            if budget is not None:
+                # Hard cap: refuse before the request leaves the process.
+                # BudgetExhausted deliberately bypasses chain failover.
+                budget.reserve(
+                    candidate, kwargs.get("max_tokens"), _estimate_input_tokens(kwargs)
+                )
             try:
                 request = {**kwargs, "model": model_id}
                 if provider == "anthropic":
@@ -287,7 +451,7 @@ class _RoutingMessages:
                 response = delegate.messages.create(**request)
             except Exception as exc:  # provider outage/quota/auth — try the next link
                 if len(chain) == 1:
-                    raise
+                    raise _wrap_provider_error(exc) from exc
                 last_exc = exc
                 failures.append((candidate, f"{type(exc).__name__}: {exc}"))
                 print(f"model_client: {candidate} failed ({type(exc).__name__}); "
@@ -296,7 +460,21 @@ class _RoutingMessages:
             self._parent.last_served_model = candidate
             return response
         detail = "; ".join(f"{model} ({reason})" for model, reason in failures)
+        if last_exc is not None:
+            kind, retry_after = classify_provider_error(last_exc)
+            if kind != "transient":
+                raise ProviderError(
+                    kind, f"all models in chain failed: {detail}", retry_after=retry_after
+                ) from last_exc
         raise RuntimeError(f"all models in chain failed: {detail}") from last_exc
+
+
+def _wrap_provider_error(exc: Exception) -> Exception:
+    """Return a ``ProviderError`` for credit/auth/rate-limit failures, else ``exc``."""
+    kind, retry_after = classify_provider_error(exc)
+    if kind == "transient":
+        return exc
+    return ProviderError(kind, f"{type(exc).__name__}: {exc}", retry_after=retry_after)
 
 
 class RoutingMessagesClient:
@@ -308,8 +486,9 @@ class RoutingMessagesClient:
     mixed-provider role configs share one client instance.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, budget: BudgetTracker | None = None) -> None:
         self.messages = _RoutingMessages(self)
+        self.budget = budget
         self.last_served_model: str | None = None
         self._anthropic_client: Any = None
         self._litellm_client = LiteLLMMessagesClient()
