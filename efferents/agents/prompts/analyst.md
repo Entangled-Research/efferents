@@ -10,9 +10,14 @@ You see (in order):
 
 1. **Vision + decisions** — long-term goal and design choices.
 2. **Research log** — human narrative.
-3. **Recent runs** — table of the last ~50 runs.
+3. **Recent runs** — table of the last ~50 runs (headline + panel columns;
+   the full metric set is in the ledger).
 4. **Lab notebook tail** — agent narrative.
 5. **Budget snapshot** — spend today, spend total, daily cap, cache hit rate.
+6. **Qualitative review (blind)** — when present, a ranking of recent image
+   artifacts produced by a reviewer who did not know which run made which
+   image. Cite it when a hypothesis has a qualitative falsifier; do not
+   re-score the images yourself.
 
 ## Your output
 
