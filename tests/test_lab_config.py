@@ -449,3 +449,194 @@ def test_from_submission_rejects_traversing_config_template(tmp_path):
 
     with pytest.raises(SubmissionError, match="inside the submission"):
         LabConfig.from_submission(sub)
+
+
+# ---------------------------------------------------------------------------
+# falsifiers: declarative rules over bucket-level aggregates
+# ---------------------------------------------------------------------------
+
+def _submission_with_falsifiers(tmp_path, falsifiers, bucket_axes=("raw_q",)):
+    src = Path(__file__).parent / "fixtures" / "sample_submission"
+    sub = tmp_path / "sub"
+    shutil.copytree(src, sub)
+    raw = yaml.safe_load((sub / "lab.yaml").read_text())
+    raw["metrics"]["bucket_axes"] = list(bucket_axes)
+    raw["falsifiers"] = falsifiers
+    (sub / "lab.yaml").write_text(yaml.safe_dump(raw))
+    return sub
+
+
+def test_falsifiers_parse_aggregate_and_paired_forms(tmp_path):
+    sub = _submission_with_falsifiers(tmp_path, [
+        {"id": "F1", "description": "no gain at raw_q=16",
+         "when": {"column": "delta_loss", "agg": "median", "bucket": 16,
+                  "op": ">=", "value": 0, "min_n": 4}},
+        {"id": "F2", "description": "mostly worse",
+         "when": {"column": "delta_loss", "agg": "frac_ge", "threshold": 0,
+                  "op": ">", "value": 0.5}},
+        {"id": "F3", "description": "paired CI includes zero",
+         "when": {"column": "delta_loss", "ci95_excludes_zero": False, "bucket": "all"}},
+        {"id": "F4", "description": "arm-derived paired CI includes zero",
+         "when": {"metric": "synthetic_loss", "ci95_excludes_zero": False}},
+    ])
+    cfg = LabConfig.from_submission(sub)
+    f1, f2, f3, f4 = cfg.falsifiers
+    assert (f1.kind, f1.agg, f1.op, f1.value, f1.bucket, f1.min_n) == (
+        "aggregate", "median", ">=", 0.0, 16, 4)
+    assert (f2.threshold, f2.bucket, f2.min_n) == (0.0, "all", 3)
+    assert (f3.kind, f3.ci95_excludes_zero, f3.agg, f3.metric) == ("paired", False, None, None)
+    assert (f4.kind, f4.column, f4.metric) == ("paired", None, "synthetic_loss")
+
+
+def test_falsifiers_default_empty(tmp_path):
+    sub = _submission_with_falsifiers(tmp_path, None)
+    assert LabConfig.from_submission(sub).falsifiers == ()
+
+
+@pytest.mark.parametrize("falsifiers, match", [
+    ({"id": "F1"}, "must be a list"),
+    ([{"id": "F1", "description": "d", "when": {"column": "x", "agg": "median",
+       "op": "<", "value": 0}, "extra": 1}], "unknown keys"),
+    ([{"id": "F1", "description": "d", "when": {"column": "x", "agg": "median",
+       "op": "<", "value": 0, "bogus": 1}}], "unknown keys"),
+    ([{"id": "F1", "description": "d", "when": {"column": "x", "agg": "p95",
+       "op": "<", "value": 0}}], "agg must be one of"),
+    ([{"id": "F1", "description": "d", "when": {"column": "x", "agg": "median",
+       "op": "~", "value": 0}}], "op must be one of"),
+    ([{"id": "F1", "description": "d", "when": {"column": "x", "agg": "median",
+       "op": "<"}}], "value must be numeric"),
+    ([{"id": "F1", "description": "d", "when": {"column": "x", "agg": "frac_ge",
+       "op": "<", "value": 0}}], "threshold must be numeric"),
+    ([{"id": "F1", "description": "d", "when": {"column": "x", "agg": "median",
+       "op": "<", "value": 0, "threshold": 1}}], "threshold only applies"),
+    ([{"id": "F1", "description": "d", "when": {"column": "bad-col", "agg": "median",
+       "op": "<", "value": 0}}], "column must match"),
+    ([{"id": "F1", "description": "d", "when": {"column": "x", "agg": "median",
+       "op": "<", "value": 0, "min_n": 0}}], "min_n must be a positive integer"),
+    ([{"id": "F1", "description": "d", "when": {"column": "x",
+       "ci95_excludes_zero": "yes"}}], "ci95_excludes_zero must be a boolean"),
+    ([{"id": "F1", "description": "d", "when": {"column": "x",
+       "ci95_excludes_zero": True, "agg": "median"}}], "unknown keys"),
+    ([{"id": "F1", "description": "d", "when": {"ci95_excludes_zero": True}}],
+     "exactly one of column"),
+    ([{"id": "F1", "description": "d", "when": {"column": "x", "metric": "y",
+       "ci95_excludes_zero": True}}], "exactly one of column"),
+    ([{"id": "F1", "description": "d", "when": {"metric": "y", "agg": "median",
+       "op": "<", "value": 0}}], "unknown keys"),
+    ([{"id": "F1", "description": "d", "when": {"metric": "bad-name",
+       "ci95_excludes_zero": True}}], "metric must match"),
+    ([{"id": "F1", "description": "", "when": {"column": "x", "agg": "median",
+       "op": "<", "value": 0}}], "description must be a non-empty string"),
+    ([{"id": "F1", "description": "d", "when": "median < 0"}], "when must be a mapping"),
+    ([{"id": "F1", "description": "d", "when": {"column": "x", "agg": "median",
+       "op": "<", "value": 0}},
+      {"id": "F1", "description": "d", "when": {"column": "x", "agg": "median",
+       "op": "<", "value": 0}}], "duplicate falsifier id"),
+])
+def test_falsifiers_reject_bad_rules(tmp_path, falsifiers, match):
+    sub = _submission_with_falsifiers(tmp_path, falsifiers)
+    with pytest.raises(SubmissionError, match=match):
+        LabConfig.from_submission(sub)
+
+
+def test_falsifier_named_bucket_requires_bucket_axes(tmp_path):
+    sub = _submission_with_falsifiers(tmp_path, [
+        {"id": "F1", "description": "d", "when": {"column": "x", "agg": "median",
+         "bucket": 16, "op": "<", "value": 0}},
+    ], bucket_axes=())
+    with pytest.raises(SubmissionError, match="requires metrics.bucket_axes"):
+        LabConfig.from_submission(sub)
+
+
+# --- supersession frontmatter -------------------------------------------------
+
+def _minimal_sub(tmp_path, frontmatter_extra=""):
+    src = Path(__file__).parent / "fixtures" / "sample_submission"
+    sub = tmp_path / "sub"
+    shutil.copytree(src, sub)
+    (sub / "hypothesis.md").write_text(
+        "---\nslug: sample-conjecture\nfalsifiability_gate: passed\nstatus: active\n"
+        f"{frontmatter_extra}---\n\nbody\n"
+    )
+    return sub
+
+
+def test_hypothesis_slug_and_supersedes_exposed(tmp_path):
+    sub = _minimal_sub(tmp_path, "supersedes: earlier-claim\n")
+    cfg = LabConfig.from_submission(sub)
+    assert cfg.hypothesis_slug == "sample-conjecture"
+    assert cfg.hypothesis_supersedes == "earlier-claim"
+    assert LabConfig.from_submission(_minimal_sub(tmp_path / "b")).hypothesis_supersedes is None
+
+
+def test_superseded_hypothesis_is_rejected_with_pointer_to_successor(tmp_path):
+    sub = _minimal_sub(tmp_path, "superseded_by: newer-claim\n")
+    with pytest.raises(SubmissionError, match="retired.*superseded_by='newer-claim'"):
+        LabConfig.from_submission(sub)
+
+
+@pytest.mark.parametrize("extra", ["supersedes: ''\n", "superseded_by: [a, b]\n"])
+def test_supersession_keys_must_be_slug_strings(tmp_path, extra):
+    with pytest.raises(SubmissionError, match="must be a non-empty slug string"):
+        LabConfig.from_submission(_minimal_sub(tmp_path, extra))
+
+
+# --- budget.total_cap_usd ---------------------------------------------------------
+
+def _with_budget(tmp_path, budget: dict):
+    src = Path(__file__).parent / "fixtures" / "sample_submission"
+    sub = tmp_path / "sub"
+    shutil.copytree(src, sub)
+    raw = yaml.safe_load((sub / "lab.yaml").read_text())
+    raw["budget"] = budget
+    (sub / "lab.yaml").write_text(yaml.safe_dump(raw))
+    return sub
+
+
+def test_total_cap_usd_parsed_and_defaults_to_none(tmp_path):
+    cfg = LabConfig.from_submission(_with_budget(tmp_path, {"daily_cap_usd": 5, "total_cap_usd": 250}))
+    assert cfg.budget.total_cap_usd == 250.0
+    assert cfg.budget.daily_cap_usd == 5.0
+    assert Budget().total_cap_usd is None
+    cfg2 = LabConfig.from_submission(_with_budget(tmp_path / "b", {"daily_cap_usd": 5}))
+    assert cfg2.budget.total_cap_usd is None
+
+
+def test_total_cap_usd_must_cover_daily_cap(tmp_path):
+    with pytest.raises(SubmissionError, match="total_cap_usd must be at least"):
+        LabConfig.from_submission(_with_budget(tmp_path, {"daily_cap_usd": 10, "total_cap_usd": 9.5}))
+    # Equal to the daily cap is allowed (a one-day lab).
+    cfg = LabConfig.from_submission(_with_budget(tmp_path / "b", {"daily_cap_usd": 10, "total_cap_usd": 10}))
+    assert cfg.budget.total_cap_usd == 10.0
+
+
+def test_total_cap_usd_must_be_numeric(tmp_path):
+    with pytest.raises(SubmissionError, match="total_cap_usd must be numeric"):
+        LabConfig.from_submission(_with_budget(tmp_path, {"total_cap_usd": "lots"}))
+
+
+def _with_autonomy(tmp_path, autonomy: dict):
+    src = Path(__file__).parent / "fixtures" / "sample_submission"
+    sub = tmp_path / "sub"
+    shutil.copytree(src, sub)
+    raw = yaml.safe_load((sub / "lab.yaml").read_text())
+    raw["autonomy"] = autonomy
+    (sub / "lab.yaml").write_text(yaml.safe_dump(raw))
+    return sub
+
+
+def test_coder_mode_parsed_and_defaults_to_auto(tmp_path):
+    cfg = LabConfig.from_submission(
+        _with_autonomy(tmp_path, {"coder_enabled": True, "coder_mode": "review"})
+    )
+    assert cfg.autonomy.coder_mode == "review"
+    assert cfg.autonomy.coder_enabled is True
+    cfg2 = LabConfig.from_submission(_with_autonomy(tmp_path / "b", {"coder_enabled": True}))
+    assert cfg2.autonomy.coder_mode == "auto"
+    assert lab_mod.Autonomy().coder_mode == "auto"
+
+
+@pytest.mark.parametrize("mode", ["manual", "", 1, None])
+def test_coder_mode_rejects_unknown_values(tmp_path, mode):
+    with pytest.raises(SubmissionError, match="autonomy.coder_mode must be one of auto | review"):
+        LabConfig.from_submission(_with_autonomy(tmp_path, {"coder_mode": mode}))

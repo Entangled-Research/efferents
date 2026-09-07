@@ -533,6 +533,10 @@ main#app {
   font: 11px/1.5 var(--mono);
 }
 
+.lab-list-copy .lab-verdict.falsified {
+  color: var(--terracotta);
+}
+
 .lab-list-state {
   display: flex;
   align-items: center;
@@ -1654,6 +1658,50 @@ tr.is-excluded td {
 
 .signal-tag.excluded {
   border-color: var(--line-soft);
+  color: var(--dim);
+}
+
+/* --------------------------------------------------------------- verdict */
+
+.verdict-line {
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel-raised);
+  color: var(--signal);
+  font: 700 11px/1.6 var(--mono);
+  letter-spacing: 0.07em;
+}
+
+.verdict-line.falsified,
+td.status-fired {
+  color: var(--terracotta);
+}
+
+td.status-survived {
+  color: var(--data);
+}
+
+td.status-insufficient_data {
+  color: var(--dim);
+}
+
+#falsifiers th:last-child,
+#falsifiers td:last-child {
+  text-align: left;
+}
+
+#falsifiers td.rule-cell {
+  white-space: normal;
+  min-width: 260px;
+  color: var(--muted);
+}
+
+#buckets td.metric-cell,
+#buckets th.metric-head {
+  text-align: right;
+}
+
+#buckets .ci {
   color: var(--dim);
 }
 

@@ -397,7 +397,9 @@ function renderLabRail() {
       `<span class="lab-seq">${String(index + 1).padStart(2, "0")}</span>` +
       `<span class="lab-list-copy"><strong>${esc(lab.lab_id)}</strong>` +
       `<small>${esc(lab.domain || "unclassified")}</small>` +
-      `<span>${metric}</span></span>` +
+      `<span>${metric}</span>` +
+      `<span class="lab-verdict${lab.verdict?.status === "falsified" ? " falsified" : ""}">` +
+      `${esc(lab.verdict?.line || "verdict: undecided")}</span></span>` +
       `<span class="lab-list-state ${esc(lab.status || "stopped")}">` +
       `<i aria-hidden="true"></i>${esc(formatRelativeTime(lab.last_activity))}</span>` +
       `</button>`;
@@ -918,6 +920,85 @@ function renderEvidence(data) {
   ).join("");
 }
 
+function formatCI(ci) {
+  return Array.isArray(ci) && ci.length === 2
+    ? `[${formatMetric(ci[0])}, ${formatMetric(ci[1])}]`
+    : "—";
+}
+
+function renderVerdict(data) {
+  const falsifiers = Array.isArray(data?.falsifiers) ? data.falsifiers : [];
+  const buckets = Array.isArray(data?.buckets) ? data.buckets : [];
+  const columns = Array.isArray(data?.columns) ? data.columns : [];
+  const axes = Array.isArray(data?.axes) ? data.axes : [];
+  const comparison = data?.comparison || {};
+  const runs = Number(data?.n_runs || 0);
+  text("verdict-count", `${runs} succeeded ${runs === 1 ? "run" : "runs"}`);
+
+  const line = document.getElementById("verdict-line");
+  line.textContent = data?.line || "verdict: undecided";
+  line.classList.toggle("falsified", data?.verdict === "falsified");
+
+  const falsifierBody = document.querySelector("#falsifiers tbody");
+  falsifierBody.innerHTML = falsifiers.length
+    ? falsifiers.map((f) =>
+      `<tr><td>${esc(f.id)}</td><td>${esc(f.bucket)}</td>` +
+      `<td class="status-${esc(f.status)}">${esc(f.status === "insufficient_data" ? "insufficient" : f.status)}</td>` +
+      `<td class="rule-cell">${esc(f.rule)} — ${esc(f.detail)}</td></tr>`
+    ).join("")
+    : '<tr><td colspan="4" class="empty-state">No falsifiers declared in lab.yaml</td></tr>';
+
+  const armLabel = (arm) => comparison.labels?.[arm] || arm;
+  const arms = [];
+  buckets.forEach((bucket) => Object.keys(bucket.arms || {}).forEach((arm) => {
+    if (!arms.includes(arm)) arms.push(arm);
+  }));
+  const pairedMetrics = [];
+  buckets.forEach((bucket) => Object.keys(bucket.paired || {}).forEach((metric) => {
+    if (!pairedMetrics.includes(metric)) pairedMetrics.push(metric);
+  }));
+  const axisLabel = axes.length ? axes.join(" × ") : "all runs";
+  text(
+    "buckets-meta",
+    `${buckets.length} ${buckets.length === 1 ? "bucket" : "buckets"} by ${axisLabel}` +
+      (comparison.axis && arms.length ? ` · ${arms.map(armLabel).join(" vs ")}` : ""),
+  );
+
+  const head = [`<th scope="col">Bucket</th>`, `<th scope="col">n</th>`];
+  columns.forEach((c) => head.push(`<th scope="col" class="metric-head">median ${esc(c.label || c.column)}</th>`));
+  // Only metrics some arm actually reports; the flat panel medians cover the rest.
+  const armColumns = columns.filter((c) =>
+    buckets.some((bucket) => arms.some((arm) => bucket.arms?.[arm]?.[c.column]))
+  );
+  arms.forEach((arm) => armColumns.forEach((c) =>
+    head.push(`<th scope="col" class="metric-head">${esc(armLabel(arm))} ${esc(c.column)}</th>`)
+  ));
+  pairedMetrics.forEach((metric) =>
+    head.push(`<th scope="col" class="metric-head">Δ${esc(metric)} · 95% CI</th>`)
+  );
+  document.querySelector("#buckets thead tr").innerHTML = head.join("");
+
+  const bucketBody = document.querySelector("#buckets tbody");
+  bucketBody.innerHTML = buckets.length
+    ? buckets.map((bucket) => {
+      const cells = [`<td>${esc(bucket.label)}</td>`, `<td>${esc(bucket.n)}</td>`];
+      columns.forEach((c) => cells.push(
+        `<td class="metric-cell">${esc(formatMetric(bucket.columns?.[c.column]?.median))}</td>`
+      ));
+      arms.forEach((arm) => armColumns.forEach((c) => cells.push(
+        `<td class="metric-cell">${esc(formatMetric(bucket.arms?.[arm]?.[c.column]?.median))}</td>`
+      )));
+      pairedMetrics.forEach((metric) => {
+        const p = bucket.paired?.[metric];
+        cells.push(`<td class="metric-cell">${p
+          ? `${esc(formatMetric(p.median))} <span class="ci">${esc(formatCI(p.ci95))} n=${esc(p.n)}</span>`
+          : "—"}</td>`);
+      });
+      return `<tr>${cells.join("")}</tr>`;
+    }).join("")
+    : `<tr><td colspan="${head.length}" class="empty-state">No succeeded runs</td></tr>`;
+}
+
 function renderPapers(papers) {
   const records = Array.isArray(papers) ? papers : [];
   const element = document.getElementById("papers");
@@ -963,6 +1044,7 @@ async function refreshObserver() {
     ["/api/state", renderState],
     ["/api/runs", renderRuns],
     ["/api/evidence", renderEvidence],
+    ["/api/verdict", renderVerdict],
     ["/api/papers", renderPapers],
     ["/api/activity", renderActivity],
   ];

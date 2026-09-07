@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from efferents import daemon
+from efferents import evidence
 from efferents import lab as lab_mod
 from efferents.agents import state as state_mod
 from efferents.journal.feed import render_feed
@@ -111,6 +112,18 @@ def _json_list(value) -> list:
 def _artifact_path(
     value: object, lab_root: Path, cfg: "LabConfig"
 ) -> Path | None:
+    """Resolve an artifact record (or bare path) to a readable image file.
+
+    A record prefers its per-run copy (``path``) and falls back to the
+    executor's original ``source_path`` for ledgers written before copies
+    were kept.
+    """
+    if isinstance(value, dict):
+        for key in ("path", "source_path"):
+            found = _artifact_path(value.get(key), lab_root, cfg)
+            if found is not None:
+                return found
+        return None
     if not isinstance(value, str) or not value.strip():
         return None
     raw = Path(value).expanduser()
@@ -232,8 +245,7 @@ def _evidence_payload(
     lab_root: Path, cfg: "LabConfig"
 ) -> tuple[dict, dict[str, Path]]:
     lab_root = Path(lab_root)
-    db = lab_root / "runs.sqlite"
-    rows = state_mod.recent_runs(db, _EVIDENCE_RUN_LIMIT) if db.exists() else []
+    rows = _ledger_rows(lab_root)
     panels = _panel_specs(cfg)
     catalog: dict[str, Path] = {}
     records: list[dict] = []
@@ -274,7 +286,7 @@ def _evidence_payload(
             for artifact in artifacts:
                 if not isinstance(artifact, dict):
                     continue
-                path = _artifact_path(artifact.get("path"), lab_root, cfg)
+                path = _artifact_path(artifact, lab_root, cfg)
                 if path is None or path in seen_paths:
                     continue
                 seen_paths.add(path)
@@ -322,6 +334,105 @@ def read_evidence(lab_root: Path, cfg: "LabConfig | None" = None) -> dict:
     """Return lab-declared visual observations without assuming a domain."""
     cfg = cfg or lab_mod.get_config()
     return _evidence_payload(Path(lab_root), cfg)[0]
+
+
+def _ledger_rows(lab_root: Path) -> list[dict]:
+    """Succeeded runs, newest first, bounded like the evidence surface."""
+    db = Path(lab_root) / "runs.sqlite"
+    return state_mod.recent_runs(db, _EVIDENCE_RUN_LIMIT) if db.exists() else []
+
+
+def _rule_text(rule) -> str:
+    if rule.kind == "paired":
+        name = rule.column or f"\u0394{rule.metric}"
+        wanted = "excludes" if rule.ci95_excludes_zero else "includes"
+        return f"95% CI of median({name}) {wanted} zero"
+    arg = rule.column if rule.threshold is None else f"{rule.column}, {rule.threshold:g}"
+    return f"{rule.agg}({arg}) {rule.op} {rule.value:g}"
+
+
+def _falsifier_results(rows: list[dict], cfg: "LabConfig") -> list[dict]:
+    rules = {rule.id: rule for rule in cfg.falsifiers}
+    results = []
+    for result in evidence.evaluate_falsifiers(rows, cfg):
+        rule = rules[result["id"]]
+        results.append({
+            **result,
+            "kind": rule.kind,
+            "bucket": str(rule.bucket),
+            "min_n": rule.min_n,
+            "rule": _rule_text(rule),
+        })
+    return results
+
+
+_SHORT_STATUS = {"insufficient_data": "insufficient"}
+
+
+def _verdict_line(status: str, falsifiers: list[dict]) -> str:
+    if not falsifiers:
+        return f"verdict: {status} · no falsifiers"
+    notes = [
+        f"{f['id']} {_SHORT_STATUS.get(f['status'], f['status'])}"
+        for f in falsifiers if f["status"] != "survived"
+    ]
+    return " · ".join([f"verdict: {status}", *notes])
+
+
+def _verdict(rows: list[dict], cfg: "LabConfig") -> tuple[str, list[dict]]:
+    falsifiers = _falsifier_results(rows, cfg)
+    status = evidence.verdict(falsifiers) if falsifiers else "undecided"
+    return status, falsifiers
+
+
+def _bucket_entries(rows: list[dict], cfg: "LabConfig") -> tuple[list[dict], list[dict]]:
+    buckets: list[dict] = []
+    paired: list[dict] = []
+    for label, entry in evidence.bucket_summary(rows, cfg).items():
+        entry_paired = {
+            metric: {**stats, "ci95": list(stats["ci95"]) if stats["ci95"] else None,
+                     "arms": list(stats["arms"])}
+            for metric, stats in entry["paired"].items()
+        }
+        buckets.append({
+            "label": label,
+            "key": list(entry["key"]),
+            "n": entry["n"],
+            "columns": entry["columns"],
+            "arms": entry["arms"],
+            "paired": entry_paired,
+        })
+        paired.extend(
+            {"bucket": label, "metric": metric, **stats}
+            for metric, stats in entry_paired.items()
+        )
+    return buckets, paired
+
+
+def read_verdict(lab_root: Path, cfg: "LabConfig | None" = None) -> dict:
+    """Deterministic evidence over succeeded runs: per-bucket aggregates,
+    seed-paired deltas, every declared falsifier, and the resulting verdict."""
+    cfg = cfg or lab_mod.get_config()
+    rows = _ledger_rows(lab_root)
+    status, falsifiers = _verdict(rows, cfg)
+    buckets, paired = _bucket_entries(rows, cfg)
+    return {
+        "verdict": status,
+        "line": _verdict_line(status, falsifiers),
+        "n_runs": len(rows),
+        "axes": list(cfg.metrics.bucket_axes),
+        "comparison": {
+            "axis": cfg.evidence.comparison_axis,
+            "labels": dict(cfg.evidence.comparison_labels),
+        },
+        "columns": [
+            {"column": panel["column"], "label": panel["label"]}
+            for panel in _panel_specs(cfg)
+        ],
+        "buckets": buckets,
+        "paired": paired,
+        "falsifiers": falsifiers,
+    }
 
 
 def resolve_artifact(
@@ -387,6 +498,7 @@ def read_summary(lab_root: Path, cfg: "LabConfig") -> dict:
         if activity
         else latest_run.get("started_at")
     )
+    verdict, falsifiers = _verdict(_ledger_rows(lab_root), cfg)
     return {
         "status": state["status"],
         "budget": state["budget"],
@@ -399,6 +511,7 @@ def read_summary(lab_root: Path, cfg: "LabConfig") -> dict:
         "papers": len(papers),
         "last_activity": last_activity,
         "hypothesis": state["hypothesis"],
+        "verdict": {"status": verdict, "line": _verdict_line(verdict, falsifiers)},
     }
 
 

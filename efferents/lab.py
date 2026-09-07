@@ -161,6 +161,8 @@ class Metrics:
 class Budget:
     daily_cap_usd: float = 10.0
     sonnet_default: bool = True
+    # Lifetime cap on the ledger; None means only the daily cap applies.
+    total_cap_usd: float | None = None
 
 
 @dataclass(frozen=True)
@@ -173,6 +175,12 @@ class Autonomy:
     """
 
     coder_enabled: bool = False
+    # ``auto``: the Coder edits source.dir and commits. ``review``: it writes
+    # a diff under lab/patches/ for the owner to apply or reject.
+    coder_mode: str = "auto"
+
+
+CODER_MODES = ("auto", "review")
 
 
 @dataclass(frozen=True)
@@ -190,6 +198,129 @@ class Evidence:
 
 class SubmissionError(ValueError):
     """Raised when a submission directory is invalid."""
+
+
+@dataclass(frozen=True)
+class Falsifier:
+    """A declarative rule over bucket-level aggregates that, when true, refutes
+    the lab's hypothesis. ``kind`` is ``aggregate`` (column/agg/op/value) or
+    ``paired`` (seed-paired bootstrap CI of the median of a per-run delta:
+    either a flat ledger ``column`` or the difference of an observation
+    ``metric`` between the two comparison arms). ``bucket`` is ``any``,
+    ``all`` or one value of the first bucket axis."""
+
+    id: str
+    description: str
+    kind: Literal["aggregate", "paired"]
+    column: str | None = None
+    metric: str | None = None
+    agg: str | None = None
+    op: Literal["<", "<=", ">", ">=", "=="] | None = None
+    value: float | None = None
+    threshold: float | None = None
+    ci95_excludes_zero: bool | None = None
+    bucket: object = "all"
+    min_n: int = 3
+
+
+_FALSIFIER_AGGS = ("median", "mean", "min", "max", "count", "frac_ge", "frac_le")
+_FALSIFIER_KEYS = {"id", "description", "when"}
+_AGGREGATE_RULE_KEYS = {"column", "agg", "op", "value", "threshold", "bucket", "min_n"}
+_PAIRED_RULE_KEYS = {"column", "metric", "ci95_excludes_zero", "bucket", "min_n"}
+
+
+def _parse_falsifiers(raw_list, bucket_axes: tuple[str, ...]) -> tuple[Falsifier, ...]:
+    if raw_list is None:
+        return ()
+    if not isinstance(raw_list, list):
+        raise SubmissionError("lab.yaml: falsifiers must be a list")
+    out: list[Falsifier] = []
+    seen: set[str] = set()
+    for i, item in enumerate(raw_list):
+        where = f"falsifiers[{i}]"
+        if not isinstance(item, dict):
+            raise SubmissionError(f"{where} must be a mapping")
+        unknown = set(item) - _FALSIFIER_KEYS
+        if unknown:
+            raise SubmissionError(f"{where} has unknown keys: {sorted(unknown)}")
+        fid = item.get("id")
+        if not isinstance(fid, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", fid):
+            raise SubmissionError(f"{where}.id must match [A-Za-z0-9][A-Za-z0-9._-]*")
+        if fid in seen:
+            raise SubmissionError(f"duplicate falsifier id: {fid!r}")
+        seen.add(fid)
+        desc = item.get("description")
+        if not isinstance(desc, str) or not desc.strip():
+            raise SubmissionError(f"{where}.description must be a non-empty string")
+        rule = item.get("when")
+        if not isinstance(rule, dict):
+            raise SubmissionError(f"{where}.when must be a mapping")
+        paired = "ci95_excludes_zero" in rule
+        allowed = _PAIRED_RULE_KEYS if paired else _AGGREGATE_RULE_KEYS
+        unknown = set(rule) - allowed
+        if unknown:
+            raise SubmissionError(f"{where}.when has unknown keys: {sorted(unknown)}")
+        column, metric = rule.get("column"), rule.get("metric")
+        if paired and (column is None) == (metric is None):
+            raise SubmissionError(
+                f"{where}.when must name exactly one of column (flat per-run delta) "
+                "or metric (observation metric differenced across comparison arms)"
+            )
+        for key, name in (("column", column), ("metric", metric)):
+            if name is None and (key == "metric" or paired):
+                continue
+            if not isinstance(name, str) or not _COL_NAME_RE.match(name):
+                raise SubmissionError(
+                    f"{where}.when.{key} must match [A-Za-z_][A-Za-z0-9_]*"
+                )
+        bucket = rule.get("bucket", "all")
+        if isinstance(bucket, bool) or not isinstance(bucket, (str, int, float)):
+            raise SubmissionError(
+                f"{where}.when.bucket must be 'any', 'all' or a value of the first bucket axis"
+            )
+        if bucket not in ("any", "all") and not bucket_axes:
+            raise SubmissionError(
+                f"{where}.when.bucket={bucket!r} requires metrics.bucket_axes"
+            )
+        min_n = rule.get("min_n", 3)
+        if isinstance(min_n, bool) or not isinstance(min_n, int) or min_n < 1:
+            raise SubmissionError(f"{where}.when.min_n must be a positive integer")
+        if paired:
+            flag = rule["ci95_excludes_zero"]
+            if not isinstance(flag, bool):
+                raise SubmissionError(f"{where}.when.ci95_excludes_zero must be a boolean")
+            out.append(Falsifier(
+                id=fid, description=desc.strip(), kind="paired", column=column,
+                metric=metric, ci95_excludes_zero=flag, bucket=bucket, min_n=min_n,
+            ))
+            continue
+        agg = rule.get("agg")
+        if agg not in _FALSIFIER_AGGS:
+            raise SubmissionError(
+                f"{where}.when.agg must be one of {' | '.join(_FALSIFIER_AGGS)}"
+            )
+        op = rule.get("op")
+        if op not in ("<", "<=", ">", ">=", "=="):
+            raise SubmissionError(f"{where}.when.op must be one of < | <= | > | >= | ==")
+        try:
+            value = float(rule["value"])
+        except (KeyError, TypeError, ValueError) as e:
+            raise SubmissionError(f"{where}.when.value must be numeric") from e
+        threshold = rule.get("threshold")
+        if agg in ("frac_ge", "frac_le"):
+            try:
+                threshold = float(threshold)
+            except (TypeError, ValueError) as e:
+                raise SubmissionError(
+                    f"{where}.when.threshold must be numeric for agg={agg}"
+                ) from e
+        elif threshold is not None:
+            raise SubmissionError(f"{where}.when.threshold only applies to frac_ge / frac_le")
+        out.append(Falsifier(
+            id=fid, description=desc.strip(), column=column, kind="aggregate",
+            agg=agg, op=op, value=value, threshold=threshold, bucket=bucket, min_n=min_n,
+        ))
+    return tuple(out)
 
 
 _FRONTMATTER_RE = re.compile(r"^---\n(.*?)\n---\n", re.DOTALL)
@@ -212,6 +343,18 @@ def _parse_hypothesis(path: Path) -> dict:
     if gate != "passed":
         raise SubmissionError(
             f"hypothesis.md has falsifiability_gate={gate!r}; expected 'passed'"
+        )
+    # Supersession links (optional). A hypothesis that names a successor is
+    # retired: running it would spend the lab's budget on a withdrawn claim.
+    for key in ("supersedes", "superseded_by"):
+        val = fm.get(key)
+        if val is not None and (not isinstance(val, str) or not val.strip()):
+            raise SubmissionError(f"hypothesis.md {key} must be a non-empty slug string")
+    if fm.get("superseded_by"):
+        raise SubmissionError(
+            f"hypothesis.md slug={fm.get('slug')!r} is retired: "
+            f"superseded_by={fm['superseded_by']!r}. Run the successor instead "
+            "(efferents steer --supersede <path/to/new/hypothesis.md> installs it)"
         )
     return fm
 
@@ -354,6 +497,8 @@ def _build_labconfig(
             )
     bucket_axes = tuple(bucket_axes_raw)
 
+    falsifiers = _parse_falsifiers(raw.get("falsifiers"), bucket_axes)
+
     # --- evidence ---
     evidence_raw = raw.get("evidence") or {}
     comparison_raw = evidence_raw.get("comparison") or {}
@@ -392,6 +537,12 @@ def _build_labconfig(
     budget_raw = raw.get("budget") or {}
     autonomy_raw = raw.get("autonomy") or {}
     peer_review_raw = raw.get("peer_review") or {}
+
+    coder_mode = autonomy_raw.get("coder_mode", "auto")
+    if not isinstance(coder_mode, str) or coder_mode not in CODER_MODES:
+        raise SubmissionError(
+            f"autonomy.coder_mode must be one of {' | '.join(CODER_MODES)}, got {coder_mode!r}"
+        )
 
     students_raw = raw.get("students")
     if students_raw is None:
@@ -484,6 +635,17 @@ def _build_labconfig(
         raise SubmissionError("executor timeouts must be positive")
     if daily_cap_usd < 0:
         raise SubmissionError("budget.daily_cap_usd must be non-negative")
+    total_cap_raw = budget_raw.get("total_cap_usd")
+    total_cap_usd: float | None = None
+    if total_cap_raw is not None:
+        try:
+            total_cap_usd = float(total_cap_raw)
+        except (TypeError, ValueError) as e:
+            raise SubmissionError("budget.total_cap_usd must be numeric") from e
+        if total_cap_usd < daily_cap_usd:
+            raise SubmissionError(
+                "budget.total_cap_usd must be at least budget.daily_cap_usd"
+            )
     if flat_digest_epsilon < 0:
         raise SubmissionError("metrics.flat_digest_epsilon must be non-negative")
     if max_open_campaigns <= 0:
@@ -524,15 +686,18 @@ def _build_labconfig(
         budget=Budget(
             daily_cap_usd=daily_cap_usd,
             sonnet_default=bool(budget_raw.get("sonnet_default", True)),
+            total_cap_usd=total_cap_usd,
         ),
         autonomy=Autonomy(
             coder_enabled=bool(autonomy_raw.get("coder_enabled", False)),
+            coder_mode=coder_mode,
         ),
         evidence=Evidence(
             comparison_axis=comparison_axis,
             comparison_labels=tuple(comparison_labels),
             comparison_order=tuple(order_raw),
         ),
+        falsifiers=falsifiers,
         default_student_id=default_student_id,
         max_open_campaigns_per_student=max_open_campaigns,
         students=students,
@@ -541,6 +706,8 @@ def _build_labconfig(
         peer_review_accept_mean_threshold=accept_mean,
         peer_review_accept_min_threshold=accept_min,
         prompts_dir=prompts_dir,
+        hypothesis_slug=fm.get("slug"),
+        hypothesis_supersedes=fm.get("supersedes"),
     )
 
 
@@ -557,6 +724,7 @@ class LabConfig:
     code_repo: str | None = None
     autonomy: Autonomy = field(default_factory=Autonomy)
     evidence: Evidence = field(default_factory=Evidence)
+    falsifiers: tuple[Falsifier, ...] = ()
     default_student_id: str = "primary"
     max_open_campaigns_per_student: int = 2
     students: tuple[dict, ...] = field(default_factory=lambda: (
@@ -567,6 +735,10 @@ class LabConfig:
     peer_review_accept_mean_threshold: float = 6.0
     peer_review_accept_min_threshold: int = 4
     prompts_dir: Path | None = None
+    # From hypothesis.md frontmatter: the running claim's slug and, when it
+    # replaced an earlier claim, the slug it supersedes.
+    hypothesis_slug: str | None = None
+    hypothesis_supersedes: str | None = None
 
     @classmethod
     def from_submission(

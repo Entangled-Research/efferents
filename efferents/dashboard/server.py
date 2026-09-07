@@ -90,6 +90,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 return self._send_json(
                     reader.read_evidence(connected.lab_root, cfg=connected.cfg)
                 )
+            if path == "/api/verdict":
+                if connected is None:
+                    return self._send_json(_empty_verdict())
+                return self._send_json(
+                    reader.read_verdict(connected.lab_root, cfg=connected.cfg)
+                )
             if path.startswith("/api/artifacts/"):
                 if connected is None:
                     return self.send_error(404)
@@ -230,6 +236,20 @@ def _empty_evidence() -> dict:
         "comparison": {"axis": None, "labels": {}, "order": []},
         "records": [],
         "artifact_count": 0,
+    }
+
+
+def _empty_verdict() -> dict:
+    return {
+        "verdict": "undecided",
+        "line": "verdict: undecided · no falsifiers",
+        "n_runs": 0,
+        "axes": [],
+        "comparison": {"axis": None, "labels": {}},
+        "columns": [],
+        "buckets": [],
+        "paired": [],
+        "falsifiers": [],
     }
 
 
