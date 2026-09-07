@@ -35,6 +35,10 @@ def clear_pidfile(path: Path) -> None:
 
 def is_pid_alive(pid: int) -> bool:
     """Send signal 0 (no-op) to test process existence."""
+    if pid <= 0:
+        # 0 / negatives address process groups, never a single daemon; a
+        # placeholder pid must read as dead, or `stop` would signal ourselves.
+        return False
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
@@ -45,9 +49,17 @@ def is_pid_alive(pid: int) -> bool:
 
 
 def run_foreground(lab_root: Path, loop: Callable[[], None]) -> None:
-    """Run the loop in the foreground (no fork)."""
+    """Run the loop in the foreground (no fork).
+
+    Writes the same ``daemon.pid`` a detached run does so the lab root alone
+    (without the registry) is enough to detect a live lab.
+    """
     _install_signal_handlers(lab_root)
-    loop()
+    write_pidfile(lab_root / "daemon.pid", os.getpid())
+    try:
+        loop()
+    finally:
+        clear_pidfile(lab_root / "daemon.pid")
 
 
 def daemonize_and_run(lab_root: Path, loop: Callable[[], None]) -> int:

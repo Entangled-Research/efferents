@@ -37,8 +37,14 @@ class Registry:
         self._path = self._home / "registry.json"
 
     @contextmanager
-    def _locked(self):
-        """Open + lock the registry file. Yields list[LabRecord]. Writes back on exit."""
+    def _locked(self, *, write: bool = False):
+        """Open + lock the registry file. Yields list[LabRecord].
+
+        With ``write=True`` the (possibly mutated) list is written back and
+        flushed to disk *before* the lock is released. Read-only callers must
+        not write back: rewriting on every read is what let concurrent
+        readers observe a truncated, not-yet-flushed file and "reset" it.
+        """
         if not self._path.exists():
             self._path.write_text("[]")
         with open(self._path, "r+") as fh:
@@ -48,16 +54,25 @@ class Registry:
                 try:
                     data = json.loads(raw) if raw.strip() else []
                 except json.JSONDecodeError:
+                    backup = self._path.with_suffix(".json.corrupt")
+                    backup.write_text(raw)
                     print(
-                        f"efferents.registry: corrupted JSON at {self._path}, resetting",
+                        f"efferents.registry: corrupted JSON at {self._path}, "
+                        f"resetting (previous content saved to {backup})",
                         file=sys.stderr,
                     )
                     data = []
                 records = [LabRecord(**r) for r in data]
                 yield records
-                fh.seek(0)
-                fh.truncate()
-                fh.write(json.dumps([asdict(r) for r in records], indent=2))
+                if write:
+                    fh.seek(0)
+                    fh.truncate()
+                    fh.write(json.dumps([asdict(r) for r in records], indent=2))
+                    # Flush while still holding the lock; a buffered write that
+                    # lands after LOCK_UN is visible to the next locker as an
+                    # empty file.
+                    fh.flush()
+                    os.fsync(fh.fileno())
             finally:
                 fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
 
@@ -73,14 +88,15 @@ class Registry:
             return None
 
     def register(self, rec: LabRecord) -> None:
-        with self._locked() as records:
+        with self._locked(write=True) as records:
             records[:] = [r for r in records if r.lab_id != rec.lab_id]
             records.append(rec)
 
-    def update_status(self, lab_id: str, status: str) -> None:
-        with self._locked() as records:
+    def update_status(self, lab_id: str, status: str) -> bool:
+        """Set ``status`` on an existing record. Returns False (no-op) if absent."""
+        with self._locked(write=True) as records:
             for r in records:
                 if r.lab_id == lab_id:
                     r.status = status
-                    return
-            raise KeyError(f"unknown lab_id: {lab_id}")
+                    return True
+            return False

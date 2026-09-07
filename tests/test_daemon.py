@@ -1,9 +1,6 @@
 """Daemon fork + pidfile lifecycle. No-fork foreground path tested directly."""
 from __future__ import annotations
 import os
-import signal
-import time
-from pathlib import Path
 
 import pytest
 
@@ -45,3 +42,27 @@ def test_run_foreground_invokes_callback(tmp_path):
         called.append(1)
     run_foreground(tmp_path, fake_loop)
     assert called == [1]
+
+
+def test_is_pid_alive_zero_and_negative_are_dead():
+    # 0 / negatives address process groups; a placeholder pid must never
+    # make `stop` signal its own group.
+    assert is_pid_alive(0) is False
+    assert is_pid_alive(-1) is False
+
+
+def test_run_foreground_writes_and_clears_pidfile(tmp_path):
+    seen = []
+    def fake_loop():
+        seen.append(read_pidfile(tmp_path / "daemon.pid"))
+    run_foreground(tmp_path, fake_loop)
+    assert seen == [os.getpid()]
+    assert not (tmp_path / "daemon.pid").exists()
+
+
+def test_run_foreground_clears_pidfile_on_error(tmp_path):
+    def boom():
+        raise RuntimeError("x")
+    with pytest.raises(RuntimeError):
+        run_foreground(tmp_path, boom)
+    assert not (tmp_path / "daemon.pid").exists()

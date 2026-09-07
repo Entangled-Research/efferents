@@ -2,9 +2,13 @@
 
   efferents validate --submission <dir>
   efferents start    --submission <dir> [--detach] [--lab-root <path>]
-  efferents status   [--lab-id <id>]
-  efferents stop     --lab-id <id>
+  efferents status   [--lab-id <id> | --submission <dir> | --lab-root <dir>]
+  efferents stop     (--lab-id <id> | --submission <dir> | --lab-root <dir>)
   efferents list
+  efferents steer    --submission <dir> ["<text>" | --file <path>] [--by <who>]
+                     [--pause | --resume] [--supersede <hypothesis.md>]
+  efferents patch    --submission <dir> (list | apply <path> | reject <path>) [--by <who>]
+  efferents block    --submission <dir> (list | resolve <id>) [--by <who>]
   efferents public-check [repository]
 
 The `main(argv=None)` entry point is exposed for tests; pyproject.toml
@@ -14,9 +18,11 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import os
 import shutil
 import signal
+import subprocess
 import sys
 import time
 from datetime import datetime, timezone
@@ -57,6 +63,7 @@ def _orchestrator_loop(
         lab_dir=lab_root,
         context_dir=context_dir,
         daily_cap_usd=cfg.budget.daily_cap_usd,
+        total_cap_usd=cfg.budget.total_cap_usd,
         dry_run=dry_run,
         startup_message=f"efferents daemon for lab_id={cfg.lab_id}",
     )
@@ -166,6 +173,18 @@ def _cmd_start(args: argparse.Namespace) -> int:
     _init_lab_root(sub, lab_root)
     os.chdir(sub)
 
+    force = getattr(args, "force", False)
+    # Pidfile guard: independent of the registry, so a lost or stale record
+    # can never let a second daemon loose on the same lab root.
+    pidfile_pid = daemon.read_pidfile(lab_root / "daemon.pid")
+    if pidfile_pid is not None and daemon.is_pid_alive(pidfile_pid) and not force:
+        print(
+            f"lab_root={lab_root} already has a live daemon pid={pidfile_pid} "
+            f"({lab_root / 'daemon.pid'}); use --force to start anyway",
+            file=sys.stderr,
+        )
+        return 1
+
     started_at = datetime.now(timezone.utc).isoformat()
     reg = Registry()
     existing = reg.get(cfg.lab_id)
@@ -173,36 +192,42 @@ def _cmd_start(args: argparse.Namespace) -> int:
         existing is not None
         and existing.status == "running"
         and daemon.is_pid_alive(existing.pid)
+        and not force
     ):
         print(
             f"lab_id={cfg.lab_id} is already running as pid={existing.pid}",
             file=sys.stderr,
         )
         return 1
-    reg.register(LabRecord(
+    # A "running" record whose pid is dead is a crash leftover: replace it.
+    rec = LabRecord(
         lab_id=cfg.lab_id,
         submission_dir=str(sub),
         lab_root=str(lab_root),
         pid=os.getpid(),
         started_at=started_at,
         status="running",
-    ))
+    )
+    reg.register(rec)
+    # A halt reason belongs to the previous run; `list`/`status` would
+    # otherwise show it next to a live daemon.
+    daemon.clear_pidfile(lab_root / "halt_reason.txt")
 
     print(f"lab_id={cfg.lab_id} pid={os.getpid()} dashboard={lab_root}/progress.html")
 
-    loop = lambda: _orchestrator_loop(
-        lab_root=lab_root,
-        context_dir=sub / "context",
-        dry_run=args.dry_run,
-        max_iterations=args.max_iterations,
-    )
+    def loop() -> None:
+        _orchestrator_loop(
+            lab_root=lab_root,
+            context_dir=sub / "context",
+            dry_run=args.dry_run,
+            max_iterations=args.max_iterations,
+        )
 
     if args.detach:
-        child_pid = daemon.daemonize_and_run(lab_root, loop)
-        rec = reg.get(cfg.lab_id)
-        if rec is not None:
-            rec.pid = child_pid
-            reg.register(rec)  # idempotent replace
+        rec.pid = daemon.daemonize_and_run(lab_root, loop)
+        # Re-register from the record we built, not from a fresh `get()`: if
+        # the record vanished meanwhile this restores it with the child pid.
+        reg.register(rec)
         return 0
 
     try:
@@ -212,46 +237,135 @@ def _cmd_start(args: argparse.Namespace) -> int:
     return 0
 
 
+def _halt_reason(lab_root: Path, limit: int = 60) -> str:
+    halt = lab_root / "halt_reason.txt"
+    if not halt.exists():
+        return ""
+    text = " ".join(halt.read_text().split())
+    return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
 def _cmd_list(args: argparse.Namespace) -> int:
     reg = Registry()
     records = reg.list()
     if not records:
         print("no labs registered")
         return 0
-    print(f"{'LAB_ID':<24} {'STATUS':<10} {'STARTED':<25} SUBMISSION")
+    print(f"{'LAB_ID':<24} {'STATUS':<10} {'STARTED':<25} {'SUBMISSION':<40} HALT_REASON")
     for r in records:
         status = r.status
         if status == "running" and not daemon.is_pid_alive(r.pid):
             status = "crashed"
-        print(f"{r.lab_id:<24} {status:<10} {r.started_at:<25} {r.submission_dir}")
+        halt = _halt_reason(Path(r.lab_root))
+        line = f"{r.lab_id:<24} {status:<10} {r.started_at:<25} {r.submission_dir:<40}"
+        print(f"{line} {halt}".rstrip())
     return 0
 
 
-def _cmd_status(args: argparse.Namespace) -> int:
+def _resolve_lab(args: argparse.Namespace) -> tuple[str | None, Path | None, LabRecord | None]:
+    """Locate a lab by --lab-id, --submission, or --lab-root.
+
+    Returns (lab_id, lab_root, registry record). Any of them may be None; the
+    lab root is derived from the directory flags so a lab remains addressable
+    even when the registry has lost its record.
+    """
     reg = Registry()
-    if args.lab_id is None:
+    lab_id = getattr(args, "lab_id", None)
+    submission = getattr(args, "submission", None)
+    lab_root_arg = getattr(args, "lab_root", None)
+
+    lab_root: Path | None = None
+    if lab_root_arg:
+        lab_root = Path(lab_root_arg).resolve()
+    elif submission:
+        lab_root = (Path(submission).resolve() / "lab").resolve()
+
+    rec = reg.get(lab_id) if lab_id else None
+    if rec is None and lab_root is not None:
+        for r in reg.list():
+            if Path(r.lab_root).resolve() == lab_root:
+                rec = r
+                break
+    if lab_id is None and rec is not None:
+        lab_id = rec.lab_id
+    if lab_id is None:
+        for source in (Path(submission).resolve() if submission else None, lab_root):
+            if source is None:
+                continue
+            try:
+                lab_id = LabConfig.from_submission(source, check_paths=False).lab_id
+                break
+            except SubmissionError:
+                continue
+    if lab_root is None and rec is not None:
+        lab_root = Path(rec.lab_root)
+    return lab_id, lab_root, rec
+
+
+def _unknown_lab(args: argparse.Namespace, lab_id: str | None, lab_root: Path | None) -> int:
+    where = f"lab_id: {lab_id}" if lab_id else f"lab at {lab_root}"
+    if lab_root is None:
+        hint = "no registry record; pass --submission <dir> or --lab-root <dir>"
+    else:
+        hint = f"no registry record and no live {lab_root / 'daemon.pid'}"
+    print(f"unknown {where} ({hint})", file=sys.stderr)
+    return 1
+
+
+def _workspace_url(lab_root: Path) -> str | None:
+    """URL of a dashboard server started with `efferents serve` for this root."""
+    serve_json = lab_root / "serve.json"
+    if not serve_json.exists():
+        return None
+    try:
+        info = json.loads(serve_json.read_text())
+    except (OSError, ValueError):
+        return None
+    pid = info.get("pid")
+    if isinstance(pid, int) and daemon.is_pid_alive(pid):
+        return info.get("url")
+    return None
+
+
+def _cmd_status(args: argparse.Namespace) -> int:
+    if not (args.lab_id or args.submission or args.lab_root):
         return _cmd_list(args)
-    rec = reg.get(args.lab_id)
-    if rec is None:
-        print(f"unknown lab_id: {args.lab_id}", file=sys.stderr)
-        return 1
+    lab_id, lab_root, rec = _resolve_lab(args)
+    pidfile_pid = daemon.read_pidfile(lab_root / "daemon.pid") if lab_root else None
+    if rec is None and pidfile_pid is None:
+        return _unknown_lab(args, lab_id, lab_root)
 
-    alive = daemon.is_pid_alive(rec.pid)
-    status = rec.status
-    if rec.status == "running" and not alive:
-        status = "crashed"
-        reg.update_status(args.lab_id, "crashed")
+    if rec is not None:
+        pid = rec.pid
+        alive = daemon.is_pid_alive(pid)
+        status = rec.status
+        if rec.status == "running" and not alive:
+            status = "crashed"
+            Registry().update_status(rec.lab_id, "crashed")
+        started_at = rec.started_at
+    else:
+        pid = pidfile_pid
+        alive = daemon.is_pid_alive(pid)
+        status = "running" if alive else "crashed"
+        started_at = "unknown (registry record missing; pid from daemon.pid)"
+    assert lab_root is not None
 
-    lab_root = Path(rec.lab_root)
-    print(f"lab_id={rec.lab_id}")
+    print(f"lab_id={lab_id}")
     print(f"status={status}")
-    print(f"started_at={rec.started_at}")
-    print(f"pid={rec.pid} (alive={alive})")
+    print(f"started_at={started_at}")
+    print(f"pid={pid} (alive={alive})")
     state_json = lab_root / "state.json"
     if state_json.exists():
         mtime = datetime.fromtimestamp(state_json.stat().st_mtime, tz=timezone.utc).isoformat()
         print(f"last_activity={mtime}")
+        for key in ("pending_patches", "blocked_on_infrastructure"):
+            count = _state_list_count(state_json, key)
+            if count is not None:
+                print(f"{key}={count}")
     print(f"dashboard=file://{lab_root}/progress.html")
+    workspace = _workspace_url(lab_root)
+    if workspace:
+        print(f"workspace={workspace}")
     halt = lab_root / "halt_reason.txt"
     if halt.exists():
         print(f"halt_reason={halt.read_text().strip()}")
@@ -259,24 +373,235 @@ def _cmd_status(args: argparse.Namespace) -> int:
 
 
 def _cmd_stop(args: argparse.Namespace) -> int:
-    reg = Registry()
-    rec = reg.get(args.lab_id)
-    if rec is None:
-        print(f"unknown lab_id: {args.lab_id}", file=sys.stderr)
-        return 1
+    if not (args.lab_id or args.submission or args.lab_root):
+        print("stop: pass --lab-id, --submission, or --lab-root", file=sys.stderr)
+        return 2
+    lab_id, lab_root, rec = _resolve_lab(args)
+    pidfile_pid = daemon.read_pidfile(lab_root / "daemon.pid") if lab_root else None
+    if rec is None and pidfile_pid is None:
+        return _unknown_lab(args, lab_id, lab_root)
 
-    if daemon.is_pid_alive(rec.pid):
-        os.kill(rec.pid, signal.SIGTERM)
+    pids = {p for p in (rec.pid if rec else None, pidfile_pid) if p}
+    for pid in sorted(pids):
+        if not daemon.is_pid_alive(pid):
+            continue
+        os.kill(pid, signal.SIGTERM)
         for _ in range(100):
-            if not daemon.is_pid_alive(rec.pid):
+            if not daemon.is_pid_alive(pid):
                 break
             time.sleep(0.1)
-        if daemon.is_pid_alive(rec.pid):
-            os.kill(rec.pid, signal.SIGKILL)
-            print(f"warning: SIGTERM ignored, sent SIGKILL to PID {rec.pid}", file=sys.stderr)
+        if daemon.is_pid_alive(pid):
+            os.kill(pid, signal.SIGKILL)
+            print(f"warning: SIGTERM ignored, sent SIGKILL to PID {pid}", file=sys.stderr)
 
-    reg.update_status(args.lab_id, "stopped")
-    print(f"stopped lab_id={args.lab_id}")
+    if rec is not None:
+        Registry().update_status(rec.lab_id, "stopped")
+    if lab_root is not None and pidfile_pid is not None and not daemon.is_pid_alive(pidfile_pid):
+        daemon.clear_pidfile(lab_root / "daemon.pid")
+    print(f"stopped lab_id={lab_id}" if lab_id else f"stopped lab at {lab_root}")
+    return 0
+
+
+def _state_list_count(state_json: Path, key: str) -> int | None:
+    """Length of the list mirrored under ``key`` in state.json, or None when
+    the file is unreadable or the key is absent."""
+    try:
+        state = json.loads(state_json.read_text())
+    except (OSError, ValueError):
+        return None
+    value = state.get(key) if isinstance(state, dict) else None
+    return len(value) if isinstance(value, list) else None
+
+
+def _submission_lab_root(args: argparse.Namespace) -> tuple[Path, Path]:
+    sub = Path(args.submission).resolve()
+    lab_root = Path(args.lab_root).resolve() if args.lab_root else sub / "lab"
+    return sub, lab_root
+
+
+def _ledger_patch_path(lab_root: Path, path: str) -> str:
+    """Map a user-supplied patch path onto the ledger's recorded path (the
+    ledger keys patches by the string the Coder wrote; accept a relative
+    path, a resolved path, or just the file name)."""
+    from efferents.agents.state import pending_patches  # noqa: PLC0415
+    given = Path(path)
+    resolved = given.resolve()
+    for rec in pending_patches(lab_root):
+        recorded = str(rec.get("path", ""))
+        if recorded in (path, str(resolved)) or (
+            recorded and Path(recorded).resolve() == resolved
+        ) or (
+            given.name == Path(recorded).name and given.parent == Path(".")
+        ):
+            return recorded
+    return str(resolved)
+
+
+def _patch_files(diff_path: Path) -> list[str]:
+    """Paths a unified diff touches, from its ``+++ b/…`` / ``--- a/…`` headers."""
+    files: list[str] = []
+    try:
+        lines = diff_path.read_text().splitlines()
+    except OSError:
+        return files
+    for line in lines:
+        for prefix in ("+++ b/", "--- a/"):
+            if line.startswith(prefix):
+                name = line[len(prefix):].split("\t")[0].strip()
+                if name and name not in files:
+                    files.append(name)
+    return files
+
+
+def _git(cwd: Path, *argv: str) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        ["git", *argv], cwd=str(cwd), capture_output=True, text=True, check=False,
+    )
+
+
+def _cmd_patch(args: argparse.Namespace) -> int:
+    from efferents.agents.state import mark_patch, pending_patches  # noqa: PLC0415
+
+    sub, lab_root = _submission_lab_root(args)
+    if args.action == "list":
+        pending = pending_patches(lab_root)
+        if not pending:
+            print("no pending patches")
+            return 0
+        for rec in pending:
+            files = ", ".join(rec.get("files") or []) or "-"
+            print(f"{rec.get('ts', '-')}  {rec.get('path')}")
+            print(f"    name={rec.get('name')}  student={rec.get('student_id') or '-'}  "
+                  f"files={files}")
+            if rec.get("rationale_path"):
+                print(f"    rationale={rec['rationale_path']}")
+        return 0
+
+    if not args.path:
+        print(f"patch: {args.action} needs the patch path", file=sys.stderr)
+        return 2
+    recorded = _ledger_patch_path(lab_root, args.path)
+
+    if args.action == "reject":
+        if not mark_patch(lab_root, recorded, "rejected", by=args.by):
+            print(f"patch: {args.path} is not in the ledger at {lab_root}", file=sys.stderr)
+            return 1
+        print(f"rejected {recorded}")
+        return 0
+
+    diff_path = Path(recorded)
+    if not diff_path.is_file():
+        print(f"patch: no such file: {diff_path}", file=sys.stderr)
+        return 1
+    touched = _patch_files(diff_path)
+    if touched:
+        dirty = _git(sub, "diff", "--name-only", "--", *touched)
+        if dirty.returncode != 0:
+            print(f"patch: git diff failed in {sub}: {dirty.stderr.strip()}", file=sys.stderr)
+            return 1
+        unstaged = [line for line in dirty.stdout.splitlines() if line.strip()]
+        if unstaged:
+            print(f"patch: refusing to apply; unstaged changes in {sub} to files the patch "
+                  "touches:", file=sys.stderr)
+            for name in unstaged:
+                print(f"  {name}", file=sys.stderr)
+            print("commit or stash them first", file=sys.stderr)
+            return 1
+    check = _git(sub, "apply", "--check", str(diff_path))
+    if check.returncode != 0:
+        print(f"patch: does not apply cleanly in {sub}:", file=sys.stderr)
+        print((check.stderr or check.stdout).strip(), file=sys.stderr)
+        return 1
+    applied = _git(sub, "apply", str(diff_path))
+    if applied.returncode != 0:
+        print(f"patch: git apply failed in {sub}:", file=sys.stderr)
+        print((applied.stderr or applied.stdout).strip(), file=sys.stderr)
+        return 1
+    if not mark_patch(lab_root, recorded, "applied", by=args.by):
+        print(f"applied {diff_path} (not in the ledger at {lab_root}; nothing marked)")
+        return 0
+    print(f"applied {diff_path}")
+    for name in touched:
+        print(f"  {name}")
+    print("the working tree is modified but not committed; run the lab's smoke command, "
+          "then commit")
+    return 0
+
+
+def _cmd_block(args: argparse.Namespace) -> int:
+    from efferents.agents.state import open_blocks, resolve_block  # noqa: PLC0415
+
+    _sub, lab_root = _submission_lab_root(args)
+    if args.action == "list":
+        blocks = open_blocks(lab_root)
+        if not blocks:
+            print("no open blocks")
+            return 0
+        for rec in blocks:
+            print(f"{rec.get('id')}  {rec.get('ts', '-')}  student={rec.get('student_id') or '-'}")
+            print(f"    {rec.get('summary', '')}")
+            if rec.get("proposed_change"):
+                print(f"    proposed: {rec['proposed_change']}")
+            for ev in rec.get("evidence") or []:
+                print(f"    evidence: {ev}")
+        return 0
+    if not args.id:
+        print("block: resolve needs the block id", file=sys.stderr)
+        return 2
+    if not resolve_block(lab_root, args.id, by=args.by):
+        print(f"block: no open block {args.id} at {lab_root}", file=sys.stderr)
+        return 1
+    print(f"resolved {args.id} by {args.by}")
+    return 0
+
+
+def _cmd_steer(args: argparse.Namespace) -> int:
+    from efferents import steer as steer_mod  # noqa: PLC0415
+
+    sub = Path(args.submission).resolve()
+    if args.file and args.text:
+        print("steer: pass either text or --file, not both", file=sys.stderr)
+        return 2
+    text = args.text or ""
+    if args.file:
+        try:
+            text = Path(args.file).read_text()
+        except OSError as e:
+            print(f"steer: cannot read --file: {e}", file=sys.stderr)
+            return 1
+    action = "pause" if args.pause else "resume" if args.resume else None
+    if not text.strip() and action is None and not args.supersede:
+        print("steer: give the steering text, --file <path>, --pause, --resume, "
+              "or --supersede <hypothesis.md>", file=sys.stderr)
+        return 2
+
+    try:
+        if args.supersede:
+            if action is not None:
+                print("steer: --supersede cannot be combined with --pause/--resume",
+                      file=sys.stderr)
+                return 2
+            res = steer_mod.supersede(
+                sub, args.supersede, by=args.by, note=text, lab_root=args.lab_root,
+            )
+            charter, ledger = res["charter"], res["steering"]
+            print(f"superseded {res['old_slug']} ({res['old_hash'][:19]}...) "
+                  f"-> {res['new_slug']} ({res['new_hash'][:19]}...)")
+            if res["corpus_marked"] is not None:
+                print(f"marked superseded_by in {res['corpus_marked']}")
+            print(f"installed {sub / 'hypothesis.md'}")
+        else:
+            if not text.strip():
+                text = f"{action} requested by {args.by}"
+            charter, ledger = steer_mod.steer(
+                sub, text=text, by=args.by, action=action, lab_root=args.lab_root,
+            )
+    except steer_mod.SteeringError as e:
+        print(f"steer failed: {e}", file=sys.stderr)
+        return 1
+    print(f"charter={charter}")
+    print(f"steering={ledger}")
+    print("the daemon will pick this up on its next step")
     return 0
 
 
@@ -351,12 +676,22 @@ def _cmd_serve(args: argparse.Namespace) -> int:
         connected_root = None
     else:
         lab_mod.set_config(cfg)
-    dash_server.serve(
-        connected_root,
-        port=args.port,
-        open_browser=not args.no_open,
-        paused_demo=getattr(args, "paused_demo", False),
-    )
+    serve_json = lab_root / "serve.json"
+    if lab_root.is_dir():
+        serve_json.write_text(json.dumps({
+            "pid": os.getpid(),
+            "port": args.port,
+            "url": f"http://localhost:{args.port}",
+        }))
+    try:
+        dash_server.serve(
+            connected_root,
+            port=args.port,
+            open_browser=not args.no_open,
+            paused_demo=getattr(args, "paused_demo", False),
+        )
+    finally:
+        daemon.clear_pidfile(serve_json)
     return 0
 
 
@@ -385,6 +720,14 @@ def _cmd_public_check(args: argparse.Namespace) -> int:
     return 0 if report.is_ready else 1
 
 
+def _add_lab_selector(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--lab-id", default=None)
+    parser.add_argument("--submission", default=None,
+                        help="Submission directory (lab root defaults to <dir>/lab)")
+    parser.add_argument("--lab-root", default=None,
+                        help="Lab root directory; works even if the registry lost the record")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="efferents")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -408,18 +751,72 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Stop after N orchestrator iterations (for bounded trials)",
     )
+    p_start.add_argument(
+        "--force",
+        action="store_true",
+        help="Start even if daemon.pid or the registry reports a live daemon",
+    )
     p_start.set_defaults(func=_cmd_start)
 
     p_status = sub.add_parser("status", help="Show lab status")
-    p_status.add_argument("--lab-id", default=None)
+    _add_lab_selector(p_status)
     p_status.set_defaults(func=_cmd_status)
 
     p_stop = sub.add_parser("stop", help="Stop a running lab daemon")
-    p_stop.add_argument("--lab-id", required=True)
+    _add_lab_selector(p_stop)
     p_stop.set_defaults(func=_cmd_stop)
 
     p_list = sub.add_parser("list", help="List all registered labs")
     p_list.set_defaults(func=_cmd_list)
+
+    p_steer = sub.add_parser(
+        "steer",
+        help="Owner steering: redirect, pause/resume, or supersede the hypothesis "
+             "(auditable; never rewrites evidence)",
+    )
+    p_steer.add_argument("--submission", required=True)
+    p_steer.add_argument("text", nargs="?", default=None,
+                         help="Steering text, recorded verbatim in context/popper.md")
+    p_steer.add_argument("--file", default=None, help="Read the steering text from a file")
+    p_steer.add_argument("--by", default="lab owner",
+                         help="Who is steering (name/role; default: lab owner)")
+    p_steer.add_argument("--lab-root", default=None,
+                         help="Lab root directory (default: <submission>/lab)")
+    p_pause = p_steer.add_mutually_exclusive_group()
+    p_pause.add_argument("--pause", action="store_true",
+                         help="Pause spending until `steer --resume`")
+    p_pause.add_argument("--resume", action="store_true", help="Lift an owner pause")
+    p_steer.add_argument(
+        "--supersede", metavar="HYPOTHESIS_MD", default=None,
+        help="Install a gated successor hypothesis whose `supersedes:` names the "
+             "current slug; the retired corpus copy gets `superseded_by:`",
+    )
+    p_steer.set_defaults(func=_cmd_steer)
+
+    p_patch = sub.add_parser(
+        "patch",
+        help="Owner review of Coder patches written in autonomy.coder_mode: review",
+    )
+    p_patch.add_argument("action", choices=("list", "apply", "reject"))
+    p_patch.add_argument("path", nargs="?", default=None,
+                         help="Patch path (or file name) from `patch list`")
+    p_patch.add_argument("--submission", required=True)
+    p_patch.add_argument("--lab-root", default=None,
+                         help="Lab root directory (default: <submission>/lab)")
+    p_patch.add_argument("--by", default="owner", help="Who decided (default: owner)")
+    p_patch.set_defaults(func=_cmd_patch)
+
+    p_block = sub.add_parser(
+        "block",
+        help="List or resolve a student's open blocked_on_infrastructure records",
+    )
+    p_block.add_argument("action", choices=("list", "resolve"))
+    p_block.add_argument("id", nargs="?", default=None, help="Block id from `block list`")
+    p_block.add_argument("--submission", required=True)
+    p_block.add_argument("--lab-root", default=None,
+                         help="Lab root directory (default: <submission>/lab)")
+    p_block.add_argument("--by", default="owner", help="Who resolved it (default: owner)")
+    p_block.set_defaults(func=_cmd_block)
 
     p_demo = sub.add_parser(
         "demo", help="Run an offline, no-API product demo and write journal/runs/dashboard")
