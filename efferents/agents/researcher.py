@@ -38,35 +38,45 @@ from pathlib import Path
 from typing import Any
 
 import anthropic
+import yaml
 
 from efferents.agents import librarian
 from efferents.agents import popper_gate as _popper_gate
 from efferents.agents.budget import (
     BudgetTracker,
     CallUsage,
-    SUPERVISOR_OPUS_STREAK_THRESHOLD,
     model_for,
     model_for_supervisor,
 )
 from efferents.agents.state import (
+    SEMANTIC_IDENTITY_KEYS,
     LabPaths,
     StudentStateView,
     append_jsonl,
     campaign_insert as _campaign_insert,
-    campaign_open_list as _campaign_open_list,
     campaign_open_list_for_student as _campaign_open_list_for_student,
     campaign_recently_closed_list as _campaign_recently_closed_list,
+    load_proposal_base_config,
     load_state,
     notebook_append,
     notebook_tail,
     now_iso,
+    open_blocks,
     parse_json_loose,
     parse_json_with_one_retry,
+    proposal_config_hash,
+    proposal_semantic_hash,
+    queued_config_hashes,
     read_context,
     read_jsonl,
     recent_runs,
+    record_blocked,
     retry_hint,
     save_state,
+    semantic_config_hash,
+    semantic_hash_index,
+    succeeded_run_for_hash,
+    succeeded_run_for_semantic_hash,
 )
 from efferents import lab as _lab
 from efferents.lab import _COL_NAME_RE  # SQL-identifier sanitizer
@@ -151,6 +161,97 @@ def _format_recent_runs(rows: list[dict[str, Any]], db_path) -> str:
 def _read_default_config() -> str:
     p = Path("config/default.yaml")
     return p.read_text() if p.exists() else "(missing)"
+
+
+# Keys the Executor stamps onto every rendered config; they identify the
+# proposal, not the experiment, so they are not "overrides" worth listing
+# (and they are what the semantic hash strips).
+_RENDER_META_KEYS = frozenset(SEMANTIC_IDENTITY_KEYS)
+_MISSING = object()
+
+
+def _flatten(d: dict, prefix: str = "") -> dict[str, Any]:
+    """Nested dict -> {"dotted.path": leaf} (the config_overrides shape)."""
+    out: dict[str, Any] = {}
+    for k, v in (d or {}).items():
+        key = f"{prefix}{k}"
+        if isinstance(v, dict) and v:
+            out.update(_flatten(v, key + "."))
+        else:
+            out[key] = v
+    return out
+
+
+def _row_semantic_hash(row: dict[str, Any]) -> str | None:
+    """The row's stored ``config_hash_semantic``, recomputed from
+    ``config_yaml`` for rows written before the column existed."""
+    h = row.get("config_hash_semantic")
+    if h:
+        return str(h)
+    if isinstance(row.get("config_yaml"), str):
+        return semantic_config_hash(row["config_yaml"])
+    return None
+
+
+def _tried_configs(rows: list[dict[str, Any]], base_config: dict | None) -> list[dict]:
+    """Group succeeded runs by semantic config hash (identity keys stripped,
+    so a renamed re-run lands in the same group); recover each group's
+    overrides by diffing the stored rendered config against the lab's config
+    template. Groups are returned in recency order (``rows`` is newest-first)."""
+    base_flat = _flatten(base_config or {})
+    try:
+        headline_col = mv.headline().column
+    except RuntimeError:
+        headline_col = None
+    groups: dict[str, dict[str, Any]] = {}
+    for r in rows:
+        h = _row_semantic_hash(r)
+        if not h:
+            continue
+        g = groups.get(h)
+        if g is None:
+            overrides: dict[str, Any] = {}
+            if isinstance(r.get("config_yaml"), str):
+                try:
+                    rendered = yaml.safe_load(r["config_yaml"]) or {}
+                except yaml.YAMLError:
+                    rendered = {}
+                overrides = {
+                    k: v for k, v in _flatten(rendered).items()
+                    if k not in _RENDER_META_KEYS and base_flat.get(k, _MISSING) != v
+                }
+            g = groups[h] = {
+                "hash": str(h), "overrides": overrides, "n": 0,
+                "run_id": r.get("run_id"), "headline": [],
+            }
+        g["n"] += 1
+        v = mv.finite(r.get(headline_col)) if headline_col else None
+        if v is not None:
+            g["headline"].append(v)
+    return list(groups.values())
+
+
+def _format_tried_configs(tried: list[dict]) -> str:
+    """One compact line per configuration: hash prefix, overrides, headline."""
+    if not tried:
+        return "(no runs yet)"
+    try:
+        h = mv.headline()
+        headline_col, direction = h.column, h.direction
+    except RuntimeError:
+        headline_col, direction = None, "min"
+    lines = []
+    for g in tried:
+        digest = g["hash"].split(":")[-1][:12]
+        overrides = ", ".join(f"{k}={v!r}" for k, v in g["overrides"].items()) or "(defaults)"
+        if g["headline"]:
+            best = min(g["headline"]) if direction == "min" else max(g["headline"])
+            result = f"{headline_col}={best:.4g}"
+        else:
+            result = "(no headline value)"
+        times = f" ×{g['n']}" if g["n"] > 1 else ""
+        lines.append(f"- `{digest}`{times} | {overrides} | {result}")
+    return "\n".join(lines)
 
 
 def _stdev(xs: list[float]) -> float:
@@ -312,6 +413,131 @@ def _saturation_report(paths: LabPaths, *, n: int = 50) -> dict[str, Any]:
     return {"saturated_axes": saturated_axes, "score": score, "evidence": evidence}
 
 
+def _reject_duplicate_proposals(
+    paths: LabPaths,
+    proposals: list[dict[str, Any]],
+    *,
+    base_config: dict | None = None,
+) -> list[dict[str, Any]]:
+    """The single dedup choke point: every student's proposals pass through
+    ``propose()``, and this runs after they are tagged with campaign / mode /
+    student (all of which the Executor renders into the config).
+
+    A proposal is a duplicate when its rendered config already succeeded in
+    the ledger, is queued or in flight, or appeared earlier in this batch —
+    matched on the exact ``config_hash`` *and* on the semantic hash (identity
+    keys stripped), so renaming a proposal with identical overrides does not
+    get it past the gate. Ledger rows older than the ``config_hash_semantic``
+    column are re-hashed from ``config_yaml`` (last ~200 rows, once per call).
+    ``allow_duplicate: true`` plus a non-empty ``duplicate_reason`` (e.g. a
+    reproducibility check) lets it through; every decision is written to the
+    notebook so the funder can audit repeated spend.
+    """
+    if not proposals:
+        return proposals
+    if base_config is None:
+        base_config = load_proposal_base_config()
+    if base_config is None:
+        return proposals  # no template to render against: nothing to compare
+    queued = queued_config_hashes(paths.queue, base_config=base_config)
+    queued_sem = queued_config_hashes(paths.queue, base_config=base_config, semantic=True)
+    legacy_index: dict[str, dict[str, Any]] | None = None  # built lazily, once
+    seen_batch: dict[str, str] = {}
+    kept: list[dict[str, Any]] = []
+    for p in proposals:
+        name = str(p.get("name") or "?")
+        h = proposal_config_hash(p, base_config=base_config)
+        if h is None:
+            kept.append(p)
+            continue
+        hs = proposal_semantic_hash(p, base_config=base_config) or h
+        row = succeeded_run_for_hash(paths.runs_db, h)
+        renamed = ""
+        if row is None:
+            row = succeeded_run_for_semantic_hash(paths.runs_db, hs)
+            if row is None:
+                if legacy_index is None:
+                    legacy_index = semantic_hash_index(paths.runs_db)
+                row = legacy_index.get(hs)
+            if row is not None:
+                renamed = " (same configuration under a different name)"
+        if row is not None:
+            dup_of = f"run {row.get('run_id')}{renamed}"
+        elif h in queued:
+            dup_of = f"queued proposal {queued[h]!r}"
+        elif hs in queued_sem:
+            dup_of = f"queued proposal {queued_sem[hs]!r} (same configuration under a different name)"
+        elif hs in seen_batch:
+            dup_of = f"proposal {seen_batch[hs]!r} in the same batch"
+        else:
+            seen_batch[hs] = name
+            kept.append(p)
+            continue
+        reason = p.get("duplicate_reason")
+        reason = reason.strip() if isinstance(reason, str) else ""
+        if p.get("allow_duplicate") is True and reason:
+            p["duplicate_of"] = dup_of
+            notebook_append(
+                paths.notebook,
+                f"## {now_iso()} — proposal {name!r} allowed as duplicate of "
+                f"{dup_of} (hash {h[:19]}): {reason}\n",
+            )
+            kept.append(p)
+            continue
+        detail = " (allow_duplicate set without duplicate_reason)" if p.get("allow_duplicate") else ""
+        notebook_append(
+            paths.notebook,
+            f"## {now_iso()} — proposal skipped: duplicate of {dup_of} "
+            f"— {name!r} hash {h[:19]}{detail}\n",
+        )
+    return kept
+
+
+def _record_blocked_on_infrastructure(
+    paths: LabPaths, raw: Any, *, student_id: str
+) -> dict[str, Any] | None:
+    """Validate and persist a Student's ``blocked_on_infrastructure`` object
+    (``{summary, evidence: [run_ids], proposed_change}``). Returns the stored
+    record, or None when nothing valid was declared or the student already has
+    an open block (one open block per student; the duplicate is noted)."""
+    if not isinstance(raw, dict):
+        return None
+    summary = raw.get("summary")
+    summary = " ".join(summary.split()) if isinstance(summary, str) else ""
+    if not summary:
+        notebook_append(
+            paths.notebook,
+            f"## {now_iso()} — student {student_id} emitted blocked_on_infrastructure "
+            "without a summary; ignored\n",
+        )
+        return None
+    evidence = raw.get("evidence")
+    evidence = [str(e) for e in evidence if e] if isinstance(evidence, list) else []
+    change = raw.get("proposed_change")
+    change = change if isinstance(change, str) else ""
+    record = record_blocked(
+        paths.root, student_id=student_id, summary=summary,
+        evidence=evidence, proposed_change=change,
+    )
+    if record is None:
+        existing = open_blocks(paths.root, student_id=student_id)
+        notebook_append(
+            paths.notebook,
+            f"## {now_iso()} — student {student_id} re-declared an infrastructure "
+            f"block while {existing[0].get('id') if existing else '?'} is still open; "
+            "ignored (one open block per student)\n",
+        )
+        return None
+    notebook_append(
+        paths.notebook,
+        f"## {now_iso()} — student {student_id} BLOCKED on infrastructure: {summary}\n\n"
+        f"**Evidence**: {', '.join(evidence) or '(none cited)'}\n\n"
+        f"**Proposed change**: {record['proposed_change'] or '(none)'}\n\n"
+        f"**Block id**: `{record['id']}` (lab/blocked.jsonl)\n",
+    )
+    return record
+
+
 def _ensure_lit_context(
     proposals: list[dict[str, Any]], consulted: list[str]
 ) -> list[dict[str, Any]]:
@@ -417,10 +643,46 @@ def _shared_static_block(*, vision: str, decisions: str, charter: str = "") -> s
     )
 
 
-def _shared_dynamic_block(*, research_log: str, runs_table: str, notebook: str) -> str:
+def _format_open_blocks(blocks: list[dict[str, Any]]) -> str:
+    """One line per open infrastructure block, oldest first."""
+    if not blocks:
+        return "(none)"
+    lines = []
+    for b in blocks:
+        evidence = ", ".join(str(e) for e in (b.get("evidence") or [])) or "none cited"
+        change = b.get("proposed_change") or "(no change proposed)"
+        lines.append(
+            f"- `{b.get('id', '?')}` student `{b.get('student_id', '?')}` "
+            f"({str(b.get('ts', ''))[:19]}): {b.get('summary', '')} "
+            f"— evidence: {evidence} — proposed change: {change}"
+        )
+    return "\n".join(lines)
+
+
+def _shared_dynamic_block(
+    *,
+    research_log: str,
+    runs_table: str,
+    notebook: str,
+    tried: str = "(no runs yet)",
+    blocked: str = "(none)",
+) -> str:
     return (
         "## Research log (human-curated)\n\n" + research_log
         + "\n\n## Recent runs\n\n" + runs_table
+        + "\n\n## Already tried configurations\n\n"
+        "Each line is one configuration that already ran, keyed by its semantic "
+        "hash — the rendered config with the proposal's name, campaign, mode and "
+        "student stripped (hash prefix | overrides vs. the default config | best "
+        "headline). Proposals whose overrides render to one of these are rejected "
+        "before they reach the queue, whatever they are named — do not re-propose "
+        "them. A deliberate replication (reproducibility check) must set "
+        "`allow_duplicate: true` and state `duplicate_reason`.\n\n" + tried
+        + "\n\n## Open infrastructure blocks\n\n"
+        "Students have declared that these cannot be tested until the executor "
+        "itself is changed (the owner or the Coder must act). Do not propose "
+        "configurations that work around them and do not re-declare them; "
+        "propose in other directions until they are resolved.\n\n" + blocked
         + "\n\n## Lab notebook tail\n\n" + notebook
     )
 
@@ -868,10 +1130,13 @@ def propose(
         decisions=ctx.get("decisions.md", ""),
         charter=ctx.get("popper.md", ""),
     )
+    base_config = load_proposal_base_config()
     dynamic_block = _shared_dynamic_block(
         research_log=ctx.get("research_log.md", ""),
         runs_table=_format_recent_runs(rows, paths.runs_db),
         notebook=notebook_tail(paths.notebook, max_chars=6000),
+        tried=_format_tried_configs(_tried_configs(rows, base_config)),
+        blocked=_format_open_blocks(open_blocks(paths.root)),
     )
     kb_index_block = _kb_block(kb_index)
 
@@ -1032,6 +1297,26 @@ def propose(
     for p in final["architectural_proposals"]:
         p.setdefault("student_id", student_id)
 
+    # --- Blocked on infrastructure: the Student says the executor itself
+    # needs a code change before its line of work can be tested. Sourced from
+    # the Student turn (like new_campaign — the Supervisor cannot redact it).
+    # Recorded for the owner (lab/blocked.jsonl, notebook, state.json) and
+    # surfaced to every student on the next turn.
+    blocked = _record_blocked_on_infrastructure(
+        paths, student_parsed.get("blocked_on_infrastructure"), student_id=student_id,
+    )
+
+    # --- Reject configurations that already ran / are queued (see
+    # _reject_duplicate_proposals). Runs after tagging because campaign, mode
+    # and student are rendered into the config the Executor hashes. A second
+    # Student call to replace the rejected proposals would cost another full
+    # turn, so rejected work is simply skipped this iteration.
+    n_before = len(final["proposals"])
+    final["proposals"] = _reject_duplicate_proposals(
+        paths, final["proposals"], base_config=base_config,
+    )
+    n_duplicates_skipped = n_before - len(final["proposals"])
+
     # --- Persist architectural proposals (Coder reads this file) ---
     if final["architectural_proposals"]:
         from efferents.agents.coder import proposed_changes_path as _proposed_changes_path
@@ -1092,6 +1377,8 @@ def propose(
         "review_redlines": review.get("redlines"),
         "n_proposals": len(final["proposals"]),
         "n_architectural": len(final["architectural_proposals"]),
+        "n_duplicates_skipped": n_duplicates_skipped,
+        "blocked_on_infrastructure": blocked.get("id") if blocked else None,
     })
 
     return {
@@ -1102,4 +1389,5 @@ def propose(
         "supervisor_brief": brief,
         "supervisor_review": review,
         "saturation": saturation,
+        "blocked_on_infrastructure": blocked,
     }

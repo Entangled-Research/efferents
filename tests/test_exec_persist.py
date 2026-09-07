@@ -1,5 +1,6 @@
 """_persist_run_result and _execute_run live in efferents.exec."""
 from __future__ import annotations
+import json
 import sqlite3
 from pathlib import Path
 
@@ -113,3 +114,101 @@ def test_persist_run_result_preserves_observation_envelope(tmp_path, monkeypatch
     ).fetchone()[0]
     conn.close()
     assert '"variant": "control"' in stored
+
+
+def _runs_table(db: Path) -> None:
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "CREATE TABLE runs (run_id TEXT PRIMARY KEY, started_at TEXT, ended_at TEXT, "
+        "config_path TEXT, loss REAL)"
+    )
+    conn.commit()
+    conn.close()
+
+
+def _stored(db: Path, run_id: str, column: str) -> str:
+    conn = sqlite3.connect(db)
+    value = conn.execute(
+        f"SELECT {column} FROM runs WHERE run_id = ?", (run_id,)
+    ).fetchone()[0]
+    conn.close()
+    return value
+
+
+def test_persist_copies_artifacts_per_run_so_reruns_cannot_overwrite(
+    tmp_path, monkeypatch, smoke_lab_config
+):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "lab").mkdir()
+    db = tmp_path / "lab" / "runs.sqlite"
+    _runs_table(db)
+    grid = smoke_lab_config.source.dir / "native-artifacts" / "compare-seed0.png"
+    grid.parent.mkdir(parents=True)
+    grid.write_bytes(b"first-run")
+
+    result = RunResult(ok=True, metrics={"loss": 0.1}, artifacts=[
+        {"kind": "sample_grid", "path": str(grid)},
+    ])
+    _persist_run_result(result, "run-a", Path("configs/x.yaml"), db_path=db)
+    grid.write_bytes(b"second-run")  # a re-run of the same parameters
+
+    [record] = json.loads(_stored(db, "run-a", "artifacts_json"))
+    copied = Path(record["path"])
+    assert copied == tmp_path / "lab" / "artifacts" / "run-a" / "sample_grid" / "compare-seed0.png"
+    assert copied.read_bytes() == b"first-run"
+    assert record["source_path"] == str(grid)
+    assert "missing" not in record
+
+
+def test_persist_copies_nested_observation_artifacts_and_dedupes_basenames(
+    tmp_path, monkeypatch, smoke_lab_config
+):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "lab").mkdir()
+    db = tmp_path / "lab" / "runs.sqlite"
+    _runs_table(db)
+    src = smoke_lab_config.source.dir
+    (src / "a").mkdir()
+    (src / "b").mkdir()
+    (src / "a" / "grid.png").write_bytes(b"arm-a")
+    (src / "b" / "grid.png").write_bytes(b"arm-b")
+
+    result = RunResult(ok=True, metrics={"loss": 0.1}, observations=[
+        {"name": "a", "dimensions": {}, "metrics": {"loss": 0.1},
+         "artifacts": [{"kind": "grid", "path": "a/grid.png"}]},
+        {"name": "b", "dimensions": {}, "metrics": {"loss": 0.2},
+         "artifacts": [{"kind": "grid", "path": "b/grid.png"}]},
+    ])
+    _persist_run_result(result, "run-b", Path("configs/x.yaml"), db_path=db)
+
+    observations = json.loads(_stored(db, "run-b", "observations_json"))
+    paths = [Path(o["artifacts"][0]["path"]) for o in observations]
+    assert [p.name for p in paths] == ["grid.png", "grid-1.png"]
+    assert all(p.parent == tmp_path / "lab" / "artifacts" / "run-b" / "grid" for p in paths)
+    assert [p.read_bytes() for p in paths] == [b"arm-a", b"arm-b"]
+    assert [o["artifacts"][0]["source_path"] for o in observations] == [
+        "a/grid.png", "b/grid.png",
+    ]
+
+
+def test_persist_marks_missing_or_outside_artifacts_and_keeps_the_row(
+    tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "lab").mkdir()
+    db = tmp_path / "lab" / "runs.sqlite"
+    _runs_table(db)
+    outside = tmp_path.parent / "outside-artifact.png"
+    outside.write_bytes(b"not ours")
+
+    result = RunResult(ok=True, metrics={"loss": 0.1}, artifacts=[
+        {"kind": "grid", "path": str(tmp_path / "never-written.png")},
+        {"kind": "grid", "path": str(outside)},
+    ])
+    _persist_run_result(result, "run-c", Path("configs/x.yaml"), db_path=db)
+
+    assert _stored(db, "run-c", "status") == "succeeded"
+    records = json.loads(_stored(db, "run-c", "artifacts_json"))
+    assert [r["missing"] for r in records] == [True, True]
+    assert [r["path"] for r in records] == [r["source_path"] for r in records]
+    assert not (tmp_path / "lab" / "artifacts").exists()

@@ -14,9 +14,15 @@ Workflow per call:
 
 Append-only log at lab/coder_log.jsonl with attempt outcomes. The Researcher
 reads recent failures to avoid re-proposing them.
+
+``autonomy.coder_mode: review`` replaces steps 4–8: the edit plan is applied
+in memory only, written as a unified diff plus a rationale under
+lab/patches/, and registered in state.json["pending_patches"] for the owner
+to apply or reject. source.dir is left untouched.
 """
 from __future__ import annotations
 
+import difflib
 import glob
 import json
 import os
@@ -41,13 +47,29 @@ from efferents.agents.state import (
     append_jsonl,
     notebook_append,
     now_iso,
+    open_blocks,
     parse_json_loose,
+    patches_dir,
     read_jsonl,
+    register_patch,
     retry_hint,
 )
 from efferents.exec import _subprocess_env
 
 MAX_LIT_CALLS_PER_PASS = 3
+CODER_MODES = ("auto", "review")
+
+
+def _coder_mode(cfg=None) -> str:
+    """``autonomy.coder_mode`` — ``auto`` applies and commits edits (legacy
+    behaviour), ``review`` only writes a patch for the owner. Read defensively:
+    ``LabConfig.Autonomy`` may not declare the field yet, in which case the
+    mode is ``auto``. Any other value is treated as ``review`` — a typo must
+    not widen the Coder's write permission."""
+    cfg = cfg or _lab.get_config()
+    raw = getattr(getattr(cfg, "autonomy", None), "coder_mode", "auto")
+    mode = str(raw or "auto").strip().lower()
+    return mode if mode == "auto" else "review"
 
 
 def _target_globs() -> list[str]:
@@ -178,6 +200,7 @@ class CoderResult:
     error: str | None = None
     smoke_stderr: str | None = None
     feasible: bool = True
+    patch_path: str | None = None  # review mode: the diff awaiting the owner
 
 
 # -----------------------------------------------------------------------------
@@ -393,26 +416,57 @@ def _restore(snapshot: dict[str, str | None], repo_root: Path) -> None:
             p.write_text(content)
 
 
+def _replaced(text: str, e: Edit) -> str:
+    """``text`` after one edit; raises ValueError when the edit is not
+    uniquely applicable."""
+    if e.old_string == e.new_string:
+        raise ValueError(f"old_string == new_string in {e.file_path}")
+    if e.old_string not in text:
+        raise ValueError(
+            f"old_string not found in {e.file_path} "
+            f"(first 80 chars: {e.old_string[:80]!r})"
+        )
+    if text.count(e.old_string) > 1:
+        raise ValueError(
+            f"old_string appears {text.count(e.old_string)} times in {e.file_path}; "
+            "needs more context to be unique"
+        )
+    return text.replace(e.old_string, e.new_string, 1)
+
+
 def _apply_edits(edits: list[Edit], repo_root: Path) -> None:
     """Raises on any edit failure (caller must restore snapshot)."""
     for e in edits:
         p = repo_root / e.file_path
         if not p.exists():
             raise FileNotFoundError(f"target file does not exist: {e.file_path}")
-        text = p.read_text()
-        if e.old_string == e.new_string:
-            raise ValueError(f"old_string == new_string in {e.file_path}")
-        if e.old_string not in text:
-            raise ValueError(
-                f"old_string not found in {e.file_path} "
-                f"(first 80 chars: {e.old_string[:80]!r})"
+        p.write_text(_replaced(p.read_text(), e))
+
+
+def _preview_changes(
+    edits: list[Edit], new_files: list[NewFile], repo_root: Path
+) -> dict[str, tuple[str | None, str]]:
+    """``{file_path: (content before, content after)}`` for the plan, computed
+    in memory with the same validation as ``_write_new_files`` +
+    ``_apply_edits`` (edits apply sequentially, so a later edit sees an
+    earlier one). ``before`` is None for a new file. Nothing is written."""
+    out: dict[str, tuple[str | None, str]] = {}
+    for nf in new_files:
+        if (repo_root / nf.file_path).exists():
+            raise FileExistsError(
+                f"new_file {nf.file_path} already exists; use an edit instead"
             )
-        if text.count(e.old_string) > 1:
-            raise ValueError(
-                f"old_string appears {text.count(e.old_string)} times in {e.file_path}; "
-                "needs more context to be unique"
-            )
-        p.write_text(text.replace(e.old_string, e.new_string, 1))
+        out[nf.file_path] = (None, nf.content)
+    for e in edits:
+        if e.file_path in out:
+            before, current = out[e.file_path]
+        else:
+            p = repo_root / e.file_path
+            if not p.exists():
+                raise FileNotFoundError(f"target file does not exist: {e.file_path}")
+            before = current = p.read_text()
+        out[e.file_path] = (before, _replaced(current, e))
+    return out
 
 
 def _extract_new_files(plan: dict[str, Any], repo_root: Path | None = None) -> list[NewFile]:
@@ -626,6 +680,120 @@ def _git_commit(repo_root: Path, summary: str, name: str, files: list[str]) -> s
 
 
 # -----------------------------------------------------------------------------
+# Review mode: unified diff + rationale for the owner, nothing applied
+# -----------------------------------------------------------------------------
+
+
+def _patch_relpath(file_path: str, repo_root: Path) -> str:
+    """Path as it appears in the diff header: relative to the repo root when
+    the file lives inside it (``git apply -p1`` from the root), else the
+    absolute path without its leading slash."""
+    resolved = Path(file_path).resolve()
+    try:
+        return resolved.relative_to(repo_root.resolve()).as_posix()
+    except ValueError:
+        return resolved.as_posix().lstrip("/")
+
+
+def _unified_diff(preview: dict[str, tuple[str | None, str]], repo_root: Path) -> str:
+    chunks = []
+    for file_path in sorted(preview):
+        before, after = preview[file_path]
+        rel = _patch_relpath(file_path, repo_root)
+        chunks.append("".join(difflib.unified_diff(
+            (before or "").splitlines(keepends=True),
+            after.splitlines(keepends=True),
+            fromfile="/dev/null" if before is None else f"a/{rel}",
+            tofile=f"b/{rel}",
+        )))
+    return "".join(chunks)
+
+
+def _write_review_patch(
+    *,
+    paths: LabPaths,
+    proposal: dict[str, str],
+    plan: dict[str, Any],
+    preview: dict[str, tuple[str | None, str]],
+    repo_root: Path,
+) -> tuple[Path, Path]:
+    """Write ``<lab_root>/patches/<ts>-<slug>.diff`` + ``.md`` and register
+    the patch as pending. Returns (diff_path, rationale_path)."""
+    ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    slug = re.sub(r"[^a-z0-9-]+", "-", proposal["name"].lower()).strip("-")[:48] or "patch"
+    pdir = patches_dir(paths.root)
+    pdir.mkdir(parents=True, exist_ok=True)
+    diff_path = pdir / f"{ts}-{slug}.diff"
+    n = 1
+    while diff_path.exists():
+        diff_path = pdir / f"{ts}-{slug}-{n}.diff"
+        n += 1
+    md_path = diff_path.with_suffix(".md")
+    diff_path.write_text(_unified_diff(preview, repo_root))
+
+    student_id = proposal.get("student_id")
+    # The block this patch answers: the student's open block (at most one).
+    block = next(iter(open_blocks(paths.root, student_id=student_id)), None) if student_id else None
+    files = sorted(preview)
+    cfg = _lab.get_config()
+    smoke = cfg.executor.smoke_command or cfg.executor.run_command
+    md = [
+        f"# Coder patch awaiting owner review: {proposal['name']}",
+        "",
+        f"- **Written**: {ts}",
+        f"- **Student**: {student_id or '(unknown)'}",
+        f"- **Diff**: `{diff_path}`",
+        f"- **Files**: {', '.join(f'`{_patch_relpath(f, repo_root)}`' for f in files)}",
+        "",
+        "## What it fixes",
+        "",
+        f"**Summary**: {plan.get('summary') or '(none)'}",
+        "",
+        f"**Rationale**: {plan.get('rationale') or '(none)'}",
+        "",
+        f"**Proposal — what**: {proposal.get('what') or '(none)'}",
+        "",
+        f"**Proposal — why**: {proposal.get('why') or '(none)'}",
+        "",
+        "## Infrastructure block addressed",
+        "",
+        (
+            f"`{block['id']}` — {block['summary']} (evidence: "
+            f"{', '.join(block.get('evidence') or []) or 'none cited'})"
+            if block else "(no open blocked_on_infrastructure record for this student)"
+        ),
+        "",
+        "## Tests run",
+        "",
+        "None — review mode does not execute the lab's smoke command and does "
+        "not touch source.dir. After applying, run:",
+        "",
+        f"    {smoke.format(config_path=str(cfg.executor.config_template))}",
+        "",
+        f"Smoke expectation from the plan: {plan.get('verifies_change') or '(none stated)'}",
+        "",
+        "## Apply / reject",
+        "",
+        f"    git apply {diff_path}",
+        "",
+        "then mark it via `efferents.agents.state.mark_patch(lab_root, path, "
+        "'applied' | 'rejected')`.",
+        "",
+    ]
+    md_path.write_text("\n".join(md))
+    register_patch(
+        paths.root, path=diff_path, rationale_path=md_path, name=proposal["name"],
+        student_id=student_id, blocked_id=block["id"] if block else None,
+        files=[_patch_relpath(f, repo_root) for f in files],
+    )
+    notebook_append(
+        paths.notebook,
+        f"## {now_iso()} — Coder patch awaiting owner review: {diff_path}\n",
+    )
+    return diff_path, md_path
+
+
+# -----------------------------------------------------------------------------
 # Top-level entrypoint
 # -----------------------------------------------------------------------------
 
@@ -637,8 +805,11 @@ def implement_proposal(
     budget: BudgetTracker,
     client: anthropic.Anthropic,
     repo_root: Path | None = None,
+    mode: str | None = None,
 ) -> CoderResult:
+    """``mode`` overrides ``autonomy.coder_mode`` (``auto`` | ``review``)."""
     repo_root = repo_root or Path.cwd()
+    mode = _coder_mode() if mode is None else ("auto" if mode == "auto" else "review")
     started = now_iso()
     t0 = time.monotonic()
 
@@ -712,15 +883,14 @@ def implement_proposal(
     new_paths = {nf.file_path for nf in new_files}
     file_paths = sorted(edit_paths | new_paths)
 
-    snapshot = _snapshot(file_paths, repo_root)
-
+    # Validate the plan in memory first (same checks as the on-disk apply), so
+    # review mode never writes to source.dir and auto mode only touches files
+    # once the whole plan is known to apply.
     try:
-        _write_new_files(new_files, repo_root)
-        _apply_edits(edits, repo_root)
+        preview = _preview_changes(edits, new_files, repo_root)
     except Exception as apply_err:
         # Single retry with explicit error feedback — give the model one chance
         # to fix its own non-unique-old_string or whitespace mismatch.
-        _restore(snapshot, repo_root)
         try:
             retry_proposal = dict(proposal)
             retry_proposal["_apply_error"] = str(apply_err)
@@ -747,24 +917,48 @@ def implement_proposal(
             new_files2 = _extract_new_files(plan2, repo_root)
             if not edits2 and not new_files2:
                 raise ValueError("retry returned empty edits")
-            file_paths2 = sorted(
-                {e.file_path for e in edits2} | {nf.file_path for nf in new_files2}
-            )
-            snapshot = _snapshot(file_paths2, repo_root)
-            _write_new_files(new_files2, repo_root)
-            _apply_edits(edits2, repo_root)
+            preview = _preview_changes(edits2, new_files2, repo_root)
             edits = edits2
             new_files = new_files2
-            file_paths = file_paths2
+            file_paths = sorted(preview)
             plan = plan2
         except Exception as retry_err:
-            _restore(snapshot, repo_root)
             result = CoderResult(
                 ok=False, name=proposal["name"],
                 error=f"apply failed (after retry): first={apply_err} retry={retry_err}",
             )
             _log(paths, started, proposal, result, plan=plan, duration_seconds=time.monotonic() - t0)
             return result
+
+    if mode == "review":
+        diff_path, _md_path = _write_review_patch(
+            paths=paths, proposal=proposal, plan=plan, preview=preview,
+            repo_root=repo_root,
+        )
+        # ok=False: nothing landed in source.dir. The orchestrator's "code
+        # committed" notification must not fire; `patch_path` says what did.
+        result = CoderResult(
+            ok=False,
+            name=proposal["name"],
+            summary=plan.get("summary"),
+            files_changed=file_paths,
+            error=f"patch awaiting owner review: {diff_path}",
+            patch_path=str(diff_path),
+        )
+        _log(paths, started, proposal, result, plan=plan, duration_seconds=time.monotonic() - t0)
+        return result
+
+    snapshot = _snapshot(file_paths, repo_root)
+    try:
+        _write_new_files(new_files, repo_root)
+        _apply_edits(edits, repo_root)
+    except Exception as apply_err:  # the preview passed; a race on disk
+        _restore(snapshot, repo_root)
+        result = CoderResult(
+            ok=False, name=proposal["name"], error=f"apply failed: {apply_err}",
+        )
+        _log(paths, started, proposal, result, plan=plan, duration_seconds=time.monotonic() - t0)
+        return result
 
     smoke_ok, smoke_out = run_smoke(repo_root)
     if not smoke_ok:
@@ -824,6 +1018,7 @@ def _log(
         "summary": result.summary,
         "files_changed": result.files_changed,
         "commit_sha": result.commit_sha,
+        "patch_path": result.patch_path,
         "error": result.error,
         "smoke_stderr": (result.smoke_stderr[-1500:] if result.smoke_stderr else None),
         "duration_seconds": duration_seconds,
@@ -833,12 +1028,13 @@ def _log(
     }
     append_jsonl(paths.root / "coder_log.jsonl", record)
 
-    status = "✓" if result.ok else "✗"
+    status = "✓" if result.ok else ("⏸" if result.patch_path else "✗")
     notebook_append(
         paths.notebook,
         f"## {now_iso()} — Coder {status} {result.name}\n\n"
         f"**Summary**: {result.summary or '(none)'}\n\n"
         f"**Files**: `{result.files_changed or []}`\n\n"
         + (f"**Commit**: `{result.commit_sha}`\n\n" if result.commit_sha else "")
-        + (f"**Error**: {result.error}\n\n" if result.error else "")
+        + (f"**Patch**: `{result.patch_path}`\n\n" if result.patch_path else "")
+        + (f"**Error**: {result.error}\n\n" if result.error and not result.patch_path else "")
     )

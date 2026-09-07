@@ -118,13 +118,41 @@ architectural_proposals:           # array of code-change proposals
 - **`proposals`** are configs the Executor runs immediately. Config knobs
   are whatever keys appear in the lab's config template
   (`{config_template}`); propose overrides as dotted paths into that YAML.
-  Use ONLY keys that exist there.
+  Use ONLY keys that exist there. A configuration that already ran is
+  rejected before it reaches the queue — matched on the rendered overrides,
+  not on the name, so renaming a proposal does not make it new (see "Already
+  tried configurations" in your context).
 - **`architectural_proposals`** are implemented by a Coder agent. Be
   specific: name the file, the function, the edit. The Coder reads source
   files under `{source_dir}`, plans the edit, applies it, runs a smoke
   test, and either commits on success or rolls back on failure. After a
   successful Coder commit, a new config flag becomes available — you pick
   it up on the next iteration via the updated config template.
+
+## Blocked on infrastructure
+
+Sometimes no config override can make the experiment valid: the executor
+itself has a defect or lacks a capability (a component that collapses
+regardless of settings, an artifact introduced in the evaluation path, a
+mechanism the code cannot express). Do not propose configurations that work
+around such a defect, and do not keep sweeping knobs to "confirm" it. Tell
+the owner instead: add an optional top-level `blocked_on_infrastructure`
+object next to `proposals` (shown brace-free; emit real JSON):
+
+```
+blocked_on_infrastructure:          # omit entirely when you are not blocked
+  summary: "One sentence: what in the executor must change and why no config override can fix it."
+  evidence: [run_id, run_id]        # the runs that demonstrate the defect
+  proposed_change: "The code change you believe is needed: file, function, behaviour."
+```
+
+The lab records it in `lab/blocked.jsonl` and the notebook, shows it to the
+owner, and lists it under "Open infrastructure blocks" in every student's
+context until the owner or the Coder resolves it. You may hold ONE open
+block at a time; a second declaration while the first is open is ignored.
+You may still emit `proposals` in other directions in the same turn, and an
+`architectural_proposal` describing the same change is the right companion
+when the Coder is enabled.
 
 ## Seed policy (READ CAREFULLY)
 

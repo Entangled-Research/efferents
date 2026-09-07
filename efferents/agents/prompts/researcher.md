@@ -165,7 +165,9 @@ work that are still underexplored.
 
 - **Theory before HPs**: cite a principle or don't propose.
 - **1–3 `proposals`** per call. Quality over quantity.
-- **No repeats**: don't propose configs that already ran (check `config_hash`).
+- **No repeats**: don't propose configs that already ran. Duplicates are
+  matched on the rendered overrides (the semantic config hash), not on the
+  proposal name — renaming does not make a configuration new.
 - **Cheap-first**: pilot at a cheap data scale with 1 seed before promoting.
 - Promoted configs should set enough eval samples to produce visualizations.
 

@@ -16,6 +16,7 @@ import hashlib
 import math
 import os
 import re
+import shutil
 import signal
 import sqlite3
 import subprocess
@@ -46,6 +47,8 @@ _SAFE_BASE_ENV = (
     "VIRTUAL_ENV", "PYTHONPATH", "DYLD_LIBRARY_PATH", "LD_LIBRARY_PATH",
 )
 _COL_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+_ARTIFACT_KIND_RE = re.compile(r"[^A-Za-z0-9_.-]+")
+_ARTIFACT_MAX_BYTES = 256 * 1024 * 1024
 
 
 def _subprocess_env(env_passthrough: tuple[str, ...]) -> dict[str, str]:
@@ -237,6 +240,157 @@ def _execute_run(config_path: Path, *, smoke: bool = False) -> RunResult:
     )
 
 
+def _artifact_roots(lab_root: Path) -> tuple[Path, ...]:
+    roots = [Path(lab_root).resolve()]
+    try:
+        roots.append(Path(_lab.get_config().source.dir).resolve())
+    except RuntimeError:
+        pass
+    return tuple(roots)
+
+
+def _locate_artifact(value: str, roots: tuple[Path, ...]) -> Path | None:
+    """Resolve an executor-reported path to an existing file under a root."""
+    raw = Path(value).expanduser()
+    candidates = (raw,) if raw.is_absolute() else tuple(root / raw for root in roots)
+    for candidate in candidates:
+        resolved = candidate.resolve()
+        if resolved.is_file() and any(root in resolved.parents for root in roots):
+            return resolved
+    return None
+
+
+def _preserve_artifacts(
+    artifacts: list, run_id: str, lab_root: Path, *, _state: dict | None = None
+) -> list:
+    """Copy each artifact file into ``<lab_root>/artifacts/<run_id>/<kind>/``.
+
+    Executors key their outputs by experiment parameters, so a re-run of the
+    same parameters overwrites the file an earlier ledger row points at. The
+    stored ``path`` is rewritten to the per-run copy and the executor's path is
+    kept as ``source_path``. Records for unreadable files are kept and marked
+    rather than failing the run.
+    """
+    state = _state if _state is not None else {"copied": {}, "taken": set()}
+    roots = _artifact_roots(lab_root)
+    preserved: list = []
+    for artifact in artifacts:
+        if not isinstance(artifact, dict) or not isinstance(artifact.get("path"), str):
+            preserved.append(artifact)
+            continue
+        record = dict(artifact)
+        record.setdefault("source_path", artifact["path"])
+        source = _locate_artifact(artifact["path"], roots)
+        if source is None:
+            record["missing"] = True
+        elif source in state["copied"]:
+            record["path"] = str(state["copied"][source])
+        elif source.stat().st_size > _ARTIFACT_MAX_BYTES:
+            record["skipped_large"] = True
+        else:
+            kind = _ARTIFACT_KIND_RE.sub("_", str(artifact.get("kind") or "")).strip("._")
+            dest_dir = Path(lab_root) / "artifacts" / run_id / (kind or "artifact")
+            dest = dest_dir / source.name
+            n = 1
+            while dest in state["taken"] or dest.exists():
+                dest = dest_dir / f"{source.stem}-{n}{source.suffix}"
+                n += 1
+            try:
+                dest_dir.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source, dest)
+            except OSError as e:
+                print(f"warning: could not preserve artifact {source}: {e}")
+                record["missing"] = True
+            else:
+                state["taken"].add(dest)
+                state["copied"][source] = dest
+                record["path"] = str(dest)
+        preserved.append(record)
+    return preserved
+
+
+def _preserve_run_artifacts(result: RunResult, run_id: str, lab_root: Path) -> None:
+    state: dict = {"copied": {}, "taken": set()}
+    result.artifacts = _preserve_artifacts(
+        result.artifacts, run_id, lab_root, _state=state
+    )
+    for observation in result.observations:
+        if isinstance(observation, dict) and isinstance(observation.get("artifacts"), list):
+            observation["artifacts"] = _preserve_artifacts(
+                observation["artifacts"], run_id, lab_root, _state=state
+            )
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _observation_identity(observation: dict) -> tuple[str, str]:
+    """(identity, label): observations are distinct by name *and* dimensions;
+    the label is what the flag reports (name, else the dimensions)."""
+    name = observation.get("name")
+    dims = json.dumps(observation.get("dimensions") or {}, sort_keys=True)
+    label = str(name) if name else dims
+    return json.dumps([name, dims]), label
+
+
+def _duplicate_arm_artifacts(observations: list) -> list[dict]:
+    """Same-``kind`` artifacts whose preserved files are byte-identical across
+    different observations. An arm that reproduces another arm's outputs
+    exactly (a collapsed prior, a mislabelled control) must not score as a win
+    on the strength of those outputs; the caller records the finding so
+    dashboards and metric constraints can gate on it. Identical files within
+    a single observation are not a finding.
+    """
+    # (kind, sha256) -> {identity: label}, in first-seen order
+    seen: dict[tuple[str, str], dict[str, str]] = {}
+    digests: dict[Path, str] = {}
+    for observation in observations:
+        if not isinstance(observation, dict):
+            continue
+        identity, label = _observation_identity(observation)
+        for artifact in observation.get("artifacts") or []:
+            if not isinstance(artifact, dict) or not isinstance(artifact.get("path"), str):
+                continue
+            if artifact.get("missing") or artifact.get("skipped_large"):
+                continue
+            file = Path(artifact["path"])
+            if not file.is_file():
+                continue
+            digest = digests.get(file)
+            if digest is None:
+                digest = digests[file] = _sha256_file(file)
+            key = (str(artifact.get("kind") or ""), digest)
+            seen.setdefault(key, {}).setdefault(identity, label)
+    return [
+        {"kind": kind, "observations": list(labels.values()), "sha256": digest}
+        for (kind, digest), labels in seen.items()
+        if len(labels) > 1
+    ]
+
+
+def _note_duplicate_artifacts(lab_root: Path, run_id: str, duplicates: list[dict]) -> None:
+    """One notebook line per run so the finding is visible in the narrative
+    that the Analyst and the funder read (never created for a bare ledger)."""
+    notebook = Path(lab_root) / "lab_notebook.md"
+    if not notebook.exists():
+        return
+    from efferents.agents.state import notebook_append, now_iso  # noqa: PLC0415
+    detail = "; ".join(
+        f"kind={d['kind'] or '?'} observations={d['observations']} sha256={d['sha256'][:12]}"
+        for d in duplicates
+    )
+    notebook_append(
+        notebook,
+        f"## {now_iso()} — run {run_id}: {len(duplicates)} artifact(s) byte-identical "
+        f"across observations (duplicate_arm_artifacts={len(duplicates)}) — {detail}\n",
+    )
+
+
 def _persist_run_result(
     result: RunResult,
     run_id: str,
@@ -259,12 +413,30 @@ def _persist_run_result(
     """
     db_path = Path(db_path) if db_path is not None else Path("lab/runs.sqlite")
     proposal = proposal or {}
+    # runs.sqlite sits directly under the lab root (see LabPaths), so the
+    # per-run artifact store lives beside it without extra plumbing.
+    try:
+        _preserve_run_artifacts(result, run_id, db_path.parent)
+    except Exception as e:  # noqa: BLE001 - an artifact must never sink the row
+        print(f"warning: could not preserve run artifacts: {e}")
+    # Post-preserve integrity flags. Byte-identical artifacts across arms are
+    # evidence about the run, not a failure of it: flag, never fail.
+    flags: dict = {}
+    try:
+        duplicates = _duplicate_arm_artifacts(result.observations)
+        if duplicates:
+            flags["duplicate_artifacts"] = duplicates
+            _note_duplicate_artifacts(db_path.parent, run_id, duplicates)
+    except Exception as e:  # noqa: BLE001 - a flag check must never sink the row
+        print(f"warning: could not check run artifacts for duplicates: {e}")
+        duplicates = []
     cols = [
         "run_id", "started_at", "ended_at", "config_path",
         "campaign_id", "researcher_mode", "student_id", "status",
         "exit_code", "error", "stdout_path", "stderr_path",
-        "config_yaml", "config_hash", "artifacts_json", "raw_metrics_json",
-        "observations_json",
+        "config_yaml", "config_hash", "config_hash_semantic",
+        "artifacts_json", "raw_metrics_json",
+        "observations_json", "flags_json", "duplicate_arm_artifacts",
         "seed",
     ]
     now = datetime.now(timezone.utc).isoformat()
@@ -272,6 +444,12 @@ def _persist_run_result(
         "sha256:" + hashlib.sha256(config_yaml.encode()).hexdigest()
         if config_yaml is not None
         else None
+    )
+    # Same YAML with the proposal-identity keys (run.name, campaign, ...)
+    # stripped, so a renamed re-proposal of the same overrides is detectable.
+    from efferents.agents.state import semantic_config_hash  # noqa: PLC0415
+    config_hash_semantic = (
+        semantic_config_hash(config_yaml) if config_yaml is not None else None
     )
     vals: list = [
         run_id,
@@ -288,9 +466,12 @@ def _persist_run_result(
         str(stderr_path) if stderr_path else None,
         config_yaml,
         config_hash,
+        config_hash_semantic,
         json.dumps(result.artifacts),
         json.dumps(result.metrics or {}),
         json.dumps(result.observations),
+        json.dumps(flags),
+        len(duplicates),
         seed,
     ]
     if result.ok:
@@ -332,8 +513,10 @@ def _persist_run_result(
                 "exit_code": "INTEGER", "error": "TEXT",
                 "stdout_path": "TEXT", "stderr_path": "TEXT",
                 "config_yaml": "TEXT", "config_hash": "TEXT",
+                "config_hash_semantic": "TEXT",
                 "artifacts_json": "TEXT", "raw_metrics_json": "TEXT",
                 "observations_json": "TEXT",
+                "flags_json": "TEXT", "duplicate_arm_artifacts": "INTEGER",
                 "seed": "INTEGER", "git_commit": "TEXT",
                 "duration_seconds": "REAL",
             }

@@ -15,6 +15,14 @@ half-finished change that needs another iteration to fix. The smoke command
 must still emit a JSON metrics object on stdout after your change — if it
 stops emitting metrics, the change is treated as a failure and rolled back.
 
+When the lab runs with `autonomy.coder_mode: review`, steps 2–6 are replaced:
+your plan is rendered as a unified diff plus a rationale under `lab/patches/`
+for the owner to apply or reject, nothing is written to the source tree, and
+the smoke command is NOT run. Your output is identical in both modes — emit
+the same complete edit plan; do not loosen it because a human will read it.
+In review mode `verifies_change` is what the owner reads to decide, so state
+plainly what the smoke run would and would not exercise.
+
 ## Your inputs
 
 - The architectural proposal (name, principle, what, why).

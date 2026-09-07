@@ -183,6 +183,240 @@ def queue_size(path: Path) -> int:
     return sum(1 for ln in path.read_text().splitlines() if ln.strip())
 
 
+# ---------- Proposal deduplication ----------
+#
+# Students in one lab re-propose configurations that already ran. The ledger
+# keys each run by ``config_hash`` (exec._persist_run_result), so a proposal
+# can be checked before it reaches the queue by rendering it exactly the way
+# the Executor will and hashing the same YAML.
+
+
+def load_proposal_base_config() -> dict[str, Any] | None:
+    """The active lab's config template as a dict, or None when no LabConfig
+    is active or the template cannot be read (dedup is then skipped)."""
+    from efferents import lab as _lab  # noqa: PLC0415 - lab imports state lazily
+    from efferents.agents.executor import load_default_config  # noqa: PLC0415
+    import yaml  # noqa: PLC0415
+    try:
+        template = _lab.get_config().executor.config_template
+    except RuntimeError:
+        return None
+    try:
+        return load_default_config(template) or {}
+    except (OSError, yaml.YAMLError):
+        return None
+
+
+def render_proposal_config(
+    proposal: dict[str, Any], *, base_config: dict[str, Any] | None = None
+) -> str | None:
+    """The YAML the Executor would write for ``proposal`` — same override
+    composition, ``run.name`` stamp and sorted dump as ``executor.execute``.
+    Returns None when the base config is unavailable."""
+    from efferents.agents.executor import apply_overrides  # noqa: PLC0415
+    import yaml  # noqa: PLC0415
+    if base_config is None:
+        base_config = load_proposal_base_config()
+        if base_config is None:
+            return None
+    overrides = dict(proposal.get("config_overrides", {}) or {})
+    if proposal.get("campaign_id"):
+        overrides["run.campaign_id"] = proposal["campaign_id"]
+    if proposal.get("mode"):
+        overrides["run.researcher_mode"] = proposal["mode"]
+    if proposal.get("student_id"):
+        overrides["run.student_id"] = proposal["student_id"]
+    rendered = apply_overrides(base_config, overrides)
+    rendered.setdefault("run", {})["name"] = proposal.get("name", "unnamed")
+    return yaml.safe_dump(rendered, sort_keys=True)
+
+
+def proposal_config_hash(
+    proposal: dict[str, Any], *, base_config: dict[str, Any] | None = None
+) -> str | None:
+    """``runs.config_hash`` for the config ``proposal`` would render to,
+    computed as ``exec._persist_run_result`` does (``sha256:`` + hex digest of
+    the YAML). The proposal name is part of the rendered config, so a renamed
+    re-proposal is a different hash; the researcher's "already tried" prompt
+    block covers that case. Returns None when the base config is unavailable.
+    """
+    import hashlib  # noqa: PLC0415
+    config_yaml = render_proposal_config(proposal, base_config=base_config)
+    if config_yaml is None:
+        return None
+    return "sha256:" + hashlib.sha256(config_yaml.encode()).hexdigest()
+
+
+# Keys the Executor stamps onto a rendered config that identify the proposal
+# rather than the experiment. Stripping them before hashing gives the
+# *semantic* hash: two proposals with identical overrides but different
+# names / campaigns / students / notes collide on it.
+SEMANTIC_IDENTITY_KEYS: tuple[str, ...] = (
+    "run.name", "run.campaign_id", "run.researcher_mode", "run.student_id",
+    "logging.notes",
+)
+
+
+def semantic_config_hash(config_yaml: str) -> str | None:
+    """``sha256:`` digest of ``config_yaml`` with ``SEMANTIC_IDENTITY_KEYS``
+    removed (re-dumped sorted). Persisted as ``runs.config_hash_semantic``
+    and used by the Researcher's dedup gate. None for unparseable YAML."""
+    import hashlib  # noqa: PLC0415
+    import yaml  # noqa: PLC0415
+    try:
+        rendered = yaml.safe_load(config_yaml)
+    except yaml.YAMLError:
+        return None
+    if not isinstance(rendered, dict):
+        return None
+    for dotted in SEMANTIC_IDENTITY_KEYS:
+        *parents, leaf = dotted.split(".")
+        chain: list[tuple[dict, str]] = []  # (container, key) down to the leaf's parent
+        cursor: Any = rendered
+        for k in parents:
+            nxt = cursor.get(k) if isinstance(cursor, dict) else None
+            if not isinstance(nxt, dict):
+                cursor = None
+                break
+            chain.append((cursor, k))
+            cursor = nxt
+        if isinstance(cursor, dict):
+            cursor.pop(leaf, None)
+        # Prune parents left (or found) empty, so `logging: {notes: x}` and a
+        # config with no `logging` section at all hash the same.
+        for container, k in reversed(chain):
+            if isinstance(container.get(k), dict) and not container[k]:
+                del container[k]
+            else:
+                break
+    text = yaml.safe_dump(rendered, sort_keys=True)
+    return "sha256:" + hashlib.sha256(text.encode()).hexdigest()
+
+
+def proposal_semantic_hash(
+    proposal: dict[str, Any], *, base_config: dict[str, Any] | None = None
+) -> str | None:
+    """Semantic hash for the config ``proposal`` would render to (see
+    ``semantic_config_hash``). None when the base config is unavailable."""
+    config_yaml = render_proposal_config(proposal, base_config=base_config)
+    if config_yaml is None:
+        return None
+    return semantic_config_hash(config_yaml)
+
+
+def succeeded_run_for_semantic_hash(
+    db_path: Path, semantic_hash: str
+) -> dict[str, Any] | None:
+    """The most recent succeeded ledger row whose ``config_hash_semantic``
+    column equals ``semantic_hash``. Rows written before the column existed
+    are covered by ``semantic_hash_index`` instead."""
+    if not db_path.exists():
+        return None
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(runs)")}
+        if "config_hash_semantic" not in cols:
+            return None
+        where = "config_hash_semantic = ?"
+        if "status" in cols:
+            where += " AND status = 'succeeded'"
+        row = conn.execute(
+            f"SELECT * FROM runs WHERE {where} ORDER BY started_at DESC LIMIT 1",
+            (semantic_hash,),
+        ).fetchone()
+    except sqlite3.OperationalError:
+        return None
+    finally:
+        conn.close()
+    return dict(row) if row is not None else None
+
+
+def semantic_hash_index(db_path: Path, *, n: int = 200) -> dict[str, dict[str, Any]]:
+    """``{semantic_hash: row}`` for the last ``n`` succeeded rows that have no
+    ``config_hash_semantic`` value (pre-column rows), recomputed from their
+    stored ``config_yaml``. Callers compute this once per step and reuse it;
+    the most recent row wins per hash."""
+    if not db_path.exists():
+        return {}
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(runs)")}
+        if "config_yaml" not in cols:
+            return {}
+        clauses = ["config_yaml IS NOT NULL"]
+        if "config_hash_semantic" in cols:
+            clauses.append("config_hash_semantic IS NULL")
+        if "status" in cols:
+            clauses.append("status = 'succeeded'")
+        rows = conn.execute(
+            f"SELECT * FROM runs WHERE {' AND '.join(clauses)} "
+            f"ORDER BY started_at DESC LIMIT ?",
+            (n,),
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return {}
+    finally:
+        conn.close()
+    out: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        h = semantic_config_hash(row["config_yaml"])
+        if h is not None:
+            out.setdefault(h, dict(row))
+    return out
+
+
+def succeeded_run_for_hash(db_path: Path, config_hash: str) -> dict[str, Any] | None:
+    """The most recent succeeded ledger row with ``config_hash``, or None.
+    Failed attempts do not count: retrying a crashed config is legitimate."""
+    if not db_path.exists():
+        return None
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(runs)")}
+        if "config_hash" not in cols:
+            return None
+        where = "config_hash = ?"
+        if "status" in cols:
+            where += " AND status = 'succeeded'"
+        row = conn.execute(
+            f"SELECT * FROM runs WHERE {where} ORDER BY started_at DESC LIMIT 1",
+            (config_hash,),
+        ).fetchone()
+    except sqlite3.OperationalError:
+        return None
+    finally:
+        conn.close()
+    return dict(row) if row is not None else None
+
+
+def queued_config_hashes(
+    queue_path: Path,
+    *,
+    base_config: dict[str, Any] | None = None,
+    semantic: bool = False,
+) -> dict[str, str]:
+    """``{config_hash: proposal name}`` for proposals waiting in the queue or
+    claimed in ``inflight.json`` — work that is about to run and must not be
+    proposed a second time. ``semantic=True`` keys by the semantic hash."""
+    hash_fn = proposal_semantic_hash if semantic else proposal_config_hash
+    out: dict[str, str] = {}
+    for path in (queue_path, queue_path.with_name("inflight.json")):
+        try:
+            queued = read_jsonl(path)
+        except json.JSONDecodeError:
+            continue
+        for proposal in queued:
+            if not isinstance(proposal, dict):
+                continue
+            h = hash_fn(proposal, base_config=base_config)
+            if h is not None:
+                out.setdefault(h, str(proposal.get("name") or "?"))
+    return out
+
+
 def read_context(context_dir: str | Path = "context") -> dict[str, str]:
     """Load human-curated context files used by Researcher / Analyst prompts."""
     cd = Path(context_dir)
@@ -204,7 +438,20 @@ def load_state(path: Path) -> dict[str, Any]:
 
 
 def save_state(path: Path, state: dict[str, Any]) -> None:
+    # Mirror keys derived from file-backed ledgers beside state.json. Agents
+    # load state at the start of a step and save it at the end; refreshing
+    # here keeps the mirrors current even when a ledger changed in between
+    # (a block recorded mid-step, a patch registered while the orchestrator
+    # holds a stale dict). The ledgers stay the source of truth.
+    _refresh_mirrors(path.parent, state)
     _atomic_write_text(path, json.dumps(state, indent=2))
+
+
+def _refresh_mirrors(lab_root: Path, state: dict[str, Any]) -> None:
+    if blocked_path(lab_root).exists():
+        state["blocked_on_infrastructure"] = open_blocks(lab_root)
+    if _patch_ledger(lab_root).exists():
+        state["pending_patches"] = pending_patches(lab_root)
 
 
 def _atomic_write_text(path: Path, text: str) -> None:
@@ -506,3 +753,180 @@ def campaign_stale_open(
     finally:
         conn.close()
     return [dict(r) for r in rows]
+
+
+# ---------- Blocked on infrastructure ----------
+#
+# A student whose experiment cannot be made valid by config knobs alone can
+# declare that the executor itself needs a code change. Records live in
+# lab/blocked.jsonl (one JSON per line, rewritten in place when resolved) and
+# the open set is mirrored into state.json["blocked_on_infrastructure"] for
+# the dashboard / status views.
+
+BLOCKED_FILE = "blocked.jsonl"
+
+
+def blocked_path(lab_root: Path) -> Path:
+    return Path(lab_root) / BLOCKED_FILE
+
+
+def _sync_blocked_state(lab_root: Path) -> None:
+    state_path = Path(lab_root) / "state.json"
+    state = load_state(state_path)
+    state["blocked_on_infrastructure"] = open_blocks(lab_root)
+    save_state(state_path, state)
+
+
+def open_blocks(lab_root: Path, *, student_id: str | None = None) -> list[dict[str, Any]]:
+    """Unresolved blocks, oldest first; optionally for one student."""
+    try:
+        records = read_jsonl(blocked_path(lab_root))
+    except json.JSONDecodeError:
+        return []
+    return [
+        r for r in records
+        if isinstance(r, dict) and not r.get("resolved")
+        and (student_id is None or r.get("student_id") == student_id)
+    ]
+
+
+def record_blocked(
+    lab_root: Path,
+    *,
+    student_id: str,
+    summary: str,
+    evidence: list[str] | None = None,
+    proposed_change: str = "",
+    ts: str | None = None,
+) -> dict[str, Any] | None:
+    """Append one open block for ``student_id``. At most one open block per
+    student: returns None (and writes nothing) while one is already open."""
+    import uuid  # noqa: PLC0415
+    if open_blocks(lab_root, student_id=student_id):
+        return None
+    record = {
+        "id": "blk-" + uuid.uuid4().hex[:8],
+        "ts": ts or now_iso(),
+        "student_id": student_id,
+        "summary": " ".join(str(summary).split())[:500],
+        "evidence": [str(e) for e in (evidence or []) if e][:20],
+        "proposed_change": " ".join(str(proposed_change or "").split())[:1000],
+        "resolved": None,
+    }
+    append_jsonl(blocked_path(lab_root), record)
+    _sync_blocked_state(lab_root)
+    return record
+
+
+def resolve_block(
+    lab_root: Path, block_id: str, *, by: str = "owner", ts: str | None = None
+) -> bool:
+    """Mark ``block_id`` resolved (``resolved: <ts>``, ``resolved_by``) by
+    rewriting the ledger in place. ``by`` is ``owner`` or ``coder``. Returns
+    False when no open block has that id."""
+    path = blocked_path(lab_root)
+    records = read_jsonl(path)
+    hit = False
+    for r in records:
+        if isinstance(r, dict) and r.get("id") == block_id and not r.get("resolved"):
+            r["resolved"] = ts or now_iso()
+            r["resolved_by"] = by
+            hit = True
+    if not hit:
+        return False
+    _atomic_write_text(path, "".join(json.dumps(r) + "\n" for r in records))
+    _sync_blocked_state(lab_root)
+    return True
+
+
+# ---------- Coder patches awaiting owner review ----------
+#
+# In ``autonomy.coder_mode: review`` the Coder writes a unified diff plus a
+# rationale under lab/patches/ instead of editing source.dir. The ledger at
+# lab/patches/patches.jsonl tracks each patch's status (pending / applied /
+# rejected); the pending set is mirrored into state.json["pending_patches"].
+
+PATCHES_DIR = "patches"
+PATCH_LEDGER = "patches.jsonl"
+PATCH_STATUSES = ("pending", "applied", "rejected")
+
+
+def patches_dir(lab_root: Path) -> Path:
+    return Path(lab_root) / PATCHES_DIR
+
+
+def _patch_ledger(lab_root: Path) -> Path:
+    return patches_dir(lab_root) / PATCH_LEDGER
+
+
+def _sync_patch_state(lab_root: Path) -> None:
+    state_path = Path(lab_root) / "state.json"
+    state = load_state(state_path)
+    state["pending_patches"] = pending_patches(lab_root)
+    save_state(state_path, state)
+
+
+def pending_patches(lab_root: Path) -> list[dict[str, Any]]:
+    """Patches still awaiting the owner's decision, oldest first."""
+    try:
+        records = read_jsonl(_patch_ledger(lab_root))
+    except json.JSONDecodeError:
+        return []
+    return [r for r in records if isinstance(r, dict) and r.get("status") == "pending"]
+
+
+def register_patch(
+    lab_root: Path,
+    *,
+    path: str | Path,
+    rationale_path: str | Path,
+    name: str,
+    student_id: str | None = None,
+    blocked_id: str | None = None,
+    files: list[str] | None = None,
+    ts: str | None = None,
+) -> dict[str, Any]:
+    """Record a freshly written patch as ``pending``."""
+    record = {
+        "ts": ts or now_iso(),
+        "path": str(path),
+        "rationale_path": str(rationale_path),
+        "name": name,
+        "student_id": student_id,
+        "blocked_id": blocked_id,
+        "files": list(files or []),
+        "status": "pending",
+        "status_ts": None,
+        "status_by": None,
+    }
+    patches_dir(lab_root).mkdir(parents=True, exist_ok=True)
+    append_jsonl(_patch_ledger(lab_root), record)
+    _sync_patch_state(lab_root)
+    return record
+
+
+def mark_patch(
+    lab_root: Path, path: str | Path, status: str, *, by: str = "owner"
+) -> bool:
+    """Set a patch's status (``applied`` / ``rejected`` / ``pending``) by
+    rewriting the ledger in place. When a patch that addressed a block is
+    applied, the block is closed as well. Returns False for an unknown path."""
+    if status not in PATCH_STATUSES:
+        raise ValueError(f"status must be one of {PATCH_STATUSES}, got {status!r}")
+    ledger = _patch_ledger(lab_root)
+    records = read_jsonl(ledger)
+    target = str(path)
+    hit: dict[str, Any] | None = None
+    for r in records:
+        if isinstance(r, dict) and r.get("path") == target:
+            r["status"] = status
+            r["status_ts"] = now_iso()
+            r["status_by"] = by
+            hit = r
+    if hit is None:
+        return False
+    _atomic_write_text(ledger, "".join(json.dumps(r) + "\n" for r in records))
+    _sync_patch_state(lab_root)
+    if status == "applied" and hit.get("blocked_id"):
+        resolve_block(lab_root, hit["blocked_id"], by=by)
+    return True
