@@ -8,9 +8,14 @@ research loop to every provider's message and tool-call representation.
 from __future__ import annotations
 
 import base64
+import contextlib
+import fcntl
 import json
 import os
+import random
+import time
 from copy import deepcopy
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
@@ -137,6 +142,78 @@ class ProviderError(RuntimeError):
         self.kind = kind
         self.retry_after = retry_after
         super().__init__(f"{kind}: {message}")
+
+
+# ---------------------------------------------------------------------------
+# Cross-process concurrency limiter.
+#
+# Many daemons on one host share one provider rate limit. When
+# EFFERENTS_MAX_CONCURRENT_CALLS is set, every in-flight provider request
+# holds one of N flock'd slot files under $EFFERENTS_HOME/locks/. The kernel
+# releases a lock when its process dies, so a crashed daemon cannot leak a
+# slot. Unset or 0 disables the limiter (single-lab behaviour).
+# ---------------------------------------------------------------------------
+
+def max_concurrent_calls() -> int:
+    raw = os.environ.get("EFFERENTS_MAX_CONCURRENT_CALLS", "0").strip() or "0"
+    try:
+        return max(0, int(raw))
+    except ValueError:
+        return 0
+
+
+def _slot_dir() -> Path:
+    home = os.environ.get("EFFERENTS_HOME") or str(Path.home() / ".efferents")
+    return Path(home).expanduser() / "locks"
+
+
+@contextlib.contextmanager
+def call_slot():
+    """Hold one concurrency slot for the duration of a provider request.
+
+    Raises ``ProviderError("rate_limit", ...)`` when no slot frees within
+    ``EFFERENTS_CALL_SLOT_WAIT_S`` (default 180 s); the orchestrator already
+    treats that kind with bounded backoff.
+    """
+    n = max_concurrent_calls()
+    if n <= 0:
+        yield
+        return
+    lock_dir = _slot_dir()
+    lock_dir.mkdir(parents=True, exist_ok=True)
+    wait_s = float(os.environ.get("EFFERENTS_CALL_SLOT_WAIT_S", "180") or 180)
+    deadline = time.monotonic() + wait_s
+    start = random.randrange(n)
+    while True:
+        for i in range(n):
+            fh = open(lock_dir / f"slot-{(start + i) % n}.lock", "w")
+            try:
+                fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                fh.close()
+                continue
+            try:
+                yield
+                return
+            finally:
+                fcntl.flock(fh, fcntl.LOCK_UN)
+                fh.close()
+        if time.monotonic() >= deadline:
+            raise ProviderError(
+                "rate_limit",
+                f"no free call slot after {wait_s:.0f}s "
+                f"(EFFERENTS_MAX_CONCURRENT_CALLS={n})",
+                retry_after=30.0,
+            )
+        time.sleep(0.5 + random.random())
+
+
+def anthropic_max_retries() -> int:
+    raw = os.environ.get("EFFERENTS_ANTHROPIC_MAX_RETRIES", "").strip()
+    try:
+        return max(0, int(raw)) if raw else 2
+    except ValueError:
+        return 2
 
 
 def _status_code(exc: BaseException) -> int | None:
@@ -448,7 +525,8 @@ class _RoutingMessages:
                 request = {**kwargs, "model": model_id}
                 if provider == "anthropic":
                     request = _anthropic_request(request)
-                response = delegate.messages.create(**request)
+                with call_slot():
+                    response = delegate.messages.create(**request)
             except Exception as exc:  # provider outage/quota/auth — try the next link
                 if len(chain) == 1:
                     raise _wrap_provider_error(exc) from exc
@@ -497,6 +575,8 @@ class RoutingMessagesClient:
         if provider == "anthropic":
             if self._anthropic_client is None:
                 import anthropic
-                self._anthropic_client = anthropic.Anthropic()
+                self._anthropic_client = anthropic.Anthropic(
+                    max_retries=anthropic_max_retries()
+                )
             return self._anthropic_client
         return self._litellm_client

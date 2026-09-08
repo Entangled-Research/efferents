@@ -40,10 +40,15 @@ def read_state(lab_root: Path, cfg: "LabConfig | None" = None) -> dict:
     cfg = cfg or lab_mod.get_config()
     pid = daemon.read_pidfile(lab_root / "daemon.pid")
     running = pid is not None and daemon.is_pid_alive(pid)
+    from efferents.steer import owner_paused  # noqa: PLC0415 (avoid import cycle)
+    if running and owner_paused(lab_root) is not None:
+        status = "paused"
+    else:
+        status = "running" if running else "stopped"
     return {
         "lab_id": cfg.lab_id,
         "domain": cfg.domain,
-        "status": "running" if running else "stopped",
+        "status": status,
         "budget": {
             "spent": _budget_spent(lab_root / "budget.jsonl"),
             "cap": cfg.budget.daily_cap_usd,
@@ -443,12 +448,23 @@ def resolve_artifact(
     return _evidence_payload(Path(lab_root), cfg)[1].get(token)
 
 
+def paper_dirs(lab_root: Path) -> list[Path]:
+    """Directories that may hold Writer output, canonical first.
+
+    The Writer now saves to ``<submission>/paper/`` (where the Researcher,
+    Executor and federation read). Older labs wrote under ``lab/paper/``;
+    the CLI also pre-creates ``lab/papers/``. All three are scanned so an
+    existing lab keeps rendering its memos after the move.
+    """
+    lab_root = Path(lab_root)
+    return [lab_root.parent / "paper", lab_root / "paper", lab_root / "papers"]
+
+
 def read_papers(lab_root: Path) -> list[dict]:
     lab_root = Path(lab_root)
     paths: list[Path] = []
     seen: set[str] = set()
-    for name in ("paper", "papers"):  # writer uses 'paper'; CLI pre-creates 'papers'
-        d = lab_root / name
+    for d in paper_dirs(lab_root):
         if d.exists():
             for p in sorted(d.glob("*.md")):
                 if p.name not in seen:

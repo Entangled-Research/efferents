@@ -10,7 +10,6 @@ nothing is corrupted.
 from __future__ import annotations
 
 import os
-import signal
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -154,8 +153,21 @@ class Orchestrator:
         startup_message: str | None = None,
         total_cap_usd: float | None = None,
         stall_hours: float | None = None,
+        min_runs_for_digest: int = 0,
+        empty_queue_sleep_s: float = 60.0,
+        step_pause_s: float = 0.0,
+        researcher_min_interval_s: float = 0.0,
+        backoff_cap_s: float = BACKOFF_CAP_S,
+        submission_dir: str | Path | None = None,
     ):
         self.paths: LabPaths = lab_paths(lab_dir)
+        # The submission directory owns paper/, popper-corpus/ and context/;
+        # lab/ (``lab_dir``) is the daemon's own state. Callers that only
+        # pass ``lab_dir`` get the conventional parent.
+        self.submission_dir = (
+            Path(submission_dir).resolve() if submission_dir is not None
+            else self.paths.root.resolve().parent
+        )
         init_lab(self.paths)
         apply_campaigns_migration(self.paths.runs_db)
         self.context_dir = Path(context_dir)
@@ -173,6 +185,11 @@ class Orchestrator:
         self.hours_per_coder = hours_per_coder
         self.runs_per_paper = runs_per_paper
         self.hours_per_paper = hours_per_paper
+        self.min_runs_for_digest = int(min_runs_for_digest)
+        self.empty_queue_sleep_s = float(empty_queue_sleep_s)
+        self.step_pause_s = float(step_pause_s)
+        self.researcher_min_interval_s = float(researcher_min_interval_s)
+        self.backoff_cap_s = float(backoff_cap_s)
         self.dry_run = dry_run
         self.stall_hours = (
             stall_hours if stall_hours is not None
@@ -191,18 +208,6 @@ class Orchestrator:
         if not dry_run:
             self.client = make_client(budget=self.budget)
 
-        signal.signal(signal.SIGTERM, self._handle_signal)
-        signal.signal(signal.SIGINT, self._handle_signal)
-
-        if startup_message:
-            notebook_append(self.paths.notebook, f"## {now_iso()} — orchestrator start\n\n{startup_message}\n")
-            # Suppress the "started" push when we're respawning right after a
-            # Coder commit (the user just got the "code committed" push 2s ago;
-            # they don't need a "started" follow-up).
-            state = load_state(self.paths.state)
-            last_coder = state.get("last_coder_ts")
-            if not last_coder or _hours_since(last_coder) > 0.05:  # >3 minutes
-                notify_all(title=f"{_lab_label()} started", message=startup_message)
 
     def _handle_signal(self, signum: int, _frame: Any) -> None:
         self._stop = True
@@ -264,6 +269,10 @@ class Orchestrator:
         # time and behavior matches single-student.
         student_id = self._next_student_id()
         sstate = StudentStateView(state, student_id)
+        if self.researcher_min_interval_s > 0:
+            since_s = _hours_since(sstate.get("last_researcher_ts")) * 3600.0
+            if since_s < self.researcher_min_interval_s:
+                return 0
         if (
             _hours_since(sstate.get("last_researcher_ts")) < 2.0
             and coder.select_pending_proposal(paths=self.paths, student_id=student_id) is not None
@@ -305,6 +314,8 @@ class Orchestrator:
         runs_since = n_runs - last_runs
         hours_since = _hours_since(last_ts)
         if runs_since < self.runs_per_digest and hours_since < self.hours_per_digest:
+            return
+        if n_runs < self.min_runs_for_digest:
             return
 
         if self.dry_run:
@@ -393,7 +404,7 @@ class Orchestrator:
         Returns True once a probe succeeds, False if stopped while waiting.
         The researcher loop is *not* run in the meantime.
         """
-        delay = HALT_BACKOFF_START_S
+        delay = min(HALT_BACKOFF_START_S, self.backoff_cap_s)
         while not self._stop:
             notebook_append(
                 self.paths.notebook,
@@ -415,7 +426,7 @@ class Orchestrator:
                     self.paths.notebook,
                     f"## {now_iso()} — probe failed ({probe_kind}): {type(e).__name__}: {e}\n",
                 )
-                delay = min(delay * 2, BACKOFF_CAP_S)
+                delay = min(delay * 2, self.backoff_cap_s)
         return False
 
     def _check_stall(self) -> None:
@@ -538,7 +549,9 @@ class Orchestrator:
         lab_root = self.paths.runs_db.parent
         wpaths = writer.writer_paths(
             lab=lab_root,
-            paper=lab_root / "paper",
+            # Canonical paper dir is <submission>/paper: the Researcher,
+            # Executor, federation and bundle exporter all read it there.
+            paper=self.submission_dir / "paper",
             reports=lab_root / "reports",
             context=self.context_dir,
         )
@@ -600,7 +613,7 @@ class Orchestrator:
                 )
             # Longer sleep when the queue stayed empty — slows the Researcher
             # spin-pump on saturation-driven architectural-only rounds.
-            time.sleep(60)
+            self._interruptible_sleep(self.empty_queue_sleep_s)
             return {"event": "no_proposal", "added": n_added}
         try:
             outcome = executor.execute(paths=self.paths, proposal=proposal)
@@ -616,6 +629,8 @@ class Orchestrator:
         self._maybe_digest()
         self._maybe_code()
         self._maybe_write()
+        if self.step_pause_s > 0:
+            self._interruptible_sleep(self.step_pause_s)
         return {"event": "ran", "added": n_added, "outcome_ok": outcome.get("ok"), "name": outcome.get("name")}
 
     def _record_step_failure(self, e: Exception) -> None:
@@ -656,17 +671,17 @@ class Orchestrator:
                             self._resume(f"provider probe succeeded after {kind} halt")
                     elif kind == "rate_limit":
                         wait = retry_after if retry_after is not None else backoff
-                        wait = min(max(wait, 1.0), BACKOFF_CAP_S)
+                        wait = min(max(wait, 1.0), self.backoff_cap_s)
                         notebook_append(
                             self.paths.notebook,
                             f"## {now_iso()} — rate limited; backing off {wait:.0f}s\n",
                         )
                         self._interruptible_sleep(wait)
-                        backoff = min(backoff * 2, BACKOFF_CAP_S)
+                        backoff = min(backoff * 2, self.backoff_cap_s)
                     else:
                         # Cool-off then continue, doubling up to the cap.
                         self._interruptible_sleep(backoff)
-                        backoff = min(backoff * 2, BACKOFF_CAP_S)
+                        backoff = min(backoff * 2, self.backoff_cap_s)
                 i += 1
         except Exception as e:
             notebook_append(

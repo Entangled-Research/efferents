@@ -4,6 +4,9 @@ let portfolioState = { labs: [], edges: [] };
 let isConnecting = false;
 let runtimeAction = "start";
 let renderedRoute = "";
+// Which lab this browser is looking at. Selection is per viewer, never a
+// server-side switch, so many browsers can inspect different labs at once.
+let selectedLabId = null;
 
 function readStored(key, fallback) {
   try {
@@ -25,6 +28,12 @@ function writeStored(key, value) {
 let openTabs = Array.isArray(readStored("efferents-open-labs", []))
   ? readStored("efferents-open-labs", [])
   : [];
+const storedSelected = readStored("efferents-selected-lab", null);
+if (typeof storedSelected === "string" && storedSelected) selectedLabId = storedSelected;
+
+function labPath(kind) {
+  return `/api/labs/${encodeURIComponent(selectedLabId)}/${kind}`;
+}
 let labBudget = { spent: 0, cap: 0 };
 let portfolioBudget = { spent: 0, cap: 0 };
 
@@ -165,9 +174,9 @@ function renderRoute() {
   let route = currentRoute();
   if (controlState.hydrated && !controlState.connected && !["connect", "network"].includes(route)) {
     route = "connect";
-    if (window.location.hash !== "#connect") {
-      history.replaceState(null, "", "#connect");
-    }
+  }
+  if (window.location.hash !== `#${route}`) {
+    history.replaceState(null, "", `#${route}`);
   }
   document.querySelectorAll("[data-route-view]").forEach((view) => {
     view.hidden = view.dataset.routeView !== route;
@@ -245,10 +254,13 @@ function renderSteering(records) {
   }
   element.innerHTML = steering.map((record) => {
     const mode = String(record.mode || "auto").replace(/_/g, " ");
+    const label = record.action ? String(record.action) : mode;
+    const who = record.by ? ` · ${esc(record.by)}` : "";
+    const ack = record.acknowledged === false ? " · queued" : "";
     return `<article class="steering-record">` +
       `<div class="steering-record-meta">` +
         `<time>${esc(formatTimestamp(record.timestamp, true))} UTC</time>` +
-        `<span class="steering-mode">${esc(mode)}</span>` +
+        `<span class="steering-mode">${esc(label)}${who}${ack}</span>` +
       `</div>` +
       `<p>${esc(record.message || "")}</p>` +
     `</article>`;
@@ -290,8 +302,12 @@ function renderControl(info) {
   document.getElementById("activity-state").innerHTML = pausedDemo
     ? '<span aria-hidden="true"></span> history'
     : '<span aria-hidden="true"></span> live';
-  document.getElementById("start-lab").hidden = pausedDemo || info.status === "running";
-  document.getElementById("stop-lab").hidden = pausedDemo || info.status !== "running";
+  const live = info.status === "running" || info.status === "paused";
+  const ownerPaused = Boolean(info.owner_paused);
+  document.getElementById("start-lab").hidden = pausedDemo || live;
+  document.getElementById("stop-lab").hidden = pausedDemo || !live;
+  document.getElementById("pause-lab").hidden = pausedDemo || !live || ownerPaused;
+  document.getElementById("resume-lab").hidden = pausedDemo || !ownerPaused;
   document.getElementById("connect-submit").disabled = pausedDemo;
   const steerForm = document.getElementById("steer-form");
   steerForm.querySelectorAll("textarea, select, button").forEach((control) => {
@@ -309,7 +325,17 @@ function renderControl(info) {
 }
 
 function selectedPortfolioLab() {
+  if (selectedLabId) {
+    return portfolioState.labs.find((lab) => lab.lab_id === selectedLabId) || null;
+  }
   return portfolioState.labs.find((lab) => lab.selected) || null;
+}
+
+function markSelected() {
+  const chosen = selectedPortfolioLab();
+  portfolioState.labs.forEach((lab) => {
+    lab.selected = Boolean(chosen) && lab.lab_id === chosen.lab_id;
+  });
 }
 
 function renderLabTabs() {
@@ -391,12 +417,13 @@ function renderLabRail() {
     const metric = headline.best == null
       ? `${headline.observations || 0} observations`
       : `${esc(headline.column || "metric")} ${esc(formatMetric(headline.best))}`;
+    const ownerLine = lab.owner_name ? ` · ${esc(lab.owner_name)}` : "";
     return `<button class="lab-list-item${lab.selected ? " selected" : ""}" ` +
       `type="button" data-lab-select="${esc(lab.lab_id)}" role="listitem" ` +
       `aria-current="${lab.selected ? "true" : "false"}">` +
       `<span class="lab-seq">${String(index + 1).padStart(2, "0")}</span>` +
       `<span class="lab-list-copy"><strong>${esc(lab.lab_id)}</strong>` +
-      `<small>${esc(lab.domain || "unclassified")}</small>` +
+      `<small>${esc(lab.domain || "unclassified")}${ownerLine}</small>` +
       `<span>${metric}</span>` +
       `<span class="lab-verdict${lab.verdict?.status === "falsified" ? " falsified" : ""}">` +
       `${esc(lab.verdict?.line || "verdict: undecided")}</span></span>` +
@@ -429,7 +456,7 @@ function renderNetwork() {
   const positions = new Map();
   lines.innerHTML = "";
   nodes.innerHTML = "";
-  text("network-node-count", `${labs.length} ${labs.length === 1 ? "node" : "nodes"}`);
+  text("network-node-count", `${labs.length} ${labs.length === 1 ? "lab" : "labs"}`);
 
   if (!labs.length) {
     empty.hidden = false;
@@ -456,8 +483,9 @@ function renderNetwork() {
     button.dataset.mapLab = lab.lab_id;
     button.style.left = `${position.x}%`;
     button.style.top = `${position.y}%`;
+    const owner = lab.owner_name ? `<small class="map-node-owner">${esc(lab.owner_name)}</small>` : "";
     button.innerHTML = `<span class="map-node-state"><i aria-hidden="true"></i>${esc(lab.status || "stopped")}</span>` +
-      `<strong>${esc(lab.lab_id)}</strong><small>${esc(lab.domain || "unclassified")}</small>`;
+      `<strong>${esc(lab.lab_id)}</strong><small>${esc(lab.domain || "unclassified")}</small>${owner}`;
     button.addEventListener("click", async () => {
       await openLabTab(lab.lab_id);
     });
@@ -473,7 +501,7 @@ function renderNetwork() {
       y1: source.y * 5.6,
       x2: target.x * 10,
       y2: target.y * 5.6,
-      class: "domain-edge",
+      class: `domain-edge edge-${String(edge.kind || "shared-domain")}`,
     }));
   });
 
@@ -484,6 +512,12 @@ function renderPortfolio(payload) {
     labs: Array.isArray(payload?.labs) ? payload.labs : [],
     edges: Array.isArray(payload?.edges) ? payload.edges : [],
   };
+  if (!selectedLabId) {
+    // First load in a single-lab workspace: follow the server's default lab.
+    const serverDefault = portfolioState.labs.find((lab) => lab.selected);
+    if (serverDefault) selectedLabId = serverDefault.lab_id;
+  }
+  markSelected();
   portfolioBudget = portfolioState.labs.reduce(
     (sum, lab) => ({
       spent: sum.spent + Number(lab.budget?.spent || 0),
@@ -502,10 +536,16 @@ async function refreshPortfolio() {
 }
 
 async function selectPortfolioLab(labId, openObserver) {
-  const info = await postJSON("/api/labs/select", { lab_id: labId });
-  renderControl(info);
-  await Promise.all([refreshPortfolio(), refreshObserver()]);
+  selectedLabId = labId;
+  writeStored("efferents-selected-lab", labId);
+  markSelected();
   if (openObserver) window.location.hash = "observe";
+  const info = await getJSON(labPath("control"));
+  renderControl(info);
+  renderLabRail();
+  renderLabTabs();
+  renderNetwork();
+  await refreshObserver();
 }
 
 const CLAMP_THRESHOLD = 260;
@@ -1040,6 +1080,8 @@ function renderActivity(activities) {
 
 async function refreshObserver() {
   if (!controlState.connected) return;
+  if (document.hidden || currentRoute() !== "observe") return;
+  const scoped = Boolean(selectedLabId);
   const requests = [
     ["/api/state", renderState],
     ["/api/runs", renderRuns],
@@ -1049,7 +1091,10 @@ async function refreshObserver() {
     ["/api/activity", renderActivity],
   ];
   const results = await Promise.allSettled(
-    requests.map(async ([path, renderer]) => renderer(await getJSON(path)))
+    requests.map(async ([path, renderer]) => {
+      const url = scoped ? labPath(path.replace("/api/", "")) : path;
+      return renderer(await getJSON(url));
+    })
   );
   results
     .filter((result) => result.status === "rejected")
@@ -1058,9 +1103,17 @@ async function refreshObserver() {
 
 async function refresh() {
   try {
-    const info = await getJSON("/api/control");
-    renderControl(info);
-    await Promise.all([refreshPortfolio(), refreshObserver()]);
+    const session = await getJSON("/api/control");
+    if (session.csrf_token) csrfToken = session.csrf_token;
+    controlState.mode = session.mode || "local";
+    await refreshPortfolio();
+    if (selectedLabId && portfolioState.labs.some((lab) => lab.lab_id === selectedLabId)) {
+      renderControl(await getJSON(labPath("control")));
+    } else {
+      selectedLabId = null;
+      renderControl(session);
+    }
+    await refreshObserver();
   } catch (error) {
     console.error(error);
   }
@@ -1133,9 +1186,9 @@ function initSteeringForm() {
     event.preventDefault();
     const submit = form.querySelector('button[type="submit"]');
     submit.disabled = true;
-    showMessage("steer-message-state", "Recording direction in the local research log…");
+    showMessage("steer-message-state", "Recording direction in the steering ledger…");
     try {
-      const result = await postJSON("/api/steer", {
+      const result = await postJSON(selectedLabId ? labPath("steer") : "/api/steer", {
         message: message.value,
         mode: document.getElementById("steer-mode").value,
       });
@@ -1157,24 +1210,41 @@ function initSteeringForm() {
   });
 }
 
+const RUNTIME_COPY = {
+  start: {
+    kicker: "Local execution", title: "Start lab?",
+    copy: "Repository commands · local compute · configured LLM budget",
+    label: "Authorize this local run.", button: "Confirm start",
+    progress: "Starting the daemon…",
+  },
+  stop: {
+    kicker: "Stop execution", title: "Stop lab?",
+    copy: "Stop after current process · preserve written evidence",
+    label: "Authorize this stop request.", button: "Confirm stop",
+    progress: "Stopping the daemon…",
+  },
+  pause: {
+    kicker: "Pause spending", title: "Pause lab?",
+    copy: "Recorded as owner steering · takes effect at the next agent step · evidence preserved",
+    label: "Authorize this pause.", button: "Confirm pause",
+    progress: "Queuing the pause…",
+  },
+  resume: {
+    kicker: "Resume spending", title: "Resume lab?",
+    copy: "Lifts the owner pause · recorded as owner steering",
+    label: "Authorize this resume.", button: "Confirm resume",
+    progress: "Queuing the resume…",
+  },
+};
+
 function openRuntimeDialog(action) {
   runtimeAction = action;
-  const starting = action === "start";
-  text("runtime-dialog-kicker", starting ? "Local execution" : "Stop local execution");
-  text("runtime-dialog-title", starting ? "Start lab?" : "Stop lab?");
-  text(
-    "runtime-dialog-copy",
-    starting
-      ? "Repository commands · local compute · configured LLM budget"
-      : "Stop after current process · preserve written evidence",
-  );
-  text(
-    "runtime-confirm-label",
-    starting
-      ? "Authorize this local run."
-      : "Authorize this stop request.",
-  );
-  text("runtime-confirm-button", starting ? "Confirm start" : "Confirm stop");
+  const copy = RUNTIME_COPY[action] || RUNTIME_COPY.start;
+  text("runtime-dialog-kicker", copy.kicker);
+  text("runtime-dialog-title", copy.title);
+  text("runtime-dialog-copy", copy.copy);
+  text("runtime-confirm-label", copy.label);
+  text("runtime-confirm-button", copy.button);
   const checkbox = document.getElementById("runtime-confirm-check");
   checkbox.checked = false;
   document.getElementById("runtime-confirm-button").disabled = true;
@@ -1188,17 +1258,17 @@ function initRuntimeControls() {
   const confirm = document.getElementById("runtime-confirm-button");
   document.getElementById("start-lab").addEventListener("click", () => openRuntimeDialog("start"));
   document.getElementById("stop-lab").addEventListener("click", () => openRuntimeDialog("stop"));
+  document.getElementById("pause-lab").addEventListener("click", () => openRuntimeDialog("pause"));
+  document.getElementById("resume-lab").addEventListener("click", () => openRuntimeDialog("resume"));
   checkbox.addEventListener("change", () => {
     confirm.disabled = !checkbox.checked;
   });
   confirm.addEventListener("click", async () => {
     confirm.disabled = true;
-    showMessage(
-      "runtime-dialog-message",
-      runtimeAction === "start" ? "Starting the local daemon…" : "Stopping the local daemon…",
-    );
+    showMessage("runtime-dialog-message", (RUNTIME_COPY[runtimeAction] || {}).progress || "");
     try {
-      const info = await postJSON(`/api/lab/${runtimeAction}`, { confirmed: true });
+      const legacy = `/api/lab/${runtimeAction}`;
+      const info = await postJSON(selectedLabId ? labPath(runtimeAction) : legacy, { confirmed: true });
       renderControl(info);
       dialog.close();
       await refreshObserver();
@@ -1228,3 +1298,6 @@ initSteeringForm();
 initRuntimeControls();
 refresh();
 setInterval(refresh, 4000);
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) refresh();
+});

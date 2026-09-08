@@ -20,7 +20,11 @@ def test_dashboard_has_portfolio_rail_and_network_map():
     assert "Private until authorized" not in html
     assert "private by default" not in html
     assert 'getJSON("/api/labs")' in javascript
-    assert 'postJSON("/api/labs/select"' in javascript
+    # Selection is per browser: the observer fetches lab-scoped routes rather
+    # than switching a server-wide selected lab.
+    assert 'postJSON("/api/labs/select"' not in javascript
+    assert "function labPath(kind)" in javascript
+    assert 'labPath("control")' in javascript
     assert "renderNetwork();" in javascript
 
 
