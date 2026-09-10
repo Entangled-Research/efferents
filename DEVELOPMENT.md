@@ -69,7 +69,6 @@ efferents/
 ├── examples/
 │   ├── smoke-lab/             # a complete domain-agnostic example lab (stub executor)
 │   └── repo-adapter/          # efferents.yaml example for an existing ML repo
-├── web/landing/               # static marketing/landing site
 ├── tests/
 └── docs/
     ├── superpowers/specs/     # design specs

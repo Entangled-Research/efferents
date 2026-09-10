@@ -1,2 +1,0 @@
-# Base config for the reasoning-verification lab (cycle 2).
-pool_n: 8       # pool size N under evaluation — the swept knob

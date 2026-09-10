@@ -1,26 +1,14 @@
 from pathlib import Path
-import runpy
 
 import pytest
 
 from efferents.dashboard.theme import (
     RESEARCH_THEME_CSS,
-    RESEARCH_THEME_ID,
     embed_research_theme,
 )
 
 
 ROOT = Path(__file__).resolve().parents[1]
-LIVE = ROOT / "examples" / "challengescape" / "live.py"
-CHALLENGE_REPORT = (
-    ROOT
-    / "examples"
-    / "challengescape"
-    / "labs"
-    / "lab_01_reasoning_verification"
-    / "out"
-    / "dashboard.html"
-)
 
 
 def test_theme_contract_is_light_only_paper_ledger():
@@ -74,22 +62,6 @@ def test_theme_embedding_requires_both_contract_markers():
         embed_research_theme("<html></html>")
 
 
-def test_challengescape_embeds_canonical_theme_without_legacy_skin():
-    page = runpy.run_path(str(LIVE))["PAGE"]
-
-    assert f'data-efferents-theme="{RESEARCH_THEME_ID}"' in page
-    assert "/*__EFFERENTS_RESEARCH_THEME_CSS__*/" not in page
-    assert ":root {\n  color-scheme: light;" in page
-    assert "prefers-color-scheme" not in page
-    assert "color-mix" not in page
-    assert "#2a78d6" not in page
-    assert "border-radius: 12px" not in page
-    assert 'content: "ℯ";' in page
-    assert 'content: "EF";' not in page
-    assert 'id="theme-button"' in page
-    assert "grid-template-columns: repeat(auto-fit, minmax(165px, 1fr));" in page
-
-
 def test_every_example_html_app_uses_the_theme_contract():
     offenders = []
     for path in (ROOT / "examples").rglob("*.py"):
@@ -98,16 +70,3 @@ def test_every_example_html_app_uses_the_theme_contract():
             offenders.append(str(path.relative_to(ROOT)))
 
     assert offenders == []
-
-
-def test_checked_in_challenge_report_uses_current_report_theme():
-    report = CHALLENGE_REPORT.read_text()
-
-    assert 'content: "efferents / research record";' in report
-    assert "--sans: var(--display);" in report
-    assert "--signal: #003b80;" in report
-    assert "--mustard: #d4a017;" in report
-    assert "--orange: #f06c00;" in report
-    assert "#03befc" not in report
-    assert "#b9f36a" not in report
-    assert 'content: "EF / RESEARCH RECORD";' not in report

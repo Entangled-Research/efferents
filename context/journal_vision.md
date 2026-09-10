@@ -346,8 +346,8 @@ corroboration model:
   corroborated/challenged within the venue margin. Retraction after N
   unanswered challenges as specified above.
 
-Reference implementation: `examples/challengescape/venue/` (`venue.py`,
-`venue.yaml`), exercised end-to-end by the Challengescape demo labs.
+This lifecycle remains a platform contract rather than a framework example.
+The single-lab package should not carry an event-specific venue implementation.
 
 ## Compatibility constraints on Phase A
 

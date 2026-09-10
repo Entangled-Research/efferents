@@ -1,4 +1,0 @@
-{"claim": "Best false_assurance_rate = 0.0588 at quorum_k=3", "evidence_type": "run_metric", "source_path": "logs/iter_02.log", "run_id": "run_02", "metric": "false_assurance_rate", "value": 0.0588}
-{"claim": "false_assurance_rate varied across the configured quorum_k sweep", "evidence_type": "metric_aggregate", "source_path": "runs.jsonl", "run_id": null, "metric": "false_assurance_rate", "value": "range=0.0588..0.0882"}
-{"claim": "Experiment plan recorded before execution", "evidence_type": "document", "source_path": "journal/002_experiment_plan.md", "run_id": null, "metric": null, "value": "approval=plan_then_execute; execution_authorized=true"}
-{"claim": "Execution stayed within the configured wall-clock compute proxy", "evidence_type": "budget", "source_path": "journal/004_research_memo.md", "run_id": null, "metric": null, "value": "<= 0.5 GPU-h, $0 LLM"}

@@ -39,22 +39,6 @@ class Sweep:
 
 
 @dataclass(frozen=True)
-class ChartSpec:
-    """One lab-declared dashboard panel, rendered by the shared chart runtime
-    (`efferents/dashboard/static/charts.js`). `metric` may be any numeric
-    field a run record logs; `type` is any registered chart type."""
-
-    metric: str
-    x: str | None = None
-    x_label: str | None = None
-    type: str = "line"
-    label: str | None = None
-    target: float | None = None
-    target_label: str | None = None
-    maximize: bool | None = None
-
-
-@dataclass(frozen=True)
 class RepoAdapterConfig:
     goal: str
     train_command: str
@@ -66,7 +50,6 @@ class RepoAdapterConfig:
     outputs: Outputs
     config_template: str | None = None
     sweep: Sweep | None = None
-    charts: tuple[ChartSpec, ...] = ()
 
     @classmethod
     def load(cls, path: Path | str) -> "RepoAdapterConfig":
@@ -109,25 +92,6 @@ class RepoAdapterConfig:
                 "train_command must contain {config_path} when a sweep is configured"
             )
 
-        charts_raw = raw.get("charts") or []
-        if not isinstance(charts_raw, list):
-            raise AdapterConfigError("charts must be a list of chart mappings")
-        charts = []
-        for entry in charts_raw:
-            if not isinstance(entry, dict) or not entry.get("metric"):
-                raise AdapterConfigError("each charts entry needs a 'metric'")
-            charts.append(ChartSpec(
-                metric=entry["metric"],
-                x=entry.get("x"),
-                x_label=entry.get("x_label"),
-                type=entry.get("type", "line"),
-                label=entry.get("label"),
-                target=_opt_float(entry.get("target")),
-                target_label=entry.get("target_label"),
-                maximize=(None if entry.get("maximize") is None
-                          else bool(entry["maximize"])),
-            ))
-
         budget_raw = raw.get("budget") or {}
         approval_raw = raw.get("approval") or {}
         mode = approval_raw.get("mode", "plan_then_execute")
@@ -154,7 +118,6 @@ class RepoAdapterConfig:
             ),
             config_template=config_template,
             sweep=sweep,
-            charts=tuple(charts),
         )
 
 
