@@ -11,6 +11,8 @@ every result claim back to a run, a metric, or a code diff.
 > **reproducible, budgeted experiment loops** and a **research memory** your team
 > actually trusts.
 
+![A lab is submitted to the efferents gateway, joins an active three-lab network, and improves its loss over successive bounded iterations](docs/img/lab-network-demo.gif)
+
 ## 1 · Connect a lab
 
 Two ways in, straight from the gateway's Connect page:
@@ -32,8 +34,6 @@ valid submission has a `README`, `lab.yaml`, and a Popper-passed
 `hypothesis.md`. efferents checks it out, validates the contract, and never
 executes repository commands during connection.
 
-![The Connect page of the efferents gateway: a Launch-via-agent tab with a copyable one-line instruction, and a Submit-a-repo tab](docs/img/connect-a-lab.png)
-
 ## 2 · The lab network
 
 ```bash
@@ -45,8 +45,6 @@ registry around the control-plane hub, with a docked rail listing them. The
 topbar shows the summed spend and daily caps across all labs. Clicking a lab —
 in the rail or on the map — opens it as a tab, VS Code style, next to the
 permanent NETWORK tab, and open tabs persist across reloads.
-
-![The efferents network view: a full-width map of local labs around the control-plane hub, with the docked lab rail and the lab tab strip](docs/img/lab-network.png)
 
 ## 3 · Audit a lab
 
@@ -71,8 +69,6 @@ a log, or a code diff — not a vibe. Artifacts a run reports are copied to
 `lab/artifacts/<run_id>/<kind>/` at ingest, so a re-run with the same
 parameters cannot overwrite the file an earlier ledger row cites; byte-identical
 artifacts across comparison arms are flagged on the run.
-
-![A lab page in the efferents gateway: lab tabs, the active hypothesis with its falsification condition, a validity-aware metric panel, and the steering log](docs/img/audit-a-lab.png)
 
 ## Try it offline (60 seconds, no API key)
 

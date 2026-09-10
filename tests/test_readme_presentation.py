@@ -12,9 +12,7 @@ def test_readme_follows_connect_network_audit_progression():
     network = readme.index("## 2 · The lab network")
     audit = readme.index("## 3 · Audit a lab")
     assert connect < network < audit
-    assert "docs/img/connect-a-lab.png" in readme
-    assert "docs/img/lab-network.png" in readme
-    assert "docs/img/audit-a-lab.png" in readme
+    assert "docs/img/lab-network-demo.gif" in readme
     assert "efferents serve" in readme
     assert "VS Code" in readme
     # Publication choice stays out of the README's product story, and the
@@ -25,14 +23,11 @@ def test_readme_follows_connect_network_audit_progression():
     assert "demo-dashboard" not in readme
 
 
-def test_readme_workspace_previews_are_wide_png_files():
-    for relative_path in (
-        "docs/img/connect-a-lab.png",
-        "docs/img/lab-network.png",
-        "docs/img/audit-a-lab.png",
-    ):
-        preview = (ROOT / relative_path).read_bytes()
-        assert preview[:8] == b"\x89PNG\r\n\x1a\n"
-        width, height = struct.unpack(">II", preview[16:24])
-        assert width >= 1200
-        assert width / height >= 1.4
+def test_readme_demo_is_a_wide_looping_gif():
+    preview = (ROOT / "docs/img/lab-network-demo.gif").read_bytes()
+
+    assert preview[:6] in (b"GIF87a", b"GIF89a")
+    width, height = struct.unpack("<HH", preview[6:10])
+    assert width >= 900
+    assert width / height >= 1.4
+    assert b"NETSCAPE2.0" in preview
