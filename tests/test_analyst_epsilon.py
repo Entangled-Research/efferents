@@ -1,10 +1,9 @@
 """Analyst reads flat_digest_epsilon from LabConfig."""
 from __future__ import annotations
-from pathlib import Path
 
 from efferents.agents import analyst
 from efferents.lab import (
-    Budget, Executor, Headline, LabConfig, Metrics, Panel, Source,
+    Budget, Executor, Headline, LabConfig, Metrics, Source,
 )
 from efferents import lab as lab_mod
 

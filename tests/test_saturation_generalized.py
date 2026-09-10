@@ -38,7 +38,8 @@ def test_saturation_report_no_config_is_empty(tmp_path):
     db = tmp_path / "runs.sqlite"
     conn = sqlite3.connect(db)
     conn.execute("CREATE TABLE runs (run_id TEXT, started_at TEXT, loss REAL)")
-    conn.commit(); conn.close()
+    conn.commit()
+    conn.close()
     paths = lab_paths(tmp_path)
     assert _saturation_report(paths) == {"saturated_axes": [], "score": 0, "evidence": []}
 
@@ -68,7 +69,8 @@ def test_saturation_report_buckets_by_config_axis(tmp_path):
                 "INSERT INTO runs VALUES (?,?,?,?,?)",
                 (f"r{i}", f"2026-01-0{i+1}", f"cfg{i}.yaml", "a", 0.100 + i * 0.0001),
             )
-        conn.commit(); conn.close()
+        conn.commit()
+        conn.close()
         paths = lab_paths(tmp_path)
         rep = _saturation_report(paths)
         assert rep["evidence"], "expected at least one bucket"

@@ -3,9 +3,8 @@ import json
 import shutil
 from pathlib import Path
 
-import pytest
 
-from efferents.runner import run_adapter, RunnerError
+from efferents.runner import run_adapter
 
 EXAMPLE = Path(__file__).resolve().parents[1] / "examples" / "repo-adapter"
 
@@ -28,7 +27,10 @@ def test_run_writes_all_artifacts(tmp_path):
 
 def test_run_finds_interior_optimum(tmp_path):
     out = run_adapter(EXAMPLE, tmp_path / "out", approved=True)
-    runs = [json.loads(l) for l in (out / "runs.jsonl").read_text().splitlines()]
+    runs = [
+        json.loads(line)
+        for line in (out / "runs.jsonl").read_text().splitlines()
+    ]
     assert len(runs) == 5
     by_val = {r["value"]: r["val_f1"] for r in runs}
     assert by_val[0.65] == 0.8889  # the deterministic interior peak
@@ -38,9 +40,14 @@ def test_run_finds_interior_optimum(tmp_path):
 
 def test_run_claims_reference_real_runs(tmp_path):
     out = run_adapter(EXAMPLE, tmp_path / "out", approved=True)
-    run_ids = {json.loads(l)["run_id"]
-               for l in (out / "runs.jsonl").read_text().splitlines()}
-    claims = [json.loads(l) for l in (out / "claims.jsonl").read_text().splitlines()]
+    run_ids = {
+        json.loads(line)["run_id"]
+        for line in (out / "runs.jsonl").read_text().splitlines()
+    }
+    claims = [
+        json.loads(line)
+        for line in (out / "claims.jsonl").read_text().splitlines()
+    ]
     for c in claims:
         if c["run_id"] is not None:
             assert c["run_id"] in run_ids

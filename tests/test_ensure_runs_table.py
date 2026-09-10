@@ -4,7 +4,6 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-import pytest
 
 from efferents.migrations.runner import ensure_runs_table
 from efferents.lab import (

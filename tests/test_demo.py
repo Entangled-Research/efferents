@@ -1,6 +1,5 @@
 """The offline demo must produce the expected artifacts with no API call."""
 import json
-from pathlib import Path
 
 from efferents.demo import run_demo
 
@@ -44,10 +43,13 @@ def test_demo_memo_has_evidence_table_with_run_ids(tmp_path):
         assert section in memo, f"memo missing {section}"
     # every claims.jsonl run-backed claim must reference a real run id
     run_ids = {
-        json.loads(l)["run_id"]
-        for l in (out / "runs.jsonl").read_text().splitlines()
+        json.loads(line)["run_id"]
+        for line in (out / "runs.jsonl").read_text().splitlines()
     }
-    claims = [json.loads(l) for l in (out / "claims.jsonl").read_text().splitlines()]
+    claims = [
+        json.loads(line)
+        for line in (out / "claims.jsonl").read_text().splitlines()
+    ]
     for c in claims:
         if c["run_id"] is not None:
             assert c["run_id"] in run_ids

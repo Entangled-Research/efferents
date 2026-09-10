@@ -1,4 +1,12 @@
-from efferents.agents.writer import _best_metric, _resolve_campaign_metric
+import sqlite3
+from pathlib import Path
+
+from efferents.agents.writer import (
+    GateInputs,
+    _best_metric,
+    _resolve_campaign_metric,
+    should_publish,
+)
 
 
 def test_best_metric_min():
@@ -26,10 +34,6 @@ def test_resolve_campaign_metric_falls_back_when_null():
     assert _resolve_campaign_metric(campaign, default=("e_w1", "min")) == ("e_w1", "min")
 
 
-import sqlite3
-from pathlib import Path
-
-
 def _seed_runs(db: Path, campaign_id: str, metric: str, vals: list[float]):
     conn = sqlite3.connect(db)
     conn.execute(
@@ -54,9 +58,6 @@ def test_best_metric_reads_campaign_runs(tmp_path):
     rows = [dict(r) for r in conn.execute("SELECT * FROM runs WHERE campaign_id='c1'")]
     conn.close()
     assert _best_metric(rows, "synthetic_loss", "min") == 0.1
-
-
-from efferents.agents.writer import GateInputs, should_publish
 
 
 def test_should_publish_max_direction_accepts_improvement():

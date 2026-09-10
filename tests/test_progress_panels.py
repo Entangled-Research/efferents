@@ -1,6 +1,5 @@
 """progress._panel_metrics() reads panels from LabConfig.metrics.panels."""
 from __future__ import annotations
-from pathlib import Path
 
 from efferents.agents import progress
 from efferents.lab import (

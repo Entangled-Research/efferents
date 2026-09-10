@@ -4,7 +4,7 @@ import json
 import sqlite3
 from pathlib import Path
 
-from efferents.exec import RunResult, _execute_run, _persist_run_result
+from efferents.exec import RunResult, _persist_run_result
 
 
 def test_persist_run_result_inserts_metrics(tmp_path, monkeypatch):

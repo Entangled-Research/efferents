@@ -1,7 +1,6 @@
 import json
 import tarfile
 import sqlite3
-from pathlib import Path
 
 from efferents.agents import federation
 from efferents.migrations.runner import apply_campaigns_migration

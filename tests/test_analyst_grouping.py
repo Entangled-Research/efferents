@@ -1,7 +1,6 @@
 """Analyst groups recent runs by campaign_id for the digest prompt."""
 from __future__ import annotations
 
-from pathlib import Path
 
 from efferents.agents.analyst import (
     _format_campaign_blocks,

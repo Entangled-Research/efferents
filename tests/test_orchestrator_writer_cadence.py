@@ -3,7 +3,6 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-import pytest
 
 from efferents.agents import orchestrator as orch
 from efferents.agents.state import campaign_insert, now_iso, load_state, save_state

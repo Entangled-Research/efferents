@@ -1,12 +1,11 @@
 """Coder's target globs, new-file regex, and smoke command read from LabConfig."""
 from __future__ import annotations
-import re
 import subprocess
 from pathlib import Path
 
 from efferents.agents import coder
 from efferents.lab import (
-    Budget, Executor, Headline, LabConfig, Metrics, Panel, Source,
+    Budget, Executor, Headline, LabConfig, Metrics, Source,
 )
 from efferents import lab as lab_mod
 

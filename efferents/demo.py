@@ -26,7 +26,6 @@ from __future__ import annotations
 import json
 import re
 import subprocess
-import sys
 from dataclasses import dataclass, asdict
 from pathlib import Path
 
@@ -494,10 +493,10 @@ def run_demo(lab: str, out_dir: str | Path) -> Path:
     _write_dashboard(out, lab_id, claim, runs, best)
 
     print(f"\nWrote demo to {out}")
-    print(f"  journal/   4 memos (001..004)")
+    print("  journal/   4 memos (001..004)")
     print(f"  runs.jsonl   {len(runs)} runs")
     print(f"  claims.jsonl {len(claims)} claims with provenance")
-    print(f"  dashboard.html")
+    print("  dashboard.html")
     print(f"\nOpen the dashboard:\n  open {out / 'dashboard.html'}")
     return out
 

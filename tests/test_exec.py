@@ -4,7 +4,7 @@ import json
 import shlex
 import sys
 
-from efferents.exec import RunResult, _extract_trailing_json, _run_and_capture
+from efferents.exec import _extract_trailing_json, _run_and_capture
 
 
 def test_extract_trailing_json_simple():

@@ -1,11 +1,10 @@
 """load_prompt renders framework or lab-override prompts via str.format."""
 from __future__ import annotations
-from pathlib import Path
 
 import pytest
 
 from efferents.agents.prompts.loader import (
-    load_prompt, PromptRenderError, _render_vars, _format_panel_block,
+    load_prompt, PromptRenderError, _render_vars,
 )
 from efferents.lab import (
     Budget, Executor, Headline, LabConfig, Metrics, Panel, Source,
@@ -28,7 +27,10 @@ def _install(tmp_path, *, prompts_dir=None, headline="synthetic_loss",
         ),
         metrics=Metrics(
             headline=Headline(column=headline, direction="min"),
-            panels=tuple(Panel(column=c, label=l, target=t) for c, l, t in panels),
+            panels=tuple(
+                Panel(column=column, label=label, target=target)
+                for column, label, target in panels
+            ),
         ),
         budget=Budget(),
         prompts_dir=prompts_dir,
@@ -62,7 +64,7 @@ def test_panel_block_empty(tmp_path):
 
 
 def test_load_framework_prompt_substitutes(tmp_path):
-    cfg = _install(tmp_path, prompts_dir=tmp_path / "prompts")
+    _install(tmp_path, prompts_dir=tmp_path / "prompts")
     (tmp_path / "prompts").mkdir()
     (tmp_path / "prompts" / "demo.md").write_text(
         "Lab {lab_id} optimizes {headline_metric} ({headline_direction})."
@@ -72,7 +74,7 @@ def test_load_framework_prompt_substitutes(tmp_path):
 
 
 def test_override_takes_precedence_over_framework(tmp_path):
-    cfg = _install(tmp_path, prompts_dir=tmp_path / "prompts")
+    _install(tmp_path, prompts_dir=tmp_path / "prompts")
     (tmp_path / "prompts").mkdir()
     (tmp_path / "prompts" / "analyst.md").write_text("OVERRIDE {lab_id}")
     out = load_prompt("analyst")
@@ -80,7 +82,7 @@ def test_override_takes_precedence_over_framework(tmp_path):
 
 
 def test_missing_override_falls_back_to_framework(tmp_path):
-    cfg = _install(tmp_path, prompts_dir=tmp_path / "prompts")
+    _install(tmp_path, prompts_dir=tmp_path / "prompts")
     (tmp_path / "prompts").mkdir()
     out = load_prompt("analyst")  # framework analyst.md exists, 0 braces today
     assert len(out) > 0
@@ -88,7 +90,7 @@ def test_missing_override_falls_back_to_framework(tmp_path):
 
 
 def test_undefined_variable_raises_prompt_render_error(tmp_path):
-    cfg = _install(tmp_path, prompts_dir=tmp_path / "prompts")
+    _install(tmp_path, prompts_dir=tmp_path / "prompts")
     (tmp_path / "prompts").mkdir()
     (tmp_path / "prompts" / "demo.md").write_text("uses {bogus_var}")
     with pytest.raises(PromptRenderError, match="bogus_var"):
@@ -96,7 +98,7 @@ def test_undefined_variable_raises_prompt_render_error(tmp_path):
 
 
 def test_explicit_override_path_wins(tmp_path):
-    cfg = _install(tmp_path)
+    _install(tmp_path)
     explicit = tmp_path / "explicit_student.md"
     explicit.write_text("EXPLICIT {lab_id}")
     out = load_prompt("student", override_path=explicit)

@@ -21,7 +21,8 @@ def test_discover_columns(tmp_path):
         "CREATE TABLE runs (run_id TEXT, started_at TEXT, campaign_id TEXT, "
         "synthetic_loss REAL, coefficient REAL)"
     )
-    conn.commit(); conn.close()
+    conn.commit()
+    conn.close()
     assert set(mv.discover_columns(db)) == {"synthetic_loss", "coefficient"}
 
 
@@ -33,7 +34,8 @@ def test_discover_columns_db_without_runs_table(tmp_path):
     db = tmp_path / "runs.sqlite"
     conn = sqlite3.connect(db)
     conn.execute("CREATE TABLE other (x INTEGER)")
-    conn.commit(); conn.close()
+    conn.commit()
+    conn.close()
     assert mv.discover_columns(db) == []
 
 

@@ -224,7 +224,7 @@ def run_adapter(
     print(f"  {cfg.outputs.journal_dir}/   4 research records (001..004)")
     print(f"  {cfg.outputs.runs_file}   {len(runs)} runs")
     print(f"  {cfg.outputs.claims_file} {len(claims)} claims with provenance")
-    print(f"  dashboard.html")
+    print("  dashboard.html")
     print(f"  wall-clock proxy: {gpu_seconds/3600:.4f} / "
           f"{cfg.budget.max_gpu_hours} configured GPU-h, "
           f"$0.00 / ${cfg.budget.max_llm_cost_usd} LLM (offline)")
