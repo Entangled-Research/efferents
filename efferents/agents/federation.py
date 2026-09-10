@@ -215,19 +215,14 @@ def reproductions_path(paper_dir: Path) -> Path:
 def is_reproduced(
     paper_dir: Path, *, lab_id: str, campaign_id: str
 ) -> bool:
-    """True iff there is at least one `verified` entry for this (lab, campaign).
-    A `failed` or `pending` status does NOT count as reproduced."""
-    path = reproductions_path(paper_dir)
-    if not path.exists():
-        return False
-    for e in _parse_reproductions(path.read_text()):
-        if (
-            e.get("lab_id") == lab_id
-            and e.get("campaign_id") == campaign_id
-            and e.get("status") == "verified"
-        ):
-            return True
-    return False
+    """True iff the latest reproduction status is ``verified``.
+
+    A later failed reproduction revokes an earlier verification.  Using the
+    latest status makes the execution gate fail closed when evidence changes.
+    """
+    return reproduction_status(
+        paper_dir, lab_id=lab_id, campaign_id=campaign_id
+    ) == "verified"
 
 
 def reproduction_status(
@@ -246,6 +241,67 @@ def reproduction_status(
         if e.get("lab_id") == lab_id and e.get("campaign_id") == campaign_id
     ]
     return matching[0]["status"] if matching else None
+
+
+def foundational_dependency_violations(
+    paper_dir: Path,
+    proposal: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Return dependencies that make ``proposal`` unsafe to execute.
+
+    A proposal may use a sibling paper as a foundational premise only when
+    the latest local reproduction record for that paper is ``verified``.
+    Reproduction proposals may target their own still-unverified dependency,
+    but that narrow exception does not waive any other dependency.
+
+    Malformed dependency declarations fail closed.  Each returned item has a
+    compact ``reason`` suitable for the append-only lab notebook.
+    """
+    deps = proposal.get("foundational_external")
+    if deps is None:
+        return []
+    if not isinstance(deps, list):
+        return [{"reason": "foundational_external must be a list"}]
+
+    reproduction = proposal.get("reproduction_of")
+    reproduction_key: tuple[str, str] | None = None
+    if isinstance(reproduction, dict):
+        r_lab = reproduction.get("lab_id")
+        r_campaign = reproduction.get("campaign_id")
+        if isinstance(r_lab, str) and isinstance(r_campaign, str):
+            reproduction_key = (r_lab, r_campaign)
+
+    violations: list[dict[str, Any]] = []
+    for index, dep in enumerate(deps):
+        if not isinstance(dep, dict):
+            violations.append({
+                "index": index,
+                "reason": "dependency must be an object",
+            })
+            continue
+        lab_id = dep.get("lab_id")
+        campaign_id = dep.get("campaign_id")
+        if not isinstance(lab_id, str) or not lab_id or not isinstance(campaign_id, str) or not campaign_id:
+            violations.append({
+                "index": index,
+                "reason": "dependency requires non-empty lab_id and campaign_id",
+            })
+            continue
+        key = (lab_id, campaign_id)
+        if reproduction_key == key:
+            continue
+        status = reproduction_status(
+            paper_dir, lab_id=lab_id, campaign_id=campaign_id
+        )
+        if status != "verified":
+            violations.append({
+                "index": index,
+                "lab_id": lab_id,
+                "campaign_id": campaign_id,
+                "status": status,
+                "reason": "latest reproduction is not verified",
+            })
+    return violations
 
 
 def record_reproduction(
