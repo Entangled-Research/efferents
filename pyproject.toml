@@ -35,3 +35,8 @@ markers = [
     "slow: integration tests that exec real lab CLIs end-to-end",
     "integration: end-to-end tests that require ANTHROPIC_API_KEY and execute the daemon",
 ]
+
+[tool.ruff.lint]
+# Keep Ruff's historical default rule set explicit so local environments agree
+# when newer releases add opt-in lint families.
+select = ["E4", "E7", "E9", "F"]
