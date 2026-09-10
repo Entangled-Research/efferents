@@ -42,7 +42,7 @@ Inspect the current directory and determine which path applies:
 2. **Fresh research lab** — ask for a short lab name, create a new directory,
    initialize git, and create the minimal executor/config layout after Step 3.
 3. **Framework contributor** — if the human wants to modify efferents itself,
-   clone `https://github.com/mashathepotato/efferents` and install it editable.
+   clone `https://github.com/Entangled-Research/efferents` and install it editable.
 
 The lab name becomes `lab_id` and must match
 `[A-Za-z0-9][A-Za-z0-9._-]{0,127}`: a letter or digit first, then only
@@ -71,7 +71,7 @@ Efferents requires Python 3.10 or newer. Prefer `uv`:
 
 ```bash
 uv venv --python 3.12 .venv
-uv pip install --python .venv/bin/python "git+https://github.com/mashathepotato/efferents.git"
+uv pip install --python .venv/bin/python "git+https://github.com/Entangled-Research/efferents.git"
 .venv/bin/efferents --help
 ```
 

@@ -43,9 +43,9 @@ Read these first:
 
 ## UI contract
 
-- The research-console interface is the product default, including in examples
-  and challenge demos. Do not create a parallel "quick" dashboard with its own
-  visual language.
+- The research-console interface is the product default, including generated
+  reports and examples. Do not create a parallel "quick" dashboard with its
+  own visual language.
 - `efferents/dashboard/static/dashboard.css` is the canonical visual contract.
   Python example apps that emit HTML must embed it through
   `efferents.dashboard.theme.embed_research_theme`; generated offline reports

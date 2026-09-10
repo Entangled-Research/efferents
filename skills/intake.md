@@ -3,7 +3,7 @@
 The canonical agent onboarding contract now lives at the repository root:
 
 ```text
-https://raw.githubusercontent.com/mashathepotato/efferents/main/intake.md
+https://raw.githubusercontent.com/Entangled-Research/efferents/main/intake.md
 ```
 
 Fetch that file and follow it from the beginning. It replaces the older
