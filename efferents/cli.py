@@ -52,6 +52,7 @@ def _orchestrator_loop(
     context_dir: Path,
     dry_run: bool = False,
     max_iterations: int | None = None,
+    submission_dir: Path | None = None,
 ) -> None:
     # Indirection so tests can monkey-patch the loop body without forking.
     # In production, builds an Orchestrator from the active LabConfig and
@@ -59,13 +60,20 @@ def _orchestrator_loop(
     # transitive deps at CLI startup.
     from efferents.agents import orchestrator  # noqa: PLC0415
     cfg = lab_mod.get_config()
+    # lab.yaml cadence, then EFFERENTS_CADENCE_* overrides from the daemon env.
+    cadence = lab_mod.cadence_with_env(cfg.cadence)
     o = orchestrator.Orchestrator(
         lab_dir=lab_root,
         context_dir=context_dir,
         daily_cap_usd=cfg.budget.daily_cap_usd,
         total_cap_usd=cfg.budget.total_cap_usd,
         dry_run=dry_run,
-        startup_message=f"efferents daemon for lab_id={cfg.lab_id}",
+        startup_message=(
+            f"efferents daemon for lab_id={cfg.lab_id}\n\n"
+            f"cadence: {cadence.as_kwargs()}"
+        ),
+        submission_dir=submission_dir if submission_dir is not None else context_dir.parent,
+        **cadence.as_kwargs(),
     )
     o.run(max_iterations=max_iterations)
     # Always leave a current static artifact, including bounded/offline runs
@@ -74,8 +82,15 @@ def _orchestrator_loop(
     write_progress(o.paths, context_dir=context_dir)
 
 
-def _init_lab_root(submission_dir: Path, lab_root: Path) -> None:
-    """Create lab/ dir + run migrations + copy provenance files."""
+def _init_lab_root(
+    submission_dir: Path, lab_root: Path, cfg: LabConfig | None = None
+) -> None:
+    """Create lab/ dir + run migrations + copy provenance files.
+
+    ``cfg`` defaults to the process-global active config; callers that manage
+    several labs in one process (the dashboard, a cluster) pass it explicitly.
+    """
+    cfg = cfg or lab_mod.get_config()
     lab_root.mkdir(parents=True, exist_ok=True)
     (lab_root / "progress").mkdir(exist_ok=True)
     (lab_root / "papers").mkdir(exist_ok=True)
@@ -92,7 +107,7 @@ def _init_lab_root(submission_dir: Path, lab_root: Path) -> None:
         ensure_runs_table,
     )
     apply_campaigns_migration(lab_root / "runs.sqlite")
-    ensure_runs_table(lab_root / "runs.sqlite", lab_mod.get_config())
+    ensure_runs_table(lab_root / "runs.sqlite", cfg)
 
     # The submitted, already-falsifiable hypothesis is the lab's initial
     # campaign. This gives the very first run a provenance anchor before the
@@ -102,6 +117,9 @@ def _init_lab_root(submission_dir: Path, lab_root: Path) -> None:
 
     db = lab_root / "runs.sqlite"
     with sqlite3.connect(db) as conn:
+        # WAL lets dashboard readers coexist with the daemon's writes; the
+        # mode is persistent on the file, so setting it here is enough.
+        conn.execute("PRAGMA journal_mode=WAL")
         n_campaigns = int(
             conn.execute("SELECT COUNT(*) FROM campaigns").fetchone()[0]
         )
@@ -112,8 +130,7 @@ def _init_lab_root(submission_dir: Path, lab_root: Path) -> None:
         if not question:
             question = _markdown_section(hypothesis_text, "Operational restatement")
         if not question:
-            question = f"Initial submitted hypothesis for {lab_mod.get_config().lab_id}"
-        cfg = lab_mod.get_config()
+            question = f"Initial submitted hypothesis for {cfg.lab_id}"
         campaign_insert(
             db,
             id=f"submission-{digest[:12]}",
@@ -130,7 +147,6 @@ def _init_lab_root(submission_dir: Path, lab_root: Path) -> None:
     context_dir.mkdir(exist_ok=True)
     research_log = context_dir / "research_log.md"
     if not research_log.exists():
-        cfg = lab_mod.get_config()
         research_log.write_text(
             f"# {cfg.lab_id} research log\n\n"
             "*(empty — populate to guide the Researcher; "
@@ -170,7 +186,7 @@ def _cmd_start(args: argparse.Namespace) -> int:
     load_dotenv(sub / ".env")
 
     lab_mod.set_config(cfg)
-    _init_lab_root(sub, lab_root)
+    _init_lab_root(sub, lab_root, cfg=cfg)
     os.chdir(sub)
 
     force = getattr(args, "force", False)
@@ -221,6 +237,7 @@ def _cmd_start(args: argparse.Namespace) -> int:
             context_dir=sub / "context",
             dry_run=args.dry_run,
             max_iterations=args.max_iterations,
+            submission_dir=sub,
         )
 
     if args.detach:
@@ -243,6 +260,47 @@ def _halt_reason(lab_root: Path, limit: int = 60) -> str:
         return ""
     text = " ".join(halt.read_text().split())
     return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
+def _cmd_migrate_paper_dir(args: argparse.Namespace) -> int:
+    """Move Writer output from the legacy ``lab/paper/`` to ``<submission>/paper/``.
+
+    Refuses to overwrite: a file that exists at both locations is left in
+    place and reported, so provenance is never clobbered.
+    """
+    sub = Path(args.submission).resolve()
+    lab_root = Path(args.lab_root).resolve() if args.lab_root else (sub / "lab").resolve()
+    old_dir = lab_root / "paper"
+    new_dir = sub / "paper"
+    if not old_dir.is_dir():
+        print(f"nothing to migrate: {old_dir} does not exist")
+        return 0
+    new_dir.mkdir(parents=True, exist_ok=True)
+    moved, collisions = 0, []
+    for path in sorted(old_dir.rglob("*")):
+        if not path.is_file():
+            continue
+        rel = path.relative_to(old_dir)
+        target = new_dir / rel
+        if target.exists():
+            collisions.append(str(rel))
+            continue
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(path), str(target))
+        moved += 1
+    print(f"moved {moved} file(s) from {old_dir} to {new_dir}")
+    if collisions:
+        print("left in place (already present at destination):", file=sys.stderr)
+        for rel in collisions:
+            print(f"  {rel}", file=sys.stderr)
+        return 1
+    # Remove now-empty directories so the legacy location disappears cleanly.
+    for d in sorted((d for d in old_dir.rglob("*") if d.is_dir()), reverse=True):
+        if not any(d.iterdir()):
+            d.rmdir()
+    if not any(old_dir.iterdir()):
+        old_dir.rmdir()
+    return 0
 
 
 def _cmd_list(args: argparse.Namespace) -> int:
@@ -683,12 +741,17 @@ def _cmd_serve(args: argparse.Namespace) -> int:
             "port": args.port,
             "url": f"http://localhost:{args.port}",
         }))
+    extra = {}
+    host = getattr(args, "host", "127.0.0.1")
+    if host and host != "127.0.0.1":
+        extra["host"] = host
     try:
         dash_server.serve(
             connected_root,
             port=args.port,
             open_browser=not args.no_open,
             paused_demo=getattr(args, "paused_demo", False),
+            **extra,
         )
     finally:
         daemon.clear_pidfile(serve_json)
@@ -768,6 +831,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_list = sub.add_parser("list", help="List all registered labs")
     p_list.set_defaults(func=_cmd_list)
+
+    p_migrate = sub.add_parser(
+        "migrate-paper-dir",
+        help="Move Writer output from the legacy lab/paper/ to <submission>/paper/",
+    )
+    p_migrate.add_argument("--submission", required=True)
+    p_migrate.add_argument("--lab-root", default=None)
+    p_migrate.set_defaults(func=_cmd_migrate_paper_dir)
 
     p_steer = sub.add_parser(
         "steer",
@@ -861,6 +932,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_serve.add_argument("--lab-root", default="lab",
                          help="Initialized lab directory (relative to cwd)")
     p_serve.add_argument("--port", type=int, default=8800)
+    p_serve.add_argument("--host", default="127.0.0.1",
+                         help="Bind address (default loopback; a reverse proxy "
+                              "should terminate TLS in front of anything else)")
     p_serve.add_argument("--no-open", action="store_true",
                          help="Do not auto-open the browser")
     p_serve.add_argument(

@@ -2182,3 +2182,37 @@ td.status-insufficient_data {
     animation: none !important;
   }
 }
+
+/* --- ownership marks and network edge kinds (hosted clusters) ------------- */
+
+.map-node.mine,
+.lab-list-item.mine {
+  box-shadow: inset 3px 0 0 var(--signal);
+}
+
+.map-node-owner {
+  display: block;
+  color: var(--ink);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+#network-lines .edge-shared-track {
+  stroke: var(--dim);
+}
+
+#network-lines .edge-reviewed {
+  stroke: var(--signal-strong);
+  stroke-dasharray: none;
+}
+
+#network-lines .edge-cited {
+  stroke: var(--ink);
+  stroke-dasharray: 6 3;
+}
+
+#network-lines .edge-reproduced {
+  stroke: var(--signal-strong);
+  stroke-dasharray: none;
+  stroke-width: 2;
+}

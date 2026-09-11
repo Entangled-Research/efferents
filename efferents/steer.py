@@ -125,10 +125,12 @@ def steer(
     by: str = "lab owner",
     action: str | None = None,
     lab_root: str | Path | None = None,
+    extra: dict[str, Any] | None = None,
 ) -> tuple[Path, Path]:
     """Record an owner redirect (optionally a pause/resume).
 
-    Returns ``(charter_path, steering_path)``.
+    ``extra`` fields (for example a requested Researcher ``mode``) are stored
+    on the steering record verbatim. Returns ``(charter_path, steering_path)``.
     """
     sub = Path(submission_dir).resolve()
     text = text.strip()
@@ -139,7 +141,7 @@ def steer(
     charter = write_charter(
         sub / "context", initial_direction=text, prompted_by=by, title=title,
     )
-    record_steering(root, text=text, by=by, action=action)
+    record_steering(root, text=text, by=by, action=action, **(extra or {}))
     return charter, steering_path(root)
 
 

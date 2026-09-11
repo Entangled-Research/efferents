@@ -19,10 +19,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
+import json
+from typing import Callable
+
 from efferents import daemon
-from efferents import lab as lab_mod
+from efferents import steer as steer_mod
 from efferents.cli import _init_lab_root
 from efferents.dashboard import reader
+from efferents.dashboard.cache import TTLCache
 from efferents.lab import LabConfig, SubmissionError
 from efferents.registry import LabRecord, Registry
 
@@ -63,6 +67,108 @@ class ConnectedLab:
     source: str | None = None
     repository: str | None = None
     readme_path: str | None = None
+    # Present when the lab was created inside a hosted cluster
+    # (<submission>/owner.json); None for a plain local lab.
+    owner_id: str | None = None
+    owner_name: str | None = None
+    track: str | None = None
+
+
+OWNER_FILENAME = "owner.json"
+
+
+def read_owner_meta(submission_dir: Path) -> dict:
+    """Ownership/track metadata written by a cluster at lab creation, if any."""
+    path = Path(submission_dir) / OWNER_FILENAME
+    if not path.is_file():
+        return {}
+    try:
+        data = json.loads(path.read_text())
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def connected_lab_from_record(record: LabRecord, cfg: LabConfig) -> ConnectedLab:
+    submission = Path(record.submission_dir).expanduser().resolve()
+    meta = read_owner_meta(submission)
+    return ConnectedLab(
+        cfg=cfg,
+        submission_dir=submission,
+        lab_root=Path(record.lab_root).expanduser().resolve(),
+        source=str(submission / "README.md"),
+        repository=cfg.code_repo,
+        readme_path="README.md" if (submission / "README.md").is_file() else None,
+        owner_id=meta.get("owner_id"),
+        owner_name=meta.get("owner_name"),
+        track=meta.get("track"),
+    )
+
+
+def _mtime(path: Path) -> float:
+    try:
+        return path.stat().st_mtime
+    except OSError:
+        return -1.0
+
+
+class LabCatalog:
+    """Resolve registered labs to ``ConnectedLab`` objects, per request.
+
+    Nothing here touches the process-global active config, so any number of
+    labs can be read by one server. Entries are cached until ``lab.yaml``,
+    ``hypothesis.md`` or ``owner.json`` changes on disk.
+    """
+
+    def __init__(self, default: Callable[[], ConnectedLab | None] | None = None):
+        self._default = default
+        self._cache: dict[str, tuple[tuple, ConnectedLab]] = {}
+        self._lock = threading.Lock()
+
+    def records(self) -> list[LabRecord]:
+        return Registry().list()
+
+    def _fingerprint(self, submission: Path) -> tuple:
+        return tuple(
+            _mtime(submission / name)
+            for name in ("lab.yaml", "hypothesis.md", OWNER_FILENAME)
+        )
+
+    def resolve(self, lab_id: str) -> ConnectedLab:
+        lab_id = lab_id.strip()
+        if not lab_id:
+            raise ControlError("Choose a local lab to inspect.")
+        record = Registry().get(lab_id)
+        if record is None:
+            default = self._default() if self._default is not None else None
+            if default is not None and default.cfg.lab_id == lab_id:
+                return default
+            raise ControlError(f"Unknown local lab: {lab_id!r}.", status=404)
+        submission = Path(record.submission_dir).expanduser().resolve()
+        fingerprint = (str(submission), str(record.lab_root), *self._fingerprint(submission))
+        with self._lock:
+            hit = self._cache.get(lab_id)
+            if hit is not None and hit[0] == fingerprint:
+                return hit[1]
+        try:
+            cfg = LabConfig.from_submission(submission, check_paths=False)
+        except SubmissionError as exc:
+            raise ControlError(
+                f"Registered lab can no longer be loaded: {exc}", status=422
+            ) from exc
+        lab = connected_lab_from_record(record, cfg)
+        with self._lock:
+            self._cache[lab_id] = (fingerprint, lab)
+        return lab
+
+    def invalidate(self, lab_id: str | None = None) -> None:
+        with self._lock:
+            if lab_id is None:
+                self._cache.clear()
+            else:
+                self._cache.pop(lab_id, None)
+
+
 
 
 def _safe_url_parts(path: str) -> list[str]:
@@ -251,35 +357,15 @@ def _dotenv_has_key(submission_dir: Path) -> bool:
         return False
 
 
-def _recent_steering(path: Path, limit: int = 8) -> list[dict]:
-    if not path.is_file():
-        return []
-    records: list[dict] = []
-    for block in path.read_text().split("\n## "):
-        block = block.strip()
-        if not block:
-            continue
-        heading, _, body = block.partition("\n")
-        timestamp, separator, title = heading.partition(" — ")
-        if not separator or title.strip() != "Human steering":
-            continue
-        mode = "auto"
-        message_lines: list[str] = []
-        for line in body.strip().splitlines():
-            if line.startswith("force_mode:"):
-                mode = line.partition(":")[2].strip()
-            else:
-                message_lines.append(line)
-        records.append({
-            "timestamp": timestamp.strip(),
-            "message": "\n".join(message_lines).strip(),
-            "mode": mode,
-        })
-    return records[-limit:][::-1]
-
-
 class ControlContext:
-    """Thread-safe active-lab state shared by dashboard request handlers."""
+    """Thread-safe lab control shared by dashboard request handlers.
+
+    Every per-lab operation takes an explicit ``ConnectedLab`` (resolved by
+    the handler from the URL through ``self.labs``). The legacy single-lab
+    methods (``info()``, ``steer()``, ``start()``, ``stop()``) operate on the
+    *default* lab: the one given to ``efferents serve --lab-root`` or the one
+    most recently connected/selected in the browser.
+    """
 
     def __init__(
         self,
@@ -290,6 +376,14 @@ class ControlContext:
         self._connected = connected
         self.paused_demo = paused_demo
         self._lock = threading.RLock()
+        self.labs = LabCatalog(default=self.snapshot)
+        # A hosted cluster installs a callable that derives extra network
+        # edges (reviews, citations, reproductions) from its shared files.
+        self.extra_edges: Callable[[list[dict]], list[dict]] | None = None
+        # A hosted cluster also lists labs that run elsewhere and report in
+        # through its hub; rows in the portfolio shape, never selectable here.
+        self.extra_labs: Callable[[], list[dict]] | None = None
+        self._portfolio_cache = TTLCache(ttl_s=2.0)
 
     @classmethod
     def from_initial_root(
@@ -309,14 +403,20 @@ class ControlContext:
             except SubmissionError:
                 cfg = None
         if cfg is None:
+            from efferents import lab as lab_mod  # noqa: PLC0415
             try:
                 cfg = lab_mod.get_config()
             except RuntimeError:
                 return cls(paused_demo=paused_demo)
             if not (submission / "context").exists():
                 submission = lab_root
+        meta = read_owner_meta(submission)
         return cls(
-            ConnectedLab(cfg=cfg, submission_dir=submission, lab_root=lab_root),
+            ConnectedLab(
+                cfg=cfg, submission_dir=submission, lab_root=lab_root,
+                owner_id=meta.get("owner_id"), owner_name=meta.get("owner_name"),
+                track=meta.get("track"),
+            ),
             paused_demo=paused_demo,
         )
 
@@ -331,10 +431,17 @@ class ControlContext:
         with self._lock:
             return self._connected
 
-    def portfolio(self) -> dict:
-        """Return every valid local lab without implying public registration."""
+    def _require_default(self, verb: str) -> ConnectedLab:
+        connected = self.snapshot()
+        if connected is None:
+            raise ControlError(f"Connect a lab before {verb} it.", status=409)
+        return connected
+
+    # --- portfolio -----------------------------------------------------------
+
+    def _portfolio_rows(self) -> list[dict]:
         selected = self.snapshot()
-        records = {record.lab_id: record for record in Registry().list()}
+        records = {record.lab_id: record for record in self.labs.records()}
         if selected is not None and selected.cfg.lab_id not in records:
             records[selected.cfg.lab_id] = LabRecord(
                 lab_id=selected.cfg.lab_id,
@@ -344,36 +451,58 @@ class ControlContext:
                 started_at="",
                 status="stopped",
             )
-
         labs: list[dict] = []
         for record in records.values():
-            submission = Path(record.submission_dir).expanduser().resolve()
-            lab_root = Path(record.lab_root).expanduser().resolve()
             try:
                 if selected is not None and record.lab_id == selected.cfg.lab_id:
-                    cfg = selected.cfg
+                    lab = selected
                 else:
-                    cfg = LabConfig.from_submission(submission, check_paths=False)
-                summary = reader.read_summary(lab_root, cfg)
-            except (OSError, SubmissionError, RuntimeError):
+                    lab = self.labs.resolve(record.lab_id)
+                summary = reader.read_summary(lab.lab_root, lab.cfg)
+            except (OSError, ControlError, SubmissionError, RuntimeError):
                 continue
             labs.append({
-                "lab_id": cfg.lab_id,
-                "domain": cfg.domain,
-                "subdomain": cfg.subdomain,
-                "pi_handle": cfg.pi_handle,
-                "repository": cfg.code_repo,
-                "submission_dir": str(submission),
-                "selected": selected is not None and cfg.lab_id == selected.cfg.lab_id,
+                "lab_id": lab.cfg.lab_id,
+                "domain": lab.cfg.domain,
+                "subdomain": lab.cfg.subdomain,
+                "pi_handle": lab.cfg.pi_handle,
+                "repository": lab.cfg.code_repo,
+                "submission_dir": str(lab.submission_dir),
+                "owner_id": lab.owner_id,
+                "owner_name": lab.owner_name,
+                "track": lab.track,
                 "visibility": "private",
                 **summary,
             })
-            if self.paused_demo and selected is not None and cfg.lab_id == selected.cfg.lab_id:
-                labs[-1]["status"] = "paused"
+        return labs
+
+    def portfolio(self) -> dict:
+        """Return every valid local lab without implying public registration."""
+        import sqlite3  # noqa: PLC0415
+        rows = self._portfolio_cache.get(
+            "portfolio", self._portfolio_rows, stale_on=(sqlite3.OperationalError,)
+        )
+        selected = self.snapshot()
+        selected_id = selected.cfg.lab_id if selected is not None else None
+        labs = [
+            {**row, "selected": row["lab_id"] == selected_id}
+            for row in rows
+        ]
+        if self.extra_labs is not None:
+            try:
+                local_ids = {row["lab_id"] for row in labs}
+                labs.extend({**row, "selected": False} for row in self.extra_labs()
+                            if row.get("lab_id") not in local_ids)
+            except Exception:  # a broken hub file must not hide the local labs
+                pass
+        if self.paused_demo:
+            for row in labs:
+                if row["selected"]:
+                    row["status"] = "paused"
 
         # Registry order is the persistent rail order. Selection changes only
         # the highlighted row; it must not move that row underneath the cursor.
-        edges = []
+        edges: list[dict] = []
         for index, source in enumerate(labs):
             for target in labs[index + 1:]:
                 if source["domain"] == target["domain"]:
@@ -382,6 +511,17 @@ class ControlContext:
                         "target": target["lab_id"],
                         "kind": "shared-domain",
                     })
+                if source.get("track") and source.get("track") == target.get("track"):
+                    edges.append({
+                        "source": source["lab_id"],
+                        "target": target["lab_id"],
+                        "kind": "shared-track",
+                    })
+        if self.extra_edges is not None:
+            try:
+                edges.extend(self.extra_edges(labs))
+            except Exception:  # never let a derived edge break the network view
+                pass
         return {
             "labs": labs,
             "edges": edges,
@@ -396,32 +536,11 @@ class ControlContext:
         }
 
     def select_lab(self, lab_id: str) -> dict:
-        """Switch the dashboard to a registered lab without executing it."""
-        lab_id = lab_id.strip()
-        if not lab_id:
-            raise ControlError("Choose a local lab to inspect.")
-        record = Registry().get(lab_id)
-        if record is None:
-            raise ControlError(f"Unknown local lab: {lab_id!r}.", status=404)
-        submission = Path(record.submission_dir).expanduser().resolve()
-        lab_root = Path(record.lab_root).expanduser().resolve()
-        try:
-            cfg = LabConfig.from_submission(submission, check_paths=False)
-        except SubmissionError as exc:
-            raise ControlError(
-                f"Registered lab can no longer be loaded: {exc}", status=422
-            ) from exc
-        connected = ConnectedLab(
-            cfg=cfg,
-            submission_dir=submission,
-            lab_root=lab_root,
-            source=str(submission / "README.md"),
-            repository=cfg.code_repo,
-            readme_path="README.md" if (submission / "README.md").is_file() else None,
-        )
-        lab_mod.set_config(cfg)
+        """Make a registered lab the default without executing it."""
+        connected = self.labs.resolve(lab_id)
         with self._lock:
             self._connected = connected
+        self._portfolio_cache.invalidate()
         return self.info()
 
     def connect(self, value: str) -> dict:
@@ -447,9 +566,8 @@ class ControlContext:
         except SubmissionError as exc:
             raise ControlError(f"Lab validation failed: {exc}", status=422) from exc
 
-        lab_mod.set_config(cfg)
         lab_root = (submission / "lab").resolve()
-        _init_lab_root(submission, lab_root)
+        _init_lab_root(submission, lab_root, cfg=cfg)
 
         existing = Registry().get(cfg.lab_id)
         if existing is None or not daemon.is_pid_alive(existing.pid):
@@ -462,6 +580,7 @@ class ControlContext:
                 status="stopped",
             ))
 
+        meta = read_owner_meta(submission)
         connected = ConnectedLab(
             cfg=cfg,
             submission_dir=submission,
@@ -470,10 +589,58 @@ class ControlContext:
             repository=repository,
             readme_path=str(readme.relative_to(search_root))
             if readme.is_relative_to(search_root) else str(readme),
+            owner_id=meta.get("owner_id"),
+            owner_name=meta.get("owner_name"),
+            track=meta.get("track"),
         )
         with self._lock:
             self._connected = connected
+        self.labs.invalidate(cfg.lab_id)
+        self._portfolio_cache.invalidate()
         return self.info()
+
+    # --- per-lab reads ---------------------------------------------------------
+
+    def _status_of(self, lab: ConnectedLab) -> str:
+        if self.paused_demo:
+            return "paused"
+        pid = daemon.read_pidfile(lab.lab_root / "daemon.pid")
+        running = pid is not None and daemon.is_pid_alive(pid)
+        if running and steer_mod.owner_paused(lab.lab_root) is not None:
+            return "paused"
+        return "running" if running else "stopped"
+
+    def lab_info(self, lab: ConnectedLab) -> dict:
+        status = self._status_of(lab)
+        return {
+            "connected": True,
+            "lab_id": lab.cfg.lab_id,
+            "domain": lab.cfg.domain,
+            "submission_dir": str(lab.submission_dir),
+            "lab_root": str(lab.lab_root),
+            "source": lab.source,
+            "repository": lab.repository or lab.cfg.code_repo,
+            "readme_path": lab.readme_path,
+            "status": status,
+            "owner_paused": (
+                steer_mod.owner_paused(lab.lab_root) is not None
+                if not self.paused_demo else False
+            ),
+            "owner_id": lab.owner_id,
+            "owner_name": lab.owner_name,
+            "track": lab.track,
+            "has_api_key": (
+                False if self.paused_demo else _dotenv_has_key(lab.submission_dir)
+            ),
+            "paused_demo": self.paused_demo,
+            "modes": list(STEERING_MODES),
+            "steering": recent_steering(lab.lab_root),
+            "contract": {
+                "readme": bool(lab.readme_path or lab.source),
+                "lab_yaml": True,
+                "hypothesis": True,
+            },
+        }
 
     def info(self) -> dict:
         connected = self.snapshot()
@@ -488,38 +655,26 @@ class ControlContext:
                     "hypothesis": False,
                 },
             }
-        pid = daemon.read_pidfile(connected.lab_root / "daemon.pid")
-        running = pid is not None and daemon.is_pid_alive(pid)
-        research_log = connected.submission_dir / "context" / "research_log.md"
-        status = "paused" if self.paused_demo else ("running" if running else "stopped")
-        return {
-            "connected": True,
-            "lab_id": connected.cfg.lab_id,
-            "domain": connected.cfg.domain,
-            "submission_dir": str(connected.submission_dir),
-            "lab_root": str(connected.lab_root),
-            "source": connected.source,
-            "repository": connected.repository or connected.cfg.code_repo,
-            "readme_path": connected.readme_path,
-            "status": status,
-            "has_api_key": (
-                False if self.paused_demo else _dotenv_has_key(connected.submission_dir)
-            ),
-            "paused_demo": self.paused_demo,
-            "modes": list(STEERING_MODES),
-            "steering": _recent_steering(research_log),
-            "contract": {
-                "readme": bool(connected.readme_path or connected.source),
-                "lab_yaml": True,
-                "hypothesis": True,
-            },
-        }
+        return self.lab_info(connected)
 
-    def steer(self, message: str, mode: str = "auto") -> dict:
+    # --- per-lab mutations -----------------------------------------------------
+
+    def steer_lab(
+        self,
+        lab: ConnectedLab,
+        message: str,
+        mode: str = "auto",
+        *,
+        by: str = "lab owner",
+    ) -> dict:
+        """Record funder direction in the auditable steering ledger.
+
+        The text goes verbatim into the charter (``context/popper.md``) and
+        ``lab/steering.jsonl`` (acknowledged by the daemon on its next step).
+        A requested Researcher mode additionally writes the ``force_mode``
+        block the Researcher reads from ``context/research_log.md``.
+        """
         self._require_mutable()
-        connected = self.snapshot()
-        if connected is None:
-            raise ControlError("Connect a lab before steering it.", status=409)
         message = message.strip()
         if not message or len(message) > 4000:
             raise ControlError("Steering instructions must be between 1 and 4,000 characters.")
@@ -527,46 +682,90 @@ class ControlContext:
             raise ControlError("Steering instructions contain an invalid null byte.")
         if mode not in STEERING_MODES:
             raise ControlError(f"Unknown researcher mode: {mode!r}.")
+        by = by.strip()[:120] or "lab owner"
 
         timestamp = datetime.now(timezone.utc).isoformat(timespec="seconds")
-        context_dir = connected.submission_dir / "context"
-        context_dir.mkdir(exist_ok=True)
-        research_log = context_dir / "research_log.md"
-        block = f"\n## {timestamp} — Human steering\n\n{message}\n"
-        if mode != "auto":
-            block += f"\nforce_mode: {mode}\n"
         with self._lock:
-            with research_log.open("a") as handle:
-                handle.write(block)
+            try:
+                steer_mod.steer(
+                    lab.submission_dir,
+                    text=message,
+                    by=by,
+                    lab_root=lab.lab_root,
+                    extra={"mode": mode},
+                )
+            except steer_mod.SteeringError as exc:
+                raise ControlError(str(exc)) from exc
+            if mode != "auto":
+                context_dir = lab.submission_dir / "context"
+                context_dir.mkdir(exist_ok=True)
+                research_log = context_dir / "research_log.md"
+                block = (
+                    f"\n## {timestamp} — Human steering\n\n{message}\n"
+                    f"\nforce_mode: {mode}\n"
+                )
+                with research_log.open("a") as handle:
+                    handle.write(block)
+        info = self.lab_info(lab)
         return {
             "ok": True,
             "recorded_at": timestamp,
             "mode": mode,
-            "status": self.info()["status"],
-            "steering": self.info()["steering"],
+            "by": by,
+            "status": info["status"],
+            "steering": info["steering"],
         }
 
-    def start(self, confirmed: bool) -> dict:
+    def steer(self, message: str, mode: str = "auto") -> dict:
         self._require_mutable()
-        connected = self.snapshot()
-        if connected is None:
-            raise ControlError("Connect a lab before starting it.", status=409)
+        return self.steer_lab(self._require_default("steering"), message, mode)
+
+    def _pause_or_resume(
+        self, lab: ConnectedLab, action: str, reason: str, *, by: str
+    ) -> dict:
+        self._require_mutable()
+        by = by.strip()[:120] or "lab owner"
+        reason = reason.strip()[:4000] or f"{action} requested by {by}"
+        try:
+            steer_mod.steer(
+                lab.submission_dir, text=reason, by=by, action=action,
+                lab_root=lab.lab_root,
+            )
+        except steer_mod.SteeringError as exc:
+            raise ControlError(str(exc)) from exc
+        return {**self.lab_info(lab), "queued": action}
+
+    def pause_lab(self, lab: ConnectedLab, reason: str = "", *, by: str = "lab owner") -> dict:
+        """Queue an owner pause; the daemon halts spending on its next step."""
+        return self._pause_or_resume(lab, "pause", reason, by=by)
+
+    def resume_lab(self, lab: ConnectedLab, reason: str = "", *, by: str = "lab owner") -> dict:
+        return self._pause_or_resume(lab, "resume", reason, by=by)
+
+    def start_lab(
+        self,
+        lab: ConnectedLab,
+        confirmed: bool,
+        *,
+        env_extra: dict[str, str] | None = None,
+    ) -> dict:
+        self._require_mutable()
         if not confirmed:
             raise ControlError(
                 "Starting requires explicit confirmation because it executes repository "
                 "commands and may incur compute or LLM cost.",
                 status=409,
             )
-        if not _dotenv_has_key(connected.submission_dir):
+        if not _dotenv_has_key(lab.submission_dir):
             from efferents.agents.model_client import credential_help
             raise ControlError(
                 f"{credential_help()} Put the selected provider's credentials in "
                 "the submission .env or export them before starting.",
                 status=409,
             )
-        pid = daemon.read_pidfile(connected.lab_root / "daemon.pid")
+        pid = daemon.read_pidfile(lab.lab_root / "daemon.pid")
         if pid is not None and daemon.is_pid_alive(pid):
-            return self.info()
+            return self.lab_info(lab)
 
         command = [
             sys.executable,
@@ -574,14 +773,15 @@ class ControlContext:
             "efferents",
             "start",
             "--submission",
-            str(connected.submission_dir),
+            str(lab.submission_dir),
             "--lab-root",
-            str(connected.lab_root),
+            str(lab.lab_root),
             "--detach",
         ]
         result = subprocess.run(
             command,
-            cwd=connected.submission_dir,
+            cwd=lab.submission_dir,
+            env={**os.environ, **(env_extra or {})},
             text=True,
             capture_output=True,
             timeout=30,
@@ -590,23 +790,32 @@ class ControlContext:
         if result.returncode:
             detail = (result.stderr or result.stdout).strip()
             raise ControlError(f"Lab did not start: {detail}", status=409)
-        return self.info()
+        self._portfolio_cache.invalidate()
+        return self.lab_info(lab)
 
-    def stop(self, confirmed: bool) -> dict:
+    def start(self, confirmed: bool) -> dict:
         self._require_mutable()
-        connected = self.snapshot()
-        if connected is None:
-            raise ControlError("Connect a lab before stopping it.", status=409)
+        return self.start_lab(self._require_default("starting"), confirmed)
+
+    def stop_lab(
+        self,
+        lab: ConnectedLab,
+        confirmed: bool,
+        *,
+        env_extra: dict[str, str] | None = None,
+    ) -> dict:
+        self._require_mutable()
         if not confirmed:
             raise ControlError("Stopping the lab requires explicit confirmation.", status=409)
 
-        record = Registry().get(connected.cfg.lab_id)
+        record = Registry().get(lab.cfg.lab_id)
         if record is None:
-            return self.info()
-        if Path(record.submission_dir).resolve() != connected.submission_dir.resolve():
+            return self.lab_info(lab)
+        if Path(record.submission_dir).resolve() != lab.submission_dir.resolve():
             raise ControlError("Registry record does not match the connected lab.", status=409)
         result = subprocess.run(
-            [sys.executable, "-m", "efferents", "stop", "--lab-id", connected.cfg.lab_id],
+            [sys.executable, "-m", "efferents", "stop", "--lab-id", lab.cfg.lab_id],
+            env={**os.environ, **(env_extra or {})},
             text=True,
             capture_output=True,
             timeout=20,
@@ -615,4 +824,25 @@ class ControlContext:
         if result.returncode:
             detail = (result.stderr or result.stdout).strip()
             raise ControlError(f"Lab did not stop: {detail}", status=409)
-        return self.info()
+        self._portfolio_cache.invalidate()
+        return self.lab_info(lab)
+
+    def stop(self, confirmed: bool) -> dict:
+        self._require_mutable()
+        return self.stop_lab(self._require_default("stopping"), confirmed)
+
+
+def recent_steering(lab_root: Path, limit: int = 8) -> list[dict]:
+    """Newest-first steering records for the observer panel."""
+    records = steer_mod.read_steering(lab_root)
+    out = []
+    for rec in records[-limit:][::-1]:
+        out.append({
+            "timestamp": rec.get("ts"),
+            "message": rec.get("text", ""),
+            "mode": rec.get("mode", "auto"),
+            "by": rec.get("by"),
+            "action": rec.get("action"),
+            "acknowledged": rec.get("ack") is not None,
+        })
+    return out

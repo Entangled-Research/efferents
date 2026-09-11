@@ -95,7 +95,8 @@ def student_ids() -> list[str]:
 # ---------------------------------------------------------------------------
 import re  # noqa: E402  (kept after legacy block)
 import yaml  # noqa: E402
-from dataclasses import dataclass, field  # noqa: E402
+import os  # noqa: E402
+from dataclasses import dataclass, field, replace  # noqa: E402
 from pathlib import Path  # noqa: E402
 from typing import Literal  # noqa: E402
 
@@ -163,6 +164,104 @@ class Budget:
     sonnet_default: bool = True
     # Lifetime cap on the ledger; None means only the daily cap applies.
     total_cap_usd: float | None = None
+
+
+@dataclass(frozen=True)
+class Cadence:
+    """How often the loop synthesizes: digests, Coder passes, papers.
+
+    Defaults reproduce the long-running lab behaviour. A bounded session
+    (a workshop, a live event) lowers them so progress is visible within
+    minutes instead of hours. Every value is read at daemon start;
+    ``EFFERENTS_CADENCE_<KEY>`` in the daemon environment overrides the
+    ``lab.yaml`` value so an operator can retune a fleet without editing
+    each config.
+    """
+
+    runs_per_digest: int = 40
+    hours_per_digest: float = 4.0
+    # Skip the Analyst until this many runs exist (0 keeps the legacy
+    # first-step digest attempt).
+    min_runs_for_digest: int = 0
+    runs_per_coder: int = 8
+    hours_per_coder: float = 6.0
+    runs_per_paper: int = 20
+    hours_per_paper: float = 6.0
+    # Idle sleep when there is nothing queued to execute.
+    empty_queue_sleep_s: float = 60.0
+    # Pause after every executed run (0 = none).
+    step_pause_s: float = 0.0
+    # Minimum seconds between two Researcher passes (0 = no floor).
+    researcher_min_interval_s: float = 0.0
+    # None defers to EFFERENTS_STALL_HOURS / the orchestrator default.
+    stall_hours: float | None = None
+    # Upper bound for the error/rate-limit backoff schedule.
+    backoff_cap_s: float = 3600.0
+
+    def as_kwargs(self) -> dict:
+        return {
+            "runs_per_digest": self.runs_per_digest,
+            "hours_per_digest": self.hours_per_digest,
+            "min_runs_for_digest": self.min_runs_for_digest,
+            "runs_per_coder": self.runs_per_coder,
+            "hours_per_coder": self.hours_per_coder,
+            "runs_per_paper": self.runs_per_paper,
+            "hours_per_paper": self.hours_per_paper,
+            "empty_queue_sleep_s": self.empty_queue_sleep_s,
+            "step_pause_s": self.step_pause_s,
+            "researcher_min_interval_s": self.researcher_min_interval_s,
+            "stall_hours": self.stall_hours,
+            "backoff_cap_s": self.backoff_cap_s,
+        }
+
+
+CADENCE_ENV_PREFIX = "EFFERENTS_CADENCE_"
+_CADENCE_INT_KEYS = ("runs_per_digest", "min_runs_for_digest", "runs_per_coder", "runs_per_paper")
+_CADENCE_POSITIVE_KEYS = (
+    "runs_per_digest", "hours_per_digest", "runs_per_coder", "hours_per_coder",
+    "runs_per_paper", "hours_per_paper", "backoff_cap_s",
+)
+
+
+def _coerce_cadence_value(key: str, value, *, where: str):
+    if key not in Cadence.__dataclass_fields__:
+        raise SubmissionError(f"{where}: unknown cadence key {key!r}")
+    if key == "stall_hours" and value is None:
+        return None
+    try:
+        out = int(value) if key in _CADENCE_INT_KEYS else float(value)
+    except (TypeError, ValueError) as e:
+        raise SubmissionError(f"{where}: cadence.{key} must be numeric") from e
+    if key in _CADENCE_INT_KEYS and isinstance(value, float) and not float(value).is_integer():
+        raise SubmissionError(f"{where}: cadence.{key} must be an integer")
+    if out < 0:
+        raise SubmissionError(f"{where}: cadence.{key} must be non-negative")
+    if key in _CADENCE_POSITIVE_KEYS and out <= 0:
+        raise SubmissionError(f"{where}: cadence.{key} must be positive")
+    return out
+
+
+def _parse_cadence(raw) -> Cadence:
+    if raw is None:
+        return Cadence()
+    if not isinstance(raw, dict):
+        raise SubmissionError("cadence must be a mapping")
+    values = {
+        key: _coerce_cadence_value(key, value, where="lab.yaml")
+        for key, value in raw.items()
+    }
+    return Cadence(**values)
+
+
+def cadence_with_env(cadence: Cadence, environ=None) -> Cadence:
+    """Overlay ``EFFERENTS_CADENCE_<KEY>`` environment overrides."""
+    environ = os.environ if environ is None else environ
+    values: dict = {}
+    for key in Cadence.__dataclass_fields__:
+        env_name = CADENCE_ENV_PREFIX + key.upper()
+        if env_name in environ and str(environ[env_name]).strip() != "":
+            values[key] = _coerce_cadence_value(key, environ[env_name], where=env_name)
+    return replace(cadence, **values) if values else cadence
 
 
 @dataclass(frozen=True)
@@ -688,6 +787,7 @@ def _build_labconfig(
             sonnet_default=bool(budget_raw.get("sonnet_default", True)),
             total_cap_usd=total_cap_usd,
         ),
+        cadence=_parse_cadence(raw.get("cadence")),
         autonomy=Autonomy(
             coder_enabled=bool(autonomy_raw.get("coder_enabled", False)),
             coder_mode=coder_mode,
@@ -723,6 +823,7 @@ class LabConfig:
     subdomain: str | None = None
     code_repo: str | None = None
     autonomy: Autonomy = field(default_factory=Autonomy)
+    cadence: Cadence = field(default_factory=Cadence)
     evidence: Evidence = field(default_factory=Evidence)
     falsifiers: tuple[Falsifier, ...] = ()
     default_student_id: str = "primary"
