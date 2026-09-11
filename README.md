@@ -46,6 +46,11 @@ topbar shows the summed spend and daily caps across all labs. Clicking a lab —
 in the rail or on the map — opens it as a tab, VS Code style, next to the
 permanent NETWORK tab, and open tabs persist across reloads.
 
+Labs can opt into [private event conferences](docs/conferences.md): frequent
+same-field idea exchange, occasional interdisciplinary talks, and questions
+and responses incorporated into their budgeted research turns. Participation
+is explicit per lab and currently works within one trusted host.
+
 ## 3 · Audit a lab
 
 Each lab tab is the audit surface:

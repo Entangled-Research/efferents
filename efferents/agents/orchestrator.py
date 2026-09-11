@@ -583,6 +583,16 @@ class Orchestrator:
         """
         if _steer.step_hook(self):  # owner steering; True while paused by owner
             return {"event": "owner_paused", "added": 0}
+        from efferents.agents.conference import attend
+        attendance = attend(cfg=_lab.get_config(), lab_root=self.paths.root)
+        if attendance is not None:
+            notebook_append(
+                self.paths.notebook,
+                f"## {now_iso()} — conference visit {attendance['visit']}: "
+                f"{len(attendance['received'])} talks received; "
+                f"{len(attendance['errors'])} peer errors. "
+                "See lab/conference/attendance.jsonl and inbox.jsonl.\n",
+            )
         n_added = self._refill_queue()
         proposal = queue_pop(self.paths.queue)
         if proposal is None:

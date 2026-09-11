@@ -688,6 +688,7 @@ def _build_labconfig(
             sonnet_default=bool(budget_raw.get("sonnet_default", True)),
             total_cap_usd=total_cap_usd,
         ),
+        conference=Conference.from_dict(raw.get("conference", {})),
         autonomy=Autonomy(
             coder_enabled=bool(autonomy_raw.get("coder_enabled", False)),
             coder_mode=coder_mode,
@@ -712,6 +713,30 @@ def _build_labconfig(
 
 
 @dataclass(frozen=True)
+class Conference:
+    enabled: bool = False
+    venue: str = "event"
+    interval_minutes: int = 10
+    interdisciplinary_every: int = 5
+
+    @classmethod
+    def from_dict(cls, raw: dict) -> "Conference":
+        if not isinstance(raw, dict):
+            raise SubmissionError("conference must be a mapping")
+        if set(raw) - {"enabled", "venue", "interval_minutes", "interdisciplinary_every"}:
+            raise SubmissionError("unknown conference option")
+        enabled = raw.get("enabled", False)
+        venue = raw.get("venue", "event")
+        interval = raw.get("interval_minutes", 10)
+        every = raw.get("interdisciplinary_every", 5)
+        if type(enabled) is not bool or not isinstance(venue, str) or not venue.strip():
+            raise SubmissionError("conference requires boolean enabled and non-empty venue")
+        if type(interval) is not int or interval < 1 or type(every) is not int or every < 2:
+            raise SubmissionError("conference interval must be >= 1; interdisciplinary_every >= 2")
+        return cls(enabled, venue.strip(), interval, every)
+
+
+@dataclass(frozen=True)
 class LabConfig:
     lab_id: str
     domain: str
@@ -723,6 +748,7 @@ class LabConfig:
     subdomain: str | None = None
     code_repo: str | None = None
     autonomy: Autonomy = field(default_factory=Autonomy)
+    conference: Conference = field(default_factory=Conference)
     evidence: Evidence = field(default_factory=Evidence)
     falsifiers: tuple[Falsifier, ...] = ()
     default_student_id: str = "primary"

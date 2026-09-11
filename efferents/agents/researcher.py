@@ -1140,6 +1140,8 @@ def propose(
         blocked=_format_open_blocks(open_blocks(paths.root)),
     )
     kb_index_block = _kb_block(kb_index)
+    from efferents.agents import conference
+    dynamic_block += conference.prompt_context(paths.root, _lab.get_config())
 
     saturation = _saturation_report(paths)
     coder_log = _coder_log_tail(paths, n=10)
@@ -1183,6 +1185,9 @@ def propose(
     )
 
     # --- Cost guardrail before Turn 3 ---
+    conference.record_responses(
+        paths.root, _lab.get_config(), student_parsed.get("conference_responses"), student_id,
+    )
     spend_after_student = budget.spend_today()
     over_cap = (spend_after_student - spend_start) >= PER_CALL_COST_CAP_USD
 
