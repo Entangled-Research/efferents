@@ -9,6 +9,7 @@ Starting the daemon remains a separate, explicit action.
 from __future__ import annotations
 
 import os
+import json
 import re
 import shutil
 import subprocess
@@ -450,6 +451,28 @@ class ControlContext:
         except SubmissionError as exc:
             raise ControlError(f"Lab validation failed: {exc}", status=422) from exc
 
+        from efferents.agents.routing import policy
+        try:
+            routing_policy = policy(submission)
+        except ValueError as exc:
+            raise ControlError(str(exc), status=422) from exc
+        routing = None
+        if routing_policy and Registry().get(cfg.lab_id) is None:
+            # Separate trusted process: submission provider keys never enter gateway env.
+            try:
+                result = subprocess.run(
+                    [sys.executable, "-I", "-m", "efferents.agents.routing", str(submission), "--apply"],
+                    capture_output=True, text=True, timeout=120, check=False,
+                )
+                if result.returncode:
+                    raise ControlError("Intake routing failed; check the routing configuration and provider budget.", status=422)
+                routing = json.loads(result.stdout)
+                if routing.get("applied"):
+                    submission = Path(routing["target"])
+                    cfg = LabConfig.from_submission(submission)
+            except (OSError, subprocess.TimeoutExpired, ValueError) as exc:
+                raise ControlError("Intake routing could not complete.", status=422) from exc
+
         lab_mod.set_config(cfg)
         lab_root = (submission / "lab").resolve()
         _init_lab_root(submission, lab_root)
@@ -476,7 +499,10 @@ class ControlContext:
         )
         with self._lock:
             self._connected = connected
-        return self.info()
+        info = self.info()
+        if routing is not None:
+            info["routing"] = routing
+        return info
 
     def info(self) -> dict:
         connected = self.snapshot()

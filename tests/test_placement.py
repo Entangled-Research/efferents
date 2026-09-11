@@ -93,6 +93,7 @@ def test_hire_creates_roster_when_absent(tmp_path):
     target = _mklab(tmp_path, "no-roster", TOPIC_EW, APPROACH_STAT)
     hire(target, student_id="s1", focus="f", direction="d", prompted_by="p")
     parsed = yaml.safe_load((target / "lab.yaml").read_text())
-    assert parsed["students"][0]["id"] == "s1"
+    assert [s["id"] for s in parsed["students"]] == ["primary", "s1"]
+    assert parsed["default_student_id"] == "primary"
     # Original declared fields survive the text-level insertion.
     assert parsed["topic"] == TOPIC_EW

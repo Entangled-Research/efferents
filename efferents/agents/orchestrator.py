@@ -583,6 +583,8 @@ class Orchestrator:
         """
         if _steer.step_hook(self):  # owner steering; True while paused by owner
             return {"event": "owner_paused", "added": 0}
+        from efferents.agents.routing import refresh_students
+        refresh_students(self.paths.root)
         from efferents.agents.conference import attend
         attendance = attend(cfg=_lab.get_config(), lab_root=self.paths.root)
         if attendance is not None:

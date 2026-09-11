@@ -1109,7 +1109,9 @@ function initConnectForm() {
       renderControl(info);
       showMessage(
         "connect-message",
-        `${info.lab_id} connected · not executed`,
+        info.routing?.applied
+          ? `${info.lab_id} · joined as student ${info.routing.student_id}`
+          : `${info.lab_id} connected · not executed`,
         "success",
       );
       window.location.hash = "observe";

@@ -33,6 +33,9 @@ runs a bounded first cycle.
 valid submission has a `README`, `lab.yaml`, and a Popper-passed
 `hypothesis.md`. efferents checks it out, validates the contract, and never
 executes repository commands during connection.
+Labs can also opt into [idea routing](docs/idea-routing.md): related submissions
+join as distinct student tracks in a compatible lab with the same resource
+owner, preserving their hypotheses and sharing the lab's existing budget.
 
 ## 2 · The lab network
 

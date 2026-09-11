@@ -644,6 +644,17 @@ def _cmd_place(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_route(args: argparse.Namespace) -> int:
+    command = [sys.executable, "-I", "-m", "efferents.agents.routing", args.submission]
+    if args.apply:
+        command.append("--apply")
+    if args.offline:
+        command.append("--offline")
+    if args.student_id:
+        command.extend(["--student-id", args.student_id])
+    return subprocess.call(command)
+
+
 def _cmd_run(args: argparse.Namespace) -> int:
     from efferents.runner import run_adapter, RunnerError
     from efferents.repo_adapter import AdapterConfigError
@@ -825,6 +836,13 @@ def build_parser() -> argparse.ArgumentParser:
     p_demo.add_argument("--out", default="efferents-demo",
                         help="Output directory for demo artifacts (default: ./efferents-demo)")
     p_demo.set_defaults(func=_cmd_demo)
+
+    p_route = sub.add_parser("route", help="Route an idea to a new student in a compatible registered lab")
+    p_route.add_argument("submission")
+    p_route.add_argument("--apply", action="store_true", help="Apply a join decision; never starts research")
+    p_route.add_argument("--student-id", default=None)
+    p_route.add_argument("--offline", action="store_true", help="Use declared-topic matching without model calls")
+    p_route.set_defaults(func=_cmd_route)
 
     p_place = sub.add_parser(
         "place",

@@ -184,48 +184,45 @@ def hire(
     their own student_id with the standard multi-student machinery.
     """
     root = Path(target_lab_dir).resolve()
+    if not re.fullmatch(r"[a-z][a-z0-9_-]*", student_id):
+        raise ValueError("student_id must match [a-z][a-z0-9_-]*")
     cfg_path = root / "lab.yaml"
     if not cfg_path.is_file():
         raise FileNotFoundError(f"{cfg_path} not found — can only hire into lab.yaml labs")
     text = cfg_path.read_text()
     existing = yaml.safe_load(text) or {}
-    roster = existing.get("students") or []
+    roster = existing.get("students") or [
+        {"id": "primary", "handle": None, "focus": "", "prompt_overrides": {}}
+    ]
     if any(s.get("id") == student_id for s in roster):
         raise ValueError(f"student id {student_id!r} already on the roster of {root.name}")
 
-    entry = (
-        f"- id: {json.dumps(student_id)}\n"
-        f"  handle: null\n"
-        f"  focus: {json.dumps(focus)}\n"          # JSON strings are valid YAML
-        f"  prompt_overrides: {{}}\n"
-    )
-    if re.search(r"^students:\s*$", text, re.M):
-        text = re.sub(r"^students:\s*$", "students:\n" + entry.rstrip("\n"),
-                      text, count=1, flags=re.M)
+    block = yaml.safe_dump({"students": roster + [
+        {"id": student_id, "handle": None, "focus": focus, "prompt_overrides": {}}
+    ]}, sort_keys=False)
+    if re.search(r"^students:", text, re.M):
+        text = re.sub(r"^students:.*?(?=^[A-Za-z_][A-Za-z0-9_-]*:|\Z)",
+                      lambda _: block, text, count=1, flags=re.M | re.DOTALL)
     else:
-        block = "\nstudents:\n"
-        if roster:  # inline/expanded existing roster: rewrite is unavoidable
-            block += "".join(
-                f"- id: {json.dumps(s.get('id'))}\n"
-                f"  handle: {json.dumps(s.get('handle'))}\n"
-                f"  focus: {json.dumps(s.get('focus', ''))}\n"
-                f"  prompt_overrides: {{}}\n" for s in roster)
-            text = re.sub(r"^students:.*?(?=^\S|\Z)", "", text, flags=re.M | re.DOTALL)
-        text = text.rstrip("\n") + block + entry
+        text = text.rstrip("\n") + "\n" + block
     parsed = yaml.safe_load(text)
     ids = [s["id"] for s in parsed.get("students", [])]
     if student_id not in ids:
         raise RuntimeError("roster insertion failed validation; lab.yaml left unchanged")
-    cfg_path.write_text(text)
+    # Keep the original default track even if the newcomer is inserted first.
+    if "default_student_id" not in parsed:
+        text += f"\ndefault_student_id: {json.dumps(roster[0]['id'])}\n"
+    temporary = cfg_path.with_suffix(".yaml.tmp")
+    temporary.write_text(text)
+    temporary.replace(cfg_path)
 
     write_charter(
         root / "context",
         initial_direction=direction,
         prompted_by=prompted_by,
         design_notes=(
-            f"Placement verdict: proposed lab was redundant with this one "
-            f"(same topic, same way of thinking). {prompted_by} hired in as "
-            f"student `{student_id}` instead of founding a duplicate lab."
+            f"Placement: {prompted_by} joined as student `{student_id}`. "
+            "Preserve this student's distinct hypothesis and approach."
         ),
         title=f"hired: {student_id}",
     )
