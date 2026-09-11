@@ -45,6 +45,7 @@ from efferents.agents import popper_gate as _popper_gate
 from efferents.agents.budget import (
     BudgetTracker,
     CallUsage,
+    billing_model,
     model_for,
     model_for_supervisor,
 )
@@ -609,7 +610,7 @@ def _simple_call(
         cache_read_input_tokens=getattr(resp.usage, "cache_read_input_tokens", 0) or 0,
     )
     budget.record(
-        agent=agent, model=model, usage=usage,
+        agent=agent, model=billing_model(client, model), usage=usage,
         notes=f"{notes} | stop={resp.stop_reason}".strip(" |"),
     )
     return "".join(b.text for b in resp.content if getattr(b, "type", "") == "text")

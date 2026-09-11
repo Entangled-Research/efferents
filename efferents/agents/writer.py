@@ -162,7 +162,7 @@ def compose_paper(
         messages=[{"role": "user", "content": user}],
     )
     if budget is not None:
-        from efferents.agents.budget import CallUsage
+        from efferents.agents.budget import CallUsage, billing_model
         usage = CallUsage(
             input_tokens=response.usage.input_tokens,
             output_tokens=response.usage.output_tokens,
@@ -173,7 +173,7 @@ def compose_paper(
                 getattr(response.usage, "cache_read_input_tokens", 0) or 0
             ),
         )
-        budget.record(agent="writer", model=model, usage=usage, notes="compose paper")
+        budget.record(agent="writer", model=billing_model(client, model), usage=usage, notes="compose paper")
     body = "".join(b.text for b in response.content).strip()
     ok, errors = structural_check(body)
     if not ok:

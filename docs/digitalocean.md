@@ -177,6 +177,26 @@ should return the smoke lab. Never expose the site if the first request returns
 
 ## 6. Connect and run your own lab
 
+The hosted event profile uses `zai/glm-5.3` for every agent role. To use
+Anthropic credits first, set `EFFERENTS_MODEL=claude-sonnet-5,zai/glm-5.3`
+in the submission's `.env`. In that configuration, missing credentials or a provider failure
+(including exhausted credits) falls through to Z.ai's full GLM-5.3. This is
+reactive fallback, not a provider balance lookup. Each new call starts at the
+first candidate, so restored Anthropic credits are picked up automatically.
+The lab's own daily/lifetime cap still stops requests; it is never bypassed
+by fallback. Usage is recorded against the model that actually served it.
+
+Put `ZAI_API_KEY` in the submission's `.env`, alongside `ANTHROPIC_API_KEY`
+when available. Use a Z.ai general API account, not a coding-plan endpoint.
+The general endpoint is `https://api.z.ai/api/paas/v4`. Restart the lab after
+changing its model configuration. Provider keys
+are not injected into the web server. See [Z.ai API docs](https://docs.z.ai/api-reference/introduction)
+and [pricing](https://docs.z.ai/guides/overview/pricing).
+
+GLM does not provide Anthropic's hosted web-search tool through this adapter;
+the existing librarian path synthesizes without that tool. A successful live
+research cycle must be verified after adding credentials.
+
 Use your coding agent and the existing [intake](../intake.md) to prepare a
 submission containing `README.md`, `lab.yaml`, and a Popper-passed
 `hypothesis.md`. For a trusted GitHub repository, paste its repository or README

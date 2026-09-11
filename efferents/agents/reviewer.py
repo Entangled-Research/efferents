@@ -23,7 +23,7 @@ from typing import Any, Literal
 
 import anthropic
 
-from efferents.agents.budget import BudgetTracker, CallUsage, model_for
+from efferents.agents.budget import BudgetTracker, CallUsage, billing_model, model_for
 from efferents.agents.prompts.loader import load_prompt
 from efferents.agents.state import parse_json_with_one_retry
 
@@ -106,7 +106,7 @@ def review(
             cache_read_input_tokens=getattr(resp.usage, "cache_read_input_tokens", 0) or 0,
         )
         budget.record(
-            agent="reviewer", model=chosen, usage=usage,
+            agent="reviewer", model=billing_model(client, chosen), usage=usage,
             notes=f"persona={persona}" + (" (retry)" if retry_msgs else ""),
         )
         return "".join(b.text for b in resp.content if getattr(b, "type", "") == "text")

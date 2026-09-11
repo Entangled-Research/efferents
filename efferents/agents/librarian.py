@@ -23,7 +23,7 @@ from typing import Any
 
 import anthropic
 
-from efferents.agents.budget import BudgetTracker, CallUsage, model_for
+from efferents.agents.budget import BudgetTracker, CallUsage, billing_model, model_for
 from efferents.agents.prompts.loader import load_prompt
 from efferents.agents.state import LabPaths, append_jsonl, parse_json_loose
 
@@ -351,7 +351,7 @@ def _call_llm(
     server_searches = getattr(resp.usage, "server_tool_use", None)
     n_searches = (server_searches.web_search_requests if server_searches else 0) or 0
     record = budget.record(
-        agent="librarian", model=chosen, usage=usage,
+        agent="librarian", model=billing_model(client, chosen), usage=usage,
         extra_cost_usd=n_searches * WEB_SEARCH_COST_USD,
         notes=f"topic={topic[:60]} | searches={n_searches}",
     )
@@ -485,7 +485,7 @@ def run_with_lit_review_tool(
             cache_read_input_tokens=getattr(resp.usage, "cache_read_input_tokens", 0) or 0,
         )
         budget.record(
-            agent=agent, model=model, usage=usage,
+            agent=agent, model=billing_model(client, model), usage=usage,
             notes=f"turn {n_lit_calls} | stop={resp.stop_reason}",
         )
 

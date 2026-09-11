@@ -40,7 +40,7 @@ import anthropic
 
 from efferents import lab as _lab
 from efferents.agents import librarian
-from efferents.agents.budget import BudgetTracker, CallUsage, model_for
+from efferents.agents.budget import BudgetTracker, CallUsage, billing_model, model_for
 from efferents.agents.prompts.loader import load_prompt
 from efferents.agents.state import (
     LabPaths,
@@ -386,7 +386,7 @@ def get_edit_plan(
             cache_creation_input_tokens=getattr(resp.usage, "cache_creation_input_tokens", 0) or 0,
             cache_read_input_tokens=getattr(resp.usage, "cache_read_input_tokens", 0) or 0,
         )
-        budget.record(agent="coder", model=chosen, usage=usage, notes="edit-plan retry")
+        budget.record(agent="coder", model=billing_model(client, chosen), usage=usage, notes="edit-plan retry")
         text2 = "".join(b.text for b in resp.content if getattr(b, "type", "") == "text")
         # If the retry ALSO fails, raise; the outer caller in implement_proposal
         # already catches that and logs it as a plan failure.

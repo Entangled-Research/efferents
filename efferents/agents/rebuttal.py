@@ -17,7 +17,7 @@ from pathlib import Path
 
 import anthropic
 
-from efferents.agents.budget import BudgetTracker, CallUsage, model_for
+from efferents.agents.budget import BudgetTracker, CallUsage, billing_model, model_for
 from efferents.agents.prompts.loader import load_prompt
 from efferents.agents.reviewer import Review
 
@@ -79,7 +79,7 @@ def write_rebuttal(
         cache_read_input_tokens=getattr(resp.usage, "cache_read_input_tokens", 0) or 0,
     )
     budget.record(
-        agent="rebuttal", model=chosen, usage=usage,
+        agent="rebuttal", model=billing_model(client, chosen), usage=usage,
         notes=f"{len(reviews)} reviews",
     )
     text = "".join(b.text for b in resp.content if getattr(b, "type", "") == "text").strip()

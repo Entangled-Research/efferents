@@ -244,9 +244,12 @@ def _dotenv_has_key(submission_dir: Path) -> bool:
             if separator and key.strip() and value.strip():
                 values[key.strip()] = value.strip().strip("'\"")
         model = values.get("EFFERENTS_MODEL") or os.environ.get("EFFERENTS_MODEL")
-        from efferents.agents.model_client import required_key_env
-        key_name = required_key_env(model)
-        return key_name is None or bool(values.get(key_name) or os.environ.get(key_name, "").strip())
+        from efferents.agents.model_client import required_key_env, resolve_chain
+        for candidate in resolve_chain(model):
+            key_name = required_key_env(candidate)
+            if key_name is None or values.get(key_name) or os.environ.get(key_name, "").strip():
+                return True
+        return False
     except OSError:
         return False
 

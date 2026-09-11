@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from efferents.agents.budget import BudgetTracker, CallUsage
+from efferents.agents.budget import BudgetTracker, CallUsage, billing_model
 
 
 def _popper_repo() -> Path:
@@ -219,7 +219,7 @@ def run_gate(
             )
             budget.record(
                 agent="popper_gate",
-                model=model,
+                model=billing_model(client, model),
                 usage=usage,
                 notes=f"attempt={attempt}",
             )

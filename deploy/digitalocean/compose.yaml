@@ -27,6 +27,7 @@ services:
     environment:
       EFFERENTS_HOME: /data/efferents
       POPPER_PROBE_REPO: /data/popper-probe
+      EFFERENTS_MODEL: zai/glm-5.3
     # Provider/model credentials belong in each submission's .env, loaded by
     # its lab daemon. The gateway does not receive provider keys through
     # Compose, and the host shell's environment is not forwarded wholesale.

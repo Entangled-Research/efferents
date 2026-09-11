@@ -29,6 +29,7 @@ PROVIDER_KEY_ENV = {
     "deepseek": "DEEPSEEK_API_KEY",
     "xai": "XAI_API_KEY",
     "openrouter": "OPENROUTER_API_KEY",
+    "zai": "ZAI_API_KEY",
     "together_ai": "TOGETHERAI_API_KEY",
     "huggingface": "HUGGINGFACE_API_KEY",
 }
@@ -387,6 +388,12 @@ class _Messages:
             call["tools"] = tools
         if os.environ.get("EFFERENTS_API_BASE"):
             call["api_base"] = os.environ["EFFERENTS_API_BASE"]
+        if provider_for_model(kwargs["model"]) == "zai":
+            # Z.ai's general API is OpenAI-compatible. Keep its endpoint and
+            # key scoped to this candidate so cross-provider chains work.
+            call["model"] = "openai/" + kwargs["model"].split("/", 1)[1]
+            call["api_base"] = "https://api.z.ai/api/paas/v4"
+            call["api_key"] = os.environ["ZAI_API_KEY"]
         response = completion(**call)
         choice = response.choices[0]
         message = choice.message
@@ -403,14 +410,18 @@ class _Messages:
                 name=tool_call.function.name, input=payload,
             ))
         usage = response.usage
+        details = getattr(usage, "prompt_tokens_details", None)
+        cached = getattr(details, "cached_tokens", 0) or 0
+        prompt_tokens = getattr(usage, "prompt_tokens", 0) or 0
+        cached = min(cached, prompt_tokens)
         return SimpleNamespace(
             content=blocks,
             stop_reason="tool_use" if (message.tool_calls or []) else choice.finish_reason,
             usage=SimpleNamespace(
-                input_tokens=getattr(usage, "prompt_tokens", 0) or 0,
+                input_tokens=prompt_tokens - cached,
                 output_tokens=getattr(usage, "completion_tokens", 0) or 0,
                 cache_creation_input_tokens=0,
-                cache_read_input_tokens=0,
+                cache_read_input_tokens=cached,
             ),
         )
 

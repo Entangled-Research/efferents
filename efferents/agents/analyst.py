@@ -16,7 +16,7 @@ from efferents import evidence as ev
 from efferents import lab as _lab
 from efferents import metrics_view as mv
 from efferents.agents import notebook as nb
-from efferents.agents.budget import BudgetExhausted, BudgetTracker, CallUsage, model_for
+from efferents.agents.budget import BudgetExhausted, BudgetTracker, CallUsage, billing_model, model_for
 from efferents.agents.model_client import IMAGE_TOKEN_ESTIMATE, image_block
 from efferents.agents.notify import notify_all
 from efferents.agents.prompts.loader import load_prompt
@@ -341,7 +341,7 @@ def blind_image_review(
             "## Qualitative review (blind)\n\n"
             f"Skipped: review call failed ({type(exc).__name__}: {exc})."
         )
-    budget.record(agent="analyst", model=model, usage=CallUsage(
+    budget.record(agent="analyst", model=billing_model(client, model), usage=CallUsage(
         input_tokens=resp.usage.input_tokens,
         output_tokens=resp.usage.output_tokens,
         cache_creation_input_tokens=getattr(resp.usage, "cache_creation_input_tokens", 0) or 0,
@@ -508,7 +508,7 @@ def write_digest(
         cache_creation_input_tokens=getattr(resp.usage, "cache_creation_input_tokens", 0) or 0,
         cache_read_input_tokens=getattr(resp.usage, "cache_read_input_tokens", 0) or 0,
     )
-    budget.record(agent="analyst", model=chosen, usage=usage)
+    budget.record(agent="analyst", model=billing_model(client, chosen), usage=usage)
 
     narrative = "".join(b.text for b in resp.content if getattr(b, "type", "") == "text")
     text = evidence_section + (("\n\n" + review_section) if review_section else "") + "\n\n" + narrative
