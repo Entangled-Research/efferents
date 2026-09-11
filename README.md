@@ -91,6 +91,12 @@ its root ([runnable example](examples/repo-adapter/efferents.yaml)) and run
 
 ## Run a live lab
 
+For a first hosted organizer workspace with HTTPS, login, and persistent state,
+follow the [DigitalOcean deployment guide](docs/digitalocean.md). It includes a
+no-token experiment to verify the console. This deployment is for one trusted
+organizer; participant accounts and automatic cross-machine networking are
+not yet provided.
+
 ```bash
 cp .env.example .env        # choose a model and add its provider key
 efferents validate --submission examples/smoke-lab/

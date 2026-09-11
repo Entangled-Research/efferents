@@ -1,0 +1,88 @@
+name: efferents
+
+# Linux-only deployment: host networking lets Caddy reach the gateway's
+# existing loopback listener without exposing port 8800 on a public address.
+# Keep the Droplet firewall open only for SSH, HTTP, and HTTPS.
+services:
+  gateway:
+    build:
+      context: ../..
+      dockerfile: deploy/digitalocean/Dockerfile
+    image: efferents-gateway:local
+    init: true
+    restart: unless-stopped
+    network_mode: host
+    user: "10001:10001"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+    # SIGINT uses the server's existing graceful shutdown handler. Stop live
+    # labs explicitly with `efferents stop` before restarting this container;
+    # detached lab daemons are not automatically resumed on container restart.
+    stop_signal: SIGINT
+    stop_grace_period: 30s
+    environment:
+      EFFERENTS_HOME: /data/efferents
+      POPPER_PROBE_REPO: /data/popper-probe
+    # Provider/model credentials belong in each submission's .env, loaded by
+    # its lab daemon. The gateway does not receive provider keys through
+    # Compose, and the host shell's environment is not forwarded wholesale.
+    volumes:
+      - efferents_data:/data
+    tmpfs:
+      - /tmp:mode=1777,size=256m
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8800/', timeout=3).read(1)"
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    network_mode: host
+    depends_on:
+      gateway:
+        condition: service_healthy
+    read_only: true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      EFFERENTS_HOSTNAME: "${EFFERENTS_HOSTNAME:?Set EFFERENTS_HOSTNAME in deploy/digitalocean/.env}"
+      EFFERENTS_AUTH_USER: "${EFFERENTS_AUTH_USER:-organizer}"
+      EFFERENTS_AUTH_HASH: "${EFFERENTS_AUTH_HASH:?Set EFFERENTS_AUTH_HASH in deploy/digitalocean/.env}"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    tmpfs:
+      - /tmp:mode=1777,size=32m
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  # Named volumes survive rebuilds/restarts and `docker compose down`.
+  # `docker compose down -v` deletes them, including lab evidence and TLS keys.
+  efferents_data:
+  caddy_data:
+  caddy_config:

@@ -1,0 +1,22 @@
+{
+	# Host networking must not expose a configuration API to lab processes.
+	admin off
+}
+
+{$EFFERENTS_HOSTNAME} {
+	# Caddy, rather than Compose, substitutes these values. A single-quoted
+	# bcrypt hash in .env retains its literal dollar signs through both steps.
+	basic_auth {
+		{$EFFERENTS_AUTH_USER} {$EFFERENTS_AUTH_HASH}
+	}
+
+	encode zstd gzip
+	header {
+		X-Content-Type-Options nosniff
+		Referrer-Policy same-origin
+	}
+	reverse_proxy 127.0.0.1:8800 {
+		# Gateway routes do not need the organizer's HTTP credentials.
+		header_up -Authorization
+	}
+}

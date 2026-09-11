@@ -1,0 +1,47 @@
+# Deny by default: local credentials, private labs, Git history, caches, and
+# generated research artifacts must never be sent to the Docker builder.
+**
+
+!pyproject.toml
+!README.md
+!LICENSE
+!NOTICE
+
+!efferents/
+!efferents/**/
+!efferents/**/*.py
+!efferents/agents/prompts/*.md
+!efferents/dashboard/static/dashboard.css
+!efferents/dashboard/static/dashboard.html
+!efferents/dashboard/static/dashboard.js
+
+# Include only the tracked inputs of the offline trial, never its lab/ state.
+!examples/
+!examples/smoke-lab/
+!examples/smoke-lab/README.md
+!examples/smoke-lab/hypothesis.md
+!examples/smoke-lab/lab.yaml
+!examples/smoke-lab/src/
+!examples/smoke-lab/src/__init__.py
+!examples/smoke-lab/src/stub_run.py
+!examples/smoke-lab/src/stub_eval.py
+!examples/smoke-lab/configs/
+!examples/smoke-lab/configs/default.yaml
+!examples/smoke-lab/configs/smoke.yaml
+!examples/smoke-lab/context/
+!examples/smoke-lab/context/research_log.md
+
+!deploy/
+!deploy/digitalocean/
+!deploy/digitalocean/Dockerfile
+
+# Reassert secret/runtime exclusions even if nested inside an allowed tree.
+**/.env*
+**/.git
+**/.git/**
+**/__pycache__
+**/__pycache__/**
+**/lab
+**/lab/**
+**/popper-corpus
+**/popper-corpus/**
