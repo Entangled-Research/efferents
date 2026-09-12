@@ -13,6 +13,10 @@ every result claim back to a run, a metric, or a code diff.
 
 ![A lab is submitted to the efferents gateway, joins an active three-lab network, and improves its loss over successive bounded iterations](docs/img/lab-network-demo.gif)
 
+**Building a company research workflow?** [Entangled Labs](#entangled-labs)
+is our commercial offering for custom integrations, deployment and ongoing
+support, with company research analytics in development.
+
 ## 1 · Connect a lab
 
 Two ways in, straight from the gateway's Connect page:
@@ -172,6 +176,49 @@ records the decision.
 
 Why automate the whole loop? Read the motivating essay,
 [The English Muffin Problem](https://medium.com/@mashapotatoes/the-english-muffin-problem-eac4d9951569).
+
+## Entangled Labs
+
+**Autonomous research, adapted to your company.** Entangled Labs is the
+commercial offering from Entangled Research for startups and R&D teams
+building on efferents.
+
+Use efferents to build and operate your own lab. Engage Entangled Labs to get
+your workflow integrated, keep it operational, and give research leaders a
+clear account of what their investment produces.
+
+The comparison below combines **scoped commercial services** with private
+product capabilities marked **Planned**. The private product is in development;
+deliverables and availability are agreed for each engagement.
+
+| Capability | efferents · open source | Entangled Labs · commercial |
+| --- | --- | --- |
+| **Autonomous research** | Complete bounded experiment loop, hypothesis gates, analysis and research memos on your compute. | The same engine, configured around your research objective, baseline, evaluation criteria and permitted actions. |
+| **Onboarding** | Runnable examples, configuration and self-hosting documentation for your team to implement. | Fixed-scope implementation: connect your repository, demonstrate a bounded research cycle, train your team and hand over an operational runbook. |
+| **Domain and pipeline adaptations** | Custom executor commands, metrics, falsifiers and prompts through lab configuration. | Build and maintain adapters to your existing experiments and evaluation systems, with agreed validation checks and compatibility updates as your stack changes. |
+| **Deployment and reliability** | Deploy and operate the framework yourself using the deployment guides. | Deployment in your infrastructure, health and backup checks, restore verification, supported upgrades and rollback, within the agreed operating scope. |
+| **Support and maintenance** | Documentation and public issues; your team owns diagnosis and maintenance. | Named contact, agreed response window, incident triage and ongoing maintenance of your supported deployment and integrations. |
+| **Company access** | Authenticated deployment for a trusted organizer. | **Planned:** SSO, enforced company login, team roles and project permissions so access follows organizational responsibilities. |
+| **Budget authority** | Per-lab spending caps, owner steering, pause/stop and a local network spend view. | **Planned:** delegated budget owners, approval policies and cost-center allocation across projects and departments, with auditable decisions. |
+| **Custom research KPIs** | Lab-defined metrics, validity checks, run ledgers and evidence exports. | **Planned:** company-specific scorecards for validated findings, adopted improvements, cost per useful outcome and time to decision, with explicit definitions and evidence links. |
+| **Contribution attribution** | Run and artifact provenance for inspecting the evidence behind a result. | **Planned:** trace which labs and pipeline stages originated, validated or enabled an adopted output; allocate shared credit transparently and count the outcome once. |
+| **Spend versus contribution** | Recorded model spend and run metrics available for your own analysis. | **Planned:** combine model credits, compute costs and outcome attribution to compare resource use with useful contribution; expose estimated costs and incomplete coverage. |
+| **Portfolio decisions** | Local multi-lab console, per-lab evidence, research progress and owner controls. | **Planned:** compare projects and departments, surface duplicated work, stalls and reusable findings, and explain options to expand, redirect or pause investment for the budget owner to decide. |
+| **Leadership reporting** | Research memos and an evidence console for inspecting individual labs. | Scoped research-operations reviews; **Planned:** scheduled executive briefs connecting findings, negative results, expenditure and upcoming decisions across the company portfolio. |
+| **Ownership and continuity** | Apache-2.0; run independently and retain your code, configuration and evidence. | Keep customer research assets in your environment, with agreed adapter rights, documentation and an exit handover; continued maintenance is optional. |
+
+For example, when one lab builds an evaluator and another uses it to select an
+adopted design, the planned contribution analysis will show both contributions
+and their costs. Leaders can see the work that enabled the outcome as well as
+the final deliverable. Attribution rules will be explicit; useful negative
+findings count, and allocated credit is not presented as proof of causality.
+
+**Commercial engagements:** fixed-scope onboarding followed by optional
+maintenance. Company-wide KPI design, attribution and portfolio integrations
+are scoped separately. Compute and model usage are separate. The open-source
+engine, evidence access, budgets and owner controls remain available to everyone.
+
+**[Discuss your research workflow with Masha](https://www.linkedin.com/in/masha-baidachna/).**
 
 ## Contact
 
