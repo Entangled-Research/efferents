@@ -29,7 +29,7 @@ from Entangled Research, for startups and R&D teams.
 | Deployment, backup checks, upgrades and support | — | ✓ |
 | Company SSO and team permissions | — | ✓ |
 | Delegated budgets and approval policies | — | ✓ |
-| Lab and pipeline-stage KPIs and performance reports | — | ✓ |
+| Lab performance reports | — | ✓ |
 | Pipeline analysis | — | ✓ |
 | Spend analysis | — | ✓ |
 
