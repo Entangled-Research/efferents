@@ -30,8 +30,8 @@ from Entangled Research, for startups and R&D teams.
 | Company SSO and team permissions | — | ✓ |
 | Delegated budgets and approval policies | — | ✓ |
 | Lab and pipeline-stage KPIs and performance reports | — | ✓ |
-| Attribution of output to contributing labs and pipelines | — | ✓ |
-| Spend-versus-contribution analysis across departments | — | ✓ |
+| Pipeline analysis | — | ✓ |
+| Spend analysis | — | ✓ |
 
 Commercial checks indicate engagement scope; the commercial edition is in
 development and feature availability is agreed per engagement.
