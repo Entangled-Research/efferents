@@ -8,14 +8,16 @@ when you need to. Your code and results stay under your control.
 
 ![Three labs running bounded research cycles in the efferents console](docs/img/lab-network-demo.gif)
 
-## Entangled Labs
+<a id="entangled-labs"></a>
 
-**Efferents:** the open-source framework you run yourself.
+## Efferents editions
 
-**Entangled Labs:** integration, operations and company research analytics from
-Entangled Research, for startups and R&D teams.
+**Open Source:** run and configure Efferents yourself.
 
-| What you get | Efferents | Entangled Labs |
+**Commercial:** Efferents with integration, operations and lab/pipeline analytics
+from Entangled Research, for startups and R&D teams.
+
+| What you get | Efferents Open Source | Efferents Commercial |
 | --- | :---: | :---: |
 | Autonomous experiment loops | ✓ | ✓ |
 | Evidence, research memos and local multi-lab console | ✓ | ✓ |
@@ -31,7 +33,7 @@ Entangled Research, for startups and R&D teams.
 | Attribution of output to contributing labs and pipelines | — | ✓ |
 | Spend-versus-contribution analysis across departments | — | ✓ |
 
-Commercial checks indicate engagement scope; the private product is in
+Commercial checks indicate engagement scope; the commercial edition is in
 development and feature availability is agreed per engagement.
 
 **See which labs consume the budget—and which contribute to useful outcomes.**
@@ -69,7 +71,8 @@ Read https://raw.githubusercontent.com/Entangled-Research/efferents/main/intake.
 - [Route related ideas](docs/idea-routing.md) · [Private lab conferences](docs/conferences.md)
 - [Public release safeguards](docs/PUBLIC_RELEASE_GUARDRAILS.md) · publication requires explicit authorization
 
-[Apache-2.0](LICENSE) · Free for personal and commercial use. © 2026 Masha Baidachna.
+Open-source edition: [Apache-2.0](LICENSE), free for personal and commercial use.
+© 2026 Masha Baidachna.
 
 <details>
 <summary>Inspiration & acknowledgements</summary>
