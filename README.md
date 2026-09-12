@@ -27,7 +27,7 @@ Entangled Research, for startups and R&D teams.
 | Deployment, backup checks, upgrades and support | — | ✓ |
 | Company SSO and team permissions | — | ✓ |
 | Delegated budgets and approval policies | — | ✓ |
-| Custom company KPIs and executive reporting | — | ✓ |
+| Lab and pipeline-stage KPIs and performance reports | — | ✓ |
 | Attribution of output to contributing labs and pipelines | — | ✓ |
 | Spend-versus-contribution analysis across departments | — | ✓ |
 
@@ -36,7 +36,8 @@ development and feature availability is agreed per engagement.
 
 **See which labs consume the budget—and which contribute to useful outcomes.**
 Company analytics connect spending, shared contributions and downstream reuse
-to evidence, including valuable negative findings.
+to evidence, including valuable negative findings. KPIs measure labs and
+pipeline stages—not employees or individual performance.
 
 Fixed-scope onboarding, then optional maintenance. Portfolio analytics are
 scoped separately; compute and model usage are extra.
