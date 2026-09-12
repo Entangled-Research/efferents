@@ -187,9 +187,9 @@ Use efferents to build and operate your own lab. Engage Entangled Labs to get
 your workflow integrated, keep it operational, and give research leaders a
 clear account of what their investment produces.
 
-The comparison below combines **scoped commercial services** with private
-product capabilities marked **Planned**. The private product is in development;
-deliverables and availability are agreed for each engagement.
+Entangled Labs combines scoped commercial services with a private product in
+development. Deliverables and feature availability are agreed for each
+engagement.
 
 | Capability | efferents · open source | Entangled Labs · commercial |
 | --- | --- | --- |
@@ -198,17 +198,17 @@ deliverables and availability are agreed for each engagement.
 | **Domain and pipeline adaptations** | Custom executor commands, metrics, falsifiers and prompts through lab configuration. | Build and maintain adapters to your existing experiments and evaluation systems, with agreed validation checks and compatibility updates as your stack changes. |
 | **Deployment and reliability** | Deploy and operate the framework yourself using the deployment guides. | Deployment in your infrastructure, health and backup checks, restore verification, supported upgrades and rollback, within the agreed operating scope. |
 | **Support and maintenance** | Documentation and public issues; your team owns diagnosis and maintenance. | Named contact, agreed response window, incident triage and ongoing maintenance of your supported deployment and integrations. |
-| **Company access** | Authenticated deployment for a trusted organizer. | **Planned:** SSO, enforced company login, team roles and project permissions so access follows organizational responsibilities. |
-| **Budget authority** | Per-lab spending caps, owner steering, pause/stop and a local network spend view. | **Planned:** delegated budget owners, approval policies and cost-center allocation across projects and departments, with auditable decisions. |
-| **Custom research KPIs** | Lab-defined metrics, validity checks, run ledgers and evidence exports. | **Planned:** company-specific scorecards for validated findings, adopted improvements, cost per useful outcome and time to decision, with explicit definitions and evidence links. |
-| **Contribution attribution** | Run and artifact provenance for inspecting the evidence behind a result. | **Planned:** trace which labs and pipeline stages originated, validated or enabled an adopted output; allocate shared credit transparently and count the outcome once. |
-| **Spend versus contribution** | Recorded model spend and run metrics available for your own analysis. | **Planned:** combine model credits, compute costs and outcome attribution to compare resource use with useful contribution; expose estimated costs and incomplete coverage. |
-| **Portfolio decisions** | Local multi-lab console, per-lab evidence, research progress and owner controls. | **Planned:** compare projects and departments, surface duplicated work, stalls and reusable findings, and explain options to expand, redirect or pause investment for the budget owner to decide. |
-| **Leadership reporting** | Research memos and an evidence console for inspecting individual labs. | Scoped research-operations reviews; **Planned:** scheduled executive briefs connecting findings, negative results, expenditure and upcoming decisions across the company portfolio. |
+| **Company access** | Authenticated deployment for a trusted organizer. | SSO, enforced company login, team roles and project permissions so access follows organizational responsibilities. |
+| **Budget authority** | Per-lab spending caps, owner steering, pause/stop and a local network spend view. | Delegated budget owners, approval policies and cost-center allocation across projects and departments, with auditable decisions. |
+| **Custom research KPIs** | Lab-defined metrics, validity checks, run ledgers and evidence exports. | Company-specific scorecards for validated findings, adopted improvements, cost per useful outcome and time to decision, with explicit definitions and evidence links. |
+| **Contribution attribution** | Run and artifact provenance for inspecting the evidence behind a result. | Trace which labs and pipeline stages originated, validated or enabled an adopted output; allocate shared credit transparently and count the outcome once. |
+| **Spend versus contribution** | Recorded model spend and run metrics available for your own analysis. | Combine model credits, compute costs and outcome attribution to compare resource use with useful contribution; expose estimated costs and incomplete coverage. |
+| **Portfolio decisions** | Local multi-lab console, per-lab evidence, research progress and owner controls. | Compare projects and departments, surface duplicated work, stalls and reusable findings, and explain options to expand, redirect or pause investment for the budget owner to decide. |
+| **Leadership reporting** | Research memos and an evidence console for inspecting individual labs. | Research-operations reviews and scheduled executive briefs connecting findings, negative results, expenditure and upcoming decisions across the company portfolio. |
 | **Ownership and continuity** | Apache-2.0; run independently and retain your code, configuration and evidence. | Keep customer research assets in your environment, with agreed adapter rights, documentation and an exit handover; continued maintenance is optional. |
 
 For example, when one lab builds an evaluator and another uses it to select an
-adopted design, the planned contribution analysis will show both contributions
+adopted design, the contribution analysis is designed to show both contributions
 and their costs. Leaders can see the work that enabled the outcome as well as
 the final deliverable. Attribution rules will be explicit; useful negative
 findings count, and allocated credit is not presented as proof of causality.
