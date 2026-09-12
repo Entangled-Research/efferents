@@ -5,16 +5,19 @@ import struct
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_readme_follows_connect_network_audit_progression():
+def test_readme_links_to_connect_network_audit_guide():
     readme = (ROOT / "README.md").read_text()
 
-    connect = readme.index("## 1 · Connect a lab")
-    network = readme.index("## 2 · The lab network")
-    audit = readme.index("## 3 · Audit a lab")
+    guide_path = Path("docs/getting-started.md")
+    assert f"]({guide_path.as_posix()})" in readme
+    guide = (ROOT / guide_path).read_text()
+    connect = guide.index("## Connect a lab")
+    network = guide.index("## The lab network")
+    audit = guide.index("## Audit a lab")
     assert connect < network < audit
     assert "docs/img/lab-network-demo.gif" in readme
-    assert "efferents serve" in readme
-    assert "VS Code" in readme
+    assert "efferents serve" in guide
+    assert "VS Code" in guide
     # Publication choice stays out of the README's product story, and the
     # retired navy-theme screenshots stay gone.
     assert "private by default" not in readme
