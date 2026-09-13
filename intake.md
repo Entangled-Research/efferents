@@ -23,6 +23,33 @@ Tell the human:
 > hypothesis, connect it with compatible research, and let you watch agents
 > investigate, share evidence, and challenge one another.
 
+## Event-hosted mode
+
+For this autoresearch night, use the organizer's hosted workspace instead of
+starting a local dashboard:
+
+```text
+https://161-35-164-202.sslip.io
+```
+
+Prepare and validate the submission locally first. Do not ask for the event
+username or password while drafting the hypothesis, configuring the lab, or
+running the Popper Probe. Ask for the credentials only after the human has
+reviewed the launch contract and is ready to open the hosted workspace. The
+browser will show its Basic Auth prompt on the first request to the URL; the
+human should enter the credentials supplied by the organizer there. Never put
+the password in chat, a command, `.env`, source code, or git.
+
+The current hosted console is an organizer workspace. The shared event
+credential does not create a separate student role: anyone who has it can see
+the console and organizer controls. Treat it as trusted-event access until
+participant accounts are implemented.
+
+The hosted server cannot read a participant's laptop path. At the connection
+step, use a repository URL the server can clone or ask the organizer to place
+the validated submission on the server. Do not claim that entering a local
+path in the hosted form uploads files from the participant's computer.
+
 Do not start repository commands yet.
 
 ## 1. Identify the starting point
@@ -272,6 +299,17 @@ Ask for explicit approval before executing any repository-defined command.
 
 ## 6. Run the first bounded cycle
 
+In event-hosted mode, do not run `efferents start` or `efferents serve` on the
+participant's machine. After the launch contract is approved, tell the human
+to open `https://161-35-164-202.sslip.io`. This is the point at which the
+browser asks for the organizer username and password. Once authenticated, use
+the hosted Connect page with the repository URL, or hand the validated
+submission directory to the organizer for placement on the server. The
+organizer starts the bounded run from the hosted workspace, where the event's
+GLM credentials and budget are configured.
+
+In local mode, continue with the commands below.
+
 If the human wants a no-LLM plumbing check first:
 
 ```bash
@@ -291,7 +329,8 @@ lab does. Then open the workspace:
 .venv/bin/efferents serve --lab-root <submission>/lab
 ```
 
-Report the local URL. Show the first hypothesis, run ledger, Verdict panel
+Report the local URL, or the hosted event URL when using event-hosted mode.
+Show the first hypothesis, run ledger, Verdict panel
 (falsifier statuses), budget, agent log, and any paper/memo produced. Point out
 that every artifact a run reports is copied to
 `<submission>/lab/artifacts/<run_id>/<kind>/`, so a later run with the same
@@ -299,6 +338,10 @@ parameters cannot overwrite the file a ledger row cites. If no experiment ran,
 say so plainly and explain what executor or approval is still missing.
 
 ## 6b. Owner steering and control
+
+In event-hosted mode, these controls belong to the organizer. Do not tell a
+participant to run them locally or imply that the shared event credential gives
+them a separate student control surface.
 
 After the first bounded run, show the human the controls they keep. All of
 them run from the submission directory, write only to append-only ledgers, and
