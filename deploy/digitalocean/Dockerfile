@@ -18,6 +18,7 @@ WORKDIR /opt/efferents
 # the build context. Popper Probe is a separately installed dependency.
 COPY pyproject.toml README.md LICENSE NOTICE ./
 COPY efferents/ ./efferents/
+COPY docs/prototypes/event-network.html ./docs/prototypes/event-network.html
 COPY examples/smoke-lab/ ./examples/smoke-lab/
 RUN uv venv /opt/venv \
     && uv pip install --no-cache --python /opt/venv/bin/python .

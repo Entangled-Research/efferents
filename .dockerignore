@@ -15,6 +15,11 @@
 !efferents/dashboard/static/dashboard.html
 !efferents/dashboard/static/dashboard.js
 
+# Canonical animated network surface used by the hosted dashboard.
+!docs/
+!docs/prototypes/
+!docs/prototypes/event-network.html
+
 # Include only the tracked inputs of the offline trial, never its lab/ state.
 !examples/
 !examples/smoke-lab/

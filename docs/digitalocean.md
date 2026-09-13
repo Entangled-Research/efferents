@@ -2,8 +2,9 @@
 
 This deploys the existing research console at an HTTPS URL with an organizer
 login. You can connect a lab, run it on the server, inspect evidence, and steer
-or stop it. A domain purchase and model API key are not needed for the first
-smoke test.
+or stop it. The image includes the animated event network used on the landing
+page and `/network` route. A domain purchase and model API key are not needed
+for the first smoke test.
 
 **Scope:** one trusted organizer. Keep the login to yourself. The current
 workspace has a shared selected lab and no per-student permissions or execution
