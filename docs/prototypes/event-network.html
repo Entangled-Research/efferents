@@ -1,0 +1,1127 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Illustrative Efferents event network: journals, visiting labs and bounded starter experiments."
+    />
+    <title>Efferents — event network concept</title>
+    <link
+      rel="stylesheet"
+      href="../../efferents/dashboard/static/dashboard.css"
+    />
+    <style>
+      html,
+      body {
+        margin: 0;
+        background: #06162f;
+      }
+      body {
+        min-width: 320px;
+      }
+    </style>
+  </head>
+  <body>
+    <style>
+      #el-organism {
+        --el-paper: #0a1b35;
+        --el-ink: #e9f3ff;
+        --el-muted: #acbed6;
+        --el-rule: #253a54;
+        --el-field: #06162f;
+        --el-blue: #38b8ff;
+        --el-fiber: #269ce5;
+        --el-node: #081f45;
+        --el-dot: #34c1ff;
+        color-scheme: dark;
+        color: var(--el-ink);
+        background: var(--el-paper);
+        font:
+          14px/1.5 -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          sans-serif;
+        width: 100%;
+      }
+      #el-organism * {
+        box-sizing: border-box;
+      }
+      #el-organism button {
+        font: inherit;
+        cursor: pointer;
+        color: inherit;
+        border: 1px solid var(--el-rule);
+        border-radius: 0;
+        background: transparent;
+        padding: 7px 12px;
+        min-height: 36px;
+      }
+      #el-organism button:focus-visible {
+        outline: 2px solid var(--el-blue);
+        outline-offset: 4px;
+      }
+      #el-organism button:hover {
+        border-color: var(--el-blue);
+      }
+      #el-organism .el-mono {
+        font-family: "SFMono-Regular", Menlo, Consolas, monospace;
+        font-size: 11px;
+        letter-spacing: 0.025em;
+      }
+      #el-organism .el-bar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        flex-wrap: wrap;
+        padding: 7px 18px;
+        border-bottom: 1px solid var(--el-rule);
+      }
+      #el-organism .el-brand {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-family: Menlo, Consolas, monospace;
+        font-weight: 600;
+        letter-spacing: -0.5px;
+        font-size: 17px;
+      }
+      #el-organism .el-mark {
+        font-family: Georgia, serif;
+        font-size: 36px;
+        line-height: 30px;
+        font-weight: 400;
+      }
+      #el-organism .el-meta {
+        color: var(--el-muted);
+      }
+      #el-organism .el-heading {
+        display: flex;
+        align-items: end;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 10px 18px;
+        flex-wrap: wrap;
+      }
+      #el-organism h2 {
+        font:
+          500 25px/1.2 Menlo,
+          Consolas,
+          monospace;
+        color: var(--el-ink);
+        margin: 5px 0 0;
+        letter-spacing: -1.1px;
+      }
+      #el-organism .el-actions {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      #el-organism .el-actions button[aria-pressed="true"] {
+        color: var(--el-paper);
+        background: var(--el-ink);
+        border-color: var(--el-ink);
+      }
+      #el-organism .el-workspace {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 310px;
+        align-items: start;
+        --el-graph-height: clamp(496px, calc(100svh - 152px), 760px);
+      }
+      #el-organism .el-field {
+        position: relative;
+        height: var(--el-graph-height);
+        background: var(--el-field);
+        overflow: hidden;
+        border-top: 1px solid var(--el-rule);
+        border-bottom: 1px solid var(--el-rule);
+        color: var(--el-ink);
+      }
+      #el-organism .el-journal {
+        position: absolute;
+        transform: translate(-50%, -100%);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 2px;
+        background: var(--el-field);
+        padding: 0 7px;
+        white-space: nowrap;
+        pointer-events: none;
+      }
+      #el-organism .el-journal b {
+        font:
+          500 14px/1.5 Menlo,
+          Consolas,
+          monospace;
+        color: var(--el-ink);
+      }
+      #el-organism .el-journal small {
+        font:
+          11px/1.5 Menlo,
+          Consolas,
+          monospace;
+        color: var(--el-muted);
+      }
+      #el-organism .el-journal i {
+        width: 9px;
+        height: 9px;
+        border: 1px solid var(--el-blue);
+        background: var(--el-field);
+        margin-top: 5px;
+      }
+      #el-organism .el-visit-label {
+        position: absolute;
+        transform: translate(-50%, -50%);
+        font:
+          11px/1.5 Menlo,
+          Consolas,
+          monospace;
+        color: var(--el-ink);
+        background: var(--el-field);
+        padding: 2px 5px;
+        pointer-events: none;
+      }
+      #el-organism .el-lab-label .el-guest {
+        color: var(--el-ink);
+      }
+      #el-organism .el-legend .el-visit-key {
+        height: 0;
+        background: none;
+        border-top: 1px dashed var(--el-blue);
+      }
+      #el-organism .el-membership {
+        display: grid;
+        gap: 4px;
+        margin: 0 0 12px;
+        font-size: 12px;
+        color: var(--el-muted);
+      }
+      #el-organism .el-membership b {
+        font-weight: 500;
+        color: var(--el-ink);
+      }
+      #el-organism .el-idea {
+        position: absolute;
+        transform: translate(-50%, -50%);
+        width: 138px;
+        padding: 0 3px;
+        border: 0;
+        display: flex;
+        align-items: center;
+        flex-direction: column;
+        background: var(--el-field);
+        font:
+          11px/1.4 Menlo,
+          Consolas,
+          monospace;
+        gap: 4px;
+      }
+      #el-organism .el-idea i {
+        width: 7px;
+        height: 7px;
+        border: 1px solid var(--el-muted);
+        transform: rotate(45deg);
+        margin: 3px;
+      }
+      #el-organism .el-idea small {
+        font:
+          11px/1.4 Menlo,
+          Consolas,
+          monospace;
+        color: var(--el-muted);
+      }
+      #el-organism .el-idea[aria-pressed="true"] {
+        color: var(--el-blue);
+      }
+      #el-organism .el-proposal {
+        display: grid;
+        gap: 7px;
+        font-size: 12px;
+        margin: 10px 0;
+      }
+      #el-organism .el-proposal p {
+        margin: 0;
+        font-size: 12px;
+      }
+      #el-organism .el-proposal strong {
+        font-weight: 500;
+        color: var(--el-muted);
+      }
+      #el-organism .el-legend .el-idea-key {
+        width: 6px;
+        height: 6px;
+        background: none;
+        border: 1px solid var(--el-muted);
+        transform: rotate(45deg);
+      }
+      #el-organism canvas {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+      }
+      #el-organism .el-field-meta {
+        position: absolute;
+        top: 14px;
+        left: 20px;
+        right: 20px;
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        color: var(--el-muted);
+        pointer-events: none;
+      }
+      #el-organism .el-lab {
+        position: absolute;
+        transform: translate(-50%, -50%);
+        width: 118px;
+        padding: 0;
+        border: none;
+        background: transparent;
+        display: flex;
+        align-items: center;
+        flex-direction: column;
+        gap: 7px;
+        min-height: 78px;
+      }
+      #el-organism .el-lab:hover {
+        border: none;
+      }
+      #el-organism .el-nucleus {
+        display: block;
+        width: 19px;
+        height: 19px;
+        margin: 4px 0;
+        border: 1px solid var(--el-dot);
+        background: var(--el-node);
+        border-radius: 50%;
+        position: relative;
+      }
+      #el-organism .el-nucleus:after {
+        content: "";
+        width: 5px;
+        height: 5px;
+        position: absolute;
+        left: 6px;
+        top: 6px;
+        border-radius: 50%;
+        background: var(--el-dot);
+      }
+      #el-organism .el-lab[aria-pressed="true"] .el-nucleus {
+        outline: 1px solid var(--el-blue);
+        outline-offset: 7px;
+      }
+      #el-organism .el-lab-label {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        background: var(--el-field);
+        padding: 0 4px;
+        line-height: 1.4;
+      }
+      #el-organism .el-lab-label b {
+        font-family: Menlo, Consolas, monospace;
+        font-size: 12px;
+        font-weight: 500;
+        color: var(--el-ink);
+      }
+      #el-organism .el-lab-label small {
+        font-size: 11px;
+        color: var(--el-muted);
+      }
+      #el-organism .el-legend {
+        position: absolute;
+        left: 20px;
+        right: 20px;
+        bottom: 12px;
+        display: flex;
+        gap: 20px;
+        flex-wrap: wrap;
+        color: var(--el-muted);
+        pointer-events: none;
+      }
+      #el-organism .el-legend span {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+      }
+      #el-organism .el-legend i {
+        display: inline-block;
+        width: 22px;
+        height: 1px;
+        background: var(--el-fiber);
+      }
+      #el-organism .el-legend .el-pulse-key {
+        height: 5px;
+        width: 5px;
+        border-radius: 50%;
+        background: var(--el-dot);
+      }
+      #el-organism .el-bottom {
+        display: block;
+        max-height: var(--el-graph-height);
+        overflow: auto;
+        border-top: 1px solid var(--el-rule);
+        border-left: 1px solid var(--el-rule);
+        scrollbar-color: var(--el-rule) var(--el-paper);
+      }
+      #el-organism .el-selection {
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--el-rule);
+      }
+      #el-organism .el-selection h3 {
+        margin: 6px 0 5px;
+        font:
+          500 16px/1.4 Menlo,
+          Consolas,
+          monospace;
+        color: var(--el-ink);
+      }
+      #el-organism .el-selection p {
+        margin: 0 0 9px;
+        font-size: 13px;
+        max-width: 52ch;
+      }
+      #el-organism .el-selection .el-evidence {
+        color: var(--el-muted);
+        overflow-wrap: anywhere;
+      }
+      #el-organism .el-log {
+        padding: 12px 16px;
+      }
+      #el-organism .el-log-list {
+        margin-top: 5px;
+        display: grid;
+        gap: 0;
+      }
+      #el-organism .el-log-entry {
+        display: grid;
+        grid-template-columns: 42px 1fr;
+        gap: 10px;
+        padding: 7px 0;
+        border-bottom: 1px solid var(--el-rule);
+        font-size: 12px;
+      }
+      #el-organism .el-log-entry:last-child {
+        border-bottom: 0;
+      }
+      #el-organism .el-log-entry time {
+        font-family: Menlo, Consolas, monospace;
+        font-size: 11px;
+        color: var(--el-muted);
+      }
+      #el-organism .el-log-entry b {
+        font-weight: 500;
+      }
+      #el-organism .el-footer {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        flex-wrap: wrap;
+        padding: 7px 18px;
+        border-top: 1px solid var(--el-rule);
+        color: var(--el-muted);
+      }
+      @media (max-width: 999px) {
+        #el-organism .el-workspace {
+          grid-template-columns: minmax(0, 1fr);
+          --el-graph-height: 540px;
+        }
+        #el-organism .el-bottom {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          max-height: none;
+          overflow: visible;
+          border-left: 0;
+        }
+        #el-organism .el-selection {
+          border-right: 1px solid var(--el-rule);
+        }
+      }
+      @media (max-width: 600px) {
+        #el-organism .el-heading {
+          padding: 15px;
+        }
+        #el-organism h2 {
+          font-size: 21px;
+        }
+        #el-organism .el-bar {
+          padding: 10px 15px;
+        }
+        #el-organism .el-bottom {
+          grid-template-columns: 1fr;
+        }
+        #el-organism .el-selection {
+          border-right: 0;
+          border-bottom: 1px solid var(--el-rule);
+        }
+        #el-organism .el-field {
+          height: 1310px;
+        }
+        #el-organism .el-field-meta {
+          left: 15px;
+          right: 15px;
+          font-size: 11px;
+        }
+        #el-organism .el-lab {
+          width: 122px;
+        }
+        #el-organism .el-idea {
+          width: 125px;
+        }
+        #el-organism .el-legend {
+          gap: 14px;
+          left: 15px;
+          right: 15px;
+        }
+        #el-organism .el-meta {
+          font-size: 11px;
+        }
+      }
+    </style>
+    <div id="el-organism" aria-label="Efferents event network concept">
+      <div class="el-bar">
+        <div class="el-brand">
+          <span class="el-mark">ℯ</span> efferents
+          <span class="el-mono el-meta">/ EVENTS</span>
+        </div>
+        <span class="el-mono el-meta">ENTANGLED LABS · GLASGOW</span>
+      </div>
+      <div class="el-heading">
+        <div>
+          <div class="el-mono el-meta">AUTORESEARCH: AGE OF JARVIS</div>
+          <h2>A living research network</h2>
+        </div>
+        <div class="el-actions">
+          <button type="button" id="el-play">Pause sample</button>
+        </div>
+      </div>
+      <div class="el-workspace">
+        <div
+          class="el-field"
+          aria-label="Eight sample labs in four journals, with two visiting connections"
+        >
+          <canvas
+            role="img"
+            aria-label="Four journal clusters contain two home labs each, connected by solid branches. Dashed arrows show Search visiting Numerical methods and Indexing visiting Optimisation. Diamond tips branch from each lab into a starter experiment with a 60 or 90 minute test cap. Moving blue signals show sample lab messages."
+          ></canvas>
+          <div class="el-field-meta el-mono">
+            <span>08 LABS · 04 JOURNALS · 08 IDEAS</span
+            ><span id="el-clock">SAMPLE · 00:00 / 00:36</span>
+          </div>
+          <div id="el-journals"></div>
+          <div id="el-visits"></div>
+          <div id="el-labs"></div>
+          <div id="el-ideas"></div>
+          <div class="el-legend el-mono">
+            <span><i></i>Home journal</span
+            ><span><i class="el-visit-key"></i>Visiting journal</span
+            ><span><i class="el-idea-key"></i>Starter idea</span
+            ><span><i class="el-pulse-key"></i>Lab message</span>
+          </div>
+        </div>
+        <aside
+          class="el-bottom"
+          aria-label="Selected lab and starter experiment"
+        >
+          <div class="el-selection" aria-live="polite">
+            <div class="el-mono el-meta">SELECTED LAB</div>
+            <h3 id="el-selected-name">Search lab</h3>
+            <div id="el-membership" class="el-membership"></div>
+            <p id="el-selected-question">
+              When does binary search beat a linear scan?
+            </p>
+            <div id="el-evidence" class="el-mono el-evidence">
+              DEMO · search-01 · 3 connected peers
+            </div>
+          </div>
+          <div class="el-log">
+            <div class="el-mono el-meta">STARTER EXPERIMENT · UNTESTED</div>
+            <div id="el-proposal" class="el-proposal"></div>
+            <div class="el-mono el-meta">EXCHANGE LOG · SAMPLE REPLAY</div>
+            <div id="el-log-list" class="el-log-list"></div>
+          </div>
+        </aside>
+      </div>
+      <div class="el-footer el-mono">
+        <span>PRIVATE VENUE · ILLUSTRATIVE DATA</span
+        ><span>CPU / SYNTHETIC DATA · 3 HOUR SESSION</span>
+      </div>
+    </div>
+    <script>
+      (() => {
+        const root = document.getElementById("el-organism");
+        const field = root.querySelector(".el-field"),
+          canvas = root.querySelector("canvas"),
+          ctx = canvas.getContext("2d");
+        const play = root.querySelector("#el-play");
+        const reduced = window.matchMedia("(prefers-reduced-motion: reduce)");
+        const style = { filaments: 9 };
+        const labs = [
+          {
+            name: "Search lab",
+            tag: "Algorithms",
+            id: "search-01",
+            q: "When does binary search beat a linear scan?",
+            idea: "Binary vs linear",
+            cap: 60,
+            baseline: "Linear scan of sorted integer arrays.",
+            test: "Compare with binary search over five array sizes, using 100 seeded hit and miss queries per size.",
+            metric:
+              "Correct answers, comparison count and median lookup time. Report sorting cost separately.",
+          },
+          {
+            name: "Sorting lab",
+            tag: "Algorithms",
+            id: "sorting-02",
+            q: "How much existing order helps insertion sort?",
+            idea: "Nearly sorted inputs",
+            cap: 90,
+            baseline: "Merge sort on the same integer arrays.",
+            test: "Compare insertion sort with merge sort at 0%, 1%, 10% and 100% disorder; cap arrays at 5,000 items.",
+            metric:
+              "Exact match to the reference sort, comparison count and median runtime over five seeds.",
+          },
+          {
+            name: "Routing lab",
+            tag: "Optimisation",
+            id: "routing-03",
+            q: "Can 2-opt shorten a greedy route within a fixed search budget?",
+            idea: "Greedy + 2-opt",
+            cap: 90,
+            baseline: "Nearest-neighbour tours on 30 seeded points.",
+            test: "Try 20 point sets and limit each improvement search to 10,000 candidate swaps.",
+            metric:
+              "Tour length, runtime, and validity: every point visited once and the tour returns to its start.",
+          },
+          {
+            name: "Numerics lab",
+            tag: "Root finding",
+            id: "numerics-04",
+            q: "Can secant match bisection accuracy with fewer evaluations?",
+            idea: "Secant vs bisection",
+            cap: 60,
+            baseline: "Bisection on functions with a known bracketed root.",
+            test: "Use 20 predetermined polynomial cases; cap each solver at 100 evaluations and retain every failure.",
+            metric:
+              "Absolute root error, residual, evaluations and failure rate at a shared tolerance.",
+          },
+          {
+            name: "Integration lab",
+            tag: "Numerical methods",
+            id: "integration-05",
+            q: "Does Simpson’s rule lower error at the same evaluation count?",
+            idea: "Simpson vs trapezoid",
+            cap: 60,
+            baseline: "Composite trapezoidal integration.",
+            test: "Compare both methods on six smooth functions with known integrals, at 11, 51 and 101 sample points.",
+            metric:
+              "Absolute error against the analytic integral at each matched evaluation budget.",
+          },
+          {
+            name: "Compression lab",
+            tag: "Data systems",
+            id: "compression-06",
+            q: "Is extra compression worth the additional CPU time?",
+            idea: "gzip level 1 vs 9",
+            cap: 60,
+            baseline: "gzip at compression level 1.",
+            test: "Compare with level 9 on three 5 MB seeded datasets: repetitive text, numeric logs and random bytes.",
+            metric:
+              "Compressed bytes and median runtime over five repeats; verify exact round-trip recovery.",
+          },
+          {
+            name: "Scheduling lab",
+            tag: "Optimisation",
+            id: "scheduling-07",
+            q: "How does shortest-job-first change average waiting time?",
+            idea: "FIFO vs shortest job",
+            cap: 60,
+            baseline: "FIFO for jobs that all arrive at time zero.",
+            test: "Simulate 100 seeded batches of 500 jobs under equal, uniform and skewed duration distributions.",
+            metric:
+              "Mean and maximum waiting time; verify each job is completed exactly once. Do not infer fairness from the mean.",
+          },
+          {
+            name: "Indexing lab",
+            tag: "Data systems",
+            id: "indexing-08",
+            q: "How many lookups repay the cost of building an index?",
+            idea: "Scan vs hash index",
+            cap: 90,
+            baseline: "Linear lookup in 100,000 synthetic records.",
+            test: "Vary the number of seeded queries from 1 to 10,000, counting index-build time in every comparison.",
+            metric:
+              "Exact lookup agreement, total time including index construction, and peak memory.",
+          },
+        ];
+        const journals = [
+          { name: "Algorithms", members: [0, 1] },
+          { name: "Optimisation", members: [2, 6] },
+          { name: "Numerical methods", members: [3, 4] },
+          { name: "Data systems", members: [5, 7] },
+        ];
+        const visits = [
+          { lab: 0, journal: 2 },
+          { lab: 7, journal: 1 },
+        ];
+        const home = (i) => journals.findIndex((j) => j.members.includes(i));
+        const edges = [
+          [0, 1],
+          [0, 7],
+          [0, 5],
+          [1, 2],
+          [1, 5],
+          [2, 3],
+          [2, 4],
+          [3, 4],
+          [3, 5],
+          [4, 5],
+          [5, 6],
+          [6, 7],
+        ];
+        const events = [
+          { a: 0, b: 1, type: "Hypothesis delivered" },
+          { a: 1, b: 0, type: "Method question" },
+          { a: 2, b: 3, type: "Research memo delivered" },
+          { a: 6, b: 7, type: "Hypothesis delivered" },
+          { a: 5, b: 0, type: "Discussion reply" },
+          { a: 1, b: 2, type: "Research memo delivered" },
+          { a: 3, b: 4, type: "Method question" },
+          { a: 5, b: 6, type: "Research memo delivered" },
+          { a: 4, b: 2, type: "Discussion reply" },
+          { a: 7, b: 0, type: "Research memo delivered" },
+          { a: 3, b: 5, type: "Method question" },
+          { a: 4, b: 5, type: "Discussion reply" },
+        ];
+        let width = 0,
+          height = 0,
+          selected = 0,
+          elapsed = 0,
+          last = 0,
+          frame = 0,
+          playing = !reduced.matches,
+          lastEvent = -1;
+        let positions = [],
+          curves = [],
+          journalPositions = [],
+          visitCurves = [];
+        const journalLabels = journals.map((journal, i) => {
+          const label = document.createElement("div");
+          label.className = "el-journal";
+          label.innerHTML = `<small>J0${i + 1} · JOURNAL</small><b>${journal.name}</b><i aria-hidden="true"></i>`;
+          root.querySelector("#el-journals").appendChild(label);
+          return label;
+        });
+        const visitLabels = visits.map((v) => {
+          const label = document.createElement("div");
+          label.className = "el-visit-label";
+          label.textContent = "visiting";
+          root.querySelector("#el-visits").appendChild(label);
+          return label;
+        });
+        const buttons = labs.map((lab, i) => {
+          const b = document.createElement("button");
+          b.type = "button";
+          b.className = "el-lab";
+          b.setAttribute("aria-pressed", i === 0 ? "true" : "false");
+          b.setAttribute("aria-label", `Select ${lab.name}, ${lab.tag}`);
+          const visit = visits.find((v) => v.lab === i);
+          b.setAttribute(
+            "aria-label",
+            `Select ${lab.name}. Home journal: ${journals[home(i)].name}${visit ? `. Visiting: ${journals[visit.journal].name}` : ""}`,
+          );
+          b.innerHTML = `<span class="el-nucleus" aria-hidden="true"></span><span class="el-lab-label"><b>${lab.name}</b><small>${visit ? `↗ J0${visit.journal + 1} guest` : lab.tag}</small></span>`;
+          b.addEventListener("click", () => {
+            selected = i;
+            select();
+            draw();
+          });
+          root.querySelector("#el-labs").appendChild(b);
+          return b;
+        });
+        const ideaButtons = labs.map((lab, i) => {
+          const b = document.createElement("button");
+          b.type = "button";
+          b.className = "el-idea";
+          b.setAttribute(
+            "aria-label",
+            `Starter experiment: ${lab.idea}, ${lab.cap} minute test cap. Select to inspect the baseline and metric.`,
+          );
+          b.setAttribute("aria-pressed", String(i === selected));
+          b.innerHTML = `<i aria-hidden="true"></i><span>${lab.idea}</span><small>${lab.cap}m test cap</small>`;
+          b.addEventListener("click", () => {
+            selected = i;
+            select();
+            draw();
+          });
+          root.querySelector("#el-ideas").appendChild(b);
+          return b;
+        });
+        function select() {
+          buttons.forEach((b, i) =>
+            b.setAttribute("aria-pressed", String(i === selected)),
+          );
+          ideaButtons.forEach((b, i) =>
+            b.setAttribute("aria-pressed", String(i === selected)),
+          );
+          const lab = labs[selected],
+            visit = visits.find((v) => v.lab === selected);
+          root.querySelector("#el-selected-name").textContent = lab.name;
+          root.querySelector("#el-selected-question").textContent = lab.q;
+          root.querySelector("#el-proposal").innerHTML =
+            `<p><strong>Baseline</strong> ${lab.baseline}</p><p><strong>Test</strong> ${lab.test}</p><p><strong>Measure</strong> ${lab.metric}</p><p><strong>180 min plan</strong> 30 setup · ${lab.cap} testing · 30 analysis · ${120 - lab.cap} buffer</p>`;
+          root.querySelector("#el-membership").innerHTML =
+            `<span>Home journal <b>J0${home(selected) + 1} · ${journals[home(selected)].name}</b></span><span>Visiting <b>${visit ? `J0${visit.journal + 1} · ${journals[visit.journal].name}` : "No current visit"}</b></span>`;
+          root.querySelector("#el-evidence").textContent =
+            `DEMO · ${lab.id} · ${edges.filter((e) => e.includes(selected)).length} connected peers`;
+        }
+        function curve(a, b, offset = 0) {
+          const p = positions[a],
+            q = positions[b],
+            dx = q.x - p.x,
+            dy = q.y - p.y,
+            len = Math.hypot(dx, dy) || 1;
+          const bend = (a + b) % 2 ? 1 : -1;
+          const nx = -dy / len,
+            ny = dx / len;
+          const bulge = Math.min(len * 0.2, 66) * bend + offset;
+          return [
+            p,
+            {
+              x: p.x + dx * 0.36 + nx * bulge,
+              y: p.y + dy * 0.36 + ny * bulge,
+            },
+            {
+              x: p.x + dx * 0.67 + nx * bulge,
+              y: p.y + dy * 0.67 + ny * bulge,
+            },
+            q,
+          ];
+        }
+        function point(c, t) {
+          const u = 1 - t;
+          return {
+            x:
+              u * u * u * c[0].x +
+              3 * u * u * t * c[1].x +
+              3 * u * t * t * c[2].x +
+              t * t * t * c[3].x,
+            y:
+              u * u * u * c[0].y +
+              3 * u * u * t * c[1].y +
+              3 * u * t * t * c[2].y +
+              t * t * t * c[3].y,
+          };
+        }
+        function stroke(c) {
+          ctx.beginPath();
+          ctx.moveTo(c[0].x, c[0].y);
+          ctx.bezierCurveTo(c[1].x, c[1].y, c[2].x, c[2].y, c[3].x, c[3].y);
+          ctx.stroke();
+        }
+        function resize() {
+          width = field.clientWidth;
+          height = field.clientHeight;
+          const narrow = width < 600;
+          const dpr = Math.min(window.devicePixelRatio || 1, 2);
+          canvas.width = width * dpr;
+          canvas.height = height * dpr;
+          ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+          // Recompute geometry from the available field; keep text at its natural size.
+          const rowHeight = (height - 116) / 2;
+          journalPositions = journals.map((journal, i) => ({
+            x: width * (narrow ? 0.5 : i % 2 ? 0.75 : 0.25),
+            y: narrow ? 110 + i * 295 : 92 + Math.floor(i / 2) * rowHeight,
+          }));
+          positions = labs.map((lab, i) => {
+            const ji = home(i),
+              journal = journalPositions[ji];
+            return {
+              x:
+                journal.x +
+                (journals[ji].members.indexOf(i) ? 1 : -1) *
+                  width *
+                  (narrow ? 0.21 : 0.105),
+              y: journal.y + (narrow ? 88 : 62),
+            };
+          });
+          journalLabels.forEach((label, i) => {
+            label.style.left = journalPositions[i].x + "px";
+            label.style.top = journalPositions[i].y + 4 + "px";
+          });
+          buttons.forEach((button, i) => {
+            button.style.left = positions[i].x + "px";
+            button.style.top = positions[i].y + 25 + "px";
+          });
+          ideaButtons.forEach((button, i) => {
+            button.style.left = positions[i].x + "px";
+            button.style.top = positions[i].y + (narrow ? 124 : 84) + "px";
+          });
+          curves = edges.map((edge) => curve(...edge));
+          visitCurves = visits.map((visit, i) => {
+            const p = positions[visit.lab],
+              q = journalPositions[visit.journal];
+            const side = narrow
+              ? i
+                ? width - 16
+                : 16
+              : i
+                ? width * 0.96
+                : width * 0.04;
+            const a = { x: side, y: p.y + 22 },
+              b = { x: side, y: q.y + 25 };
+            return [
+              [p, { x: side, y: p.y }, a, a],
+              [a, a, b, b],
+              [b, { x: side, y: q.y + 25 }, { x: q.x, y: q.y + 25 }, q],
+            ];
+          });
+          visitLabels.forEach((label, i) => {
+            const c = visitCurves[i][1];
+            label.style.left =
+              Math.max(35, Math.min(width - 35, c[0].x)) + "px";
+            // Put labels in the gap between journal clusters, clear of lab/idea labels.
+            label.style.top =
+              (narrow
+                ? positions[visits[i].lab].y + (i ? -50 : 82)
+                : 55 + rowHeight) + "px";
+          });
+          draw();
+        }
+        function palette() {
+          const s = getComputedStyle(field);
+          return {
+            fiber: s.getPropertyValue("--el-fiber").trim(),
+            dot: s.getPropertyValue("--el-dot").trim(),
+            blue: s.getPropertyValue("--el-blue").trim(),
+          };
+        }
+        function draw() {
+          if (!width) return;
+          ctx.clearRect(0, 0, width, height);
+          const col = palette();
+          ctx.lineWidth = 0.7;
+          ctx.strokeStyle = col.fiber;
+          // Bundles are one exchange path; the fine branches are visual texture, not extra labs.
+          journals.forEach((journal, i) => {
+            const hub = journalPositions[i];
+            ctx.globalAlpha = 0.19;
+            ctx.strokeStyle = col.fiber;
+            ctx.lineWidth = 0.7;
+            ctx.beginPath();
+            ctx.ellipse(
+              hub.x,
+              hub.y + (width < 600 ? 100 : 67),
+              width * (width < 600 ? 0.45 : 0.225),
+              width < 600 ? 149 : 105,
+              0,
+              0,
+              Math.PI * 2,
+            );
+            ctx.stroke();
+            journal.members.forEach((member) => {
+              const p = positions[member];
+              for (let f = 0; f < style.filaments; f++) {
+                const shift = (f - (style.filaments - 1) / 2) * 2;
+                ctx.globalAlpha = member === selected ? 0.5 : 0.31;
+                stroke([
+                  hub,
+                  { x: hub.x + shift, y: hub.y + 43 },
+                  { x: p.x + shift, y: p.y - 42 },
+                  p,
+                ]);
+              }
+            });
+          });
+          edges.forEach((edge, k) => {
+            ctx.globalAlpha = edge.includes(selected) ? 0.18 : 0.065;
+            ctx.lineWidth = 0.65;
+            stroke(curves[k]);
+          });
+          visitCurves.forEach((segments) => {
+            ctx.strokeStyle = col.blue;
+            ctx.globalAlpha = 0.85;
+            ctx.lineWidth = 1.2;
+            ctx.setLineDash([5, 5]);
+            segments.forEach(stroke);
+            ctx.setLineDash([]);
+            const c = segments[2],
+              end = c[3],
+              prev = point(c, 0.975),
+              a = Math.atan2(end.y - prev.y, end.x - prev.x);
+            ctx.beginPath();
+            ctx.moveTo(
+              end.x - 7 * Math.cos(a - 0.45),
+              end.y - 7 * Math.sin(a - 0.45),
+            );
+            ctx.lineTo(end.x, end.y);
+            ctx.lineTo(
+              end.x - 7 * Math.cos(a + 0.45),
+              end.y - 7 * Math.sin(a + 0.45),
+            );
+            ctx.stroke();
+          });
+          positions.forEach((p, i) => {
+            ctx.strokeStyle = col.fiber;
+            ctx.globalAlpha = i === selected ? 0.75 : 0.4;
+            ctx.lineWidth = 0.85;
+            stroke([
+              p,
+              { x: p.x + 35, y: p.y + 30 },
+              { x: p.x + 30, y: p.y + (width < 600 ? 92 : 53) },
+              { x: p.x, y: p.y + (width < 600 ? 99 : 60) },
+            ]);
+          });
+          positions.forEach((p, i) => {
+            const r = width < 600 ? 28 : 29;
+            for (let j = 0; j < 22; j++) {
+              const angle = (j / 22) * Math.PI * 2 + i * 0.61,
+                len = r * (0.72 + 0.28 * Math.sin(j * 6.1 + i));
+              const tip = {
+                x: p.x + Math.cos(angle) * len,
+                y: p.y + Math.sin(angle) * len,
+              };
+              const mid = {
+                x: p.x + Math.cos(angle + 0.3) * len * 0.57,
+                y: p.y + Math.sin(angle + 0.3) * len * 0.57,
+              };
+              ctx.globalAlpha = i === selected ? 0.55 : 0.34;
+              ctx.strokeStyle = col.fiber;
+              ctx.beginPath();
+              ctx.moveTo(p.x, p.y);
+              ctx.quadraticCurveTo(mid.x, mid.y, tip.x, tip.y);
+              ctx.stroke();
+              for (let fork = 0; fork < 2; fork++) {
+                const a = angle + (fork ? -0.48 : 0.48),
+                  end = {
+                    x: mid.x + Math.cos(a) * len * 0.58,
+                    y: mid.y + Math.sin(a) * len * 0.58,
+                  };
+                ctx.beginPath();
+                ctx.moveTo(mid.x, mid.y);
+                ctx.quadraticCurveTo(tip.x, mid.y, end.x, end.y);
+                ctx.stroke();
+                ctx.fillStyle = col.dot;
+                ctx.beginPath();
+                ctx.arc(end.x, end.y, 1.05, 0, Math.PI * 2);
+                ctx.fill();
+              }
+            }
+          });
+          const ei = Math.min(events.length - 1, Math.floor(elapsed / 3));
+          const ev = events[ei],
+            c = curve(ev.a, ev.b);
+          const t = Math.min(1, (elapsed % 3) / 2.6);
+          ctx.globalAlpha = 0.8;
+          ctx.strokeStyle = col.blue;
+          ctx.lineWidth = 1.2;
+          stroke(c);
+          if (elapsed < 36) {
+            for (let trail = 8; trail >= 0; trail--) {
+              const at = Math.max(0, t - trail * 0.014),
+                p = point(c, at);
+              ctx.fillStyle = col.dot;
+              ctx.globalAlpha = (1 - trail / 9) * 0.9;
+              ctx.beginPath();
+              ctx.arc(p.x, p.y, trail === 0 ? 3.4 : 1.6, 0, Math.PI * 2);
+              ctx.fill();
+            }
+          }
+          ctx.globalAlpha = 1;
+        }
+        function updateLog() {
+          const ei = Math.min(events.length - 1, Math.floor(elapsed / 3));
+          if (ei === lastEvent) return;
+          lastEvent = ei;
+          root.querySelector("#el-log-list").replaceChildren();
+          for (let i = ei; i >= Math.max(0, ei - 2); i--) {
+            const ev = events[i],
+              row = document.createElement("div");
+            row.className = "el-log-entry";
+            row.innerHTML = `<time>00:${String(i * 3).padStart(2, "0")}</time><div><b>${labs[ev.a].name.replace(" lab", "")} → ${labs[ev.b].name.replace(" lab", "")}</b><br><span class="el-meta">${ev.type}</span></div>`;
+            root.querySelector("#el-log-list").appendChild(row);
+          }
+        }
+        function controls() {
+          play.textContent =
+            elapsed >= 36
+              ? "Replay sample"
+              : playing
+                ? "Pause sample"
+                : reduced.matches
+                  ? "Next exchange"
+                  : "Play sample";
+          draw();
+        }
+        function tick(now) {
+          frame = 0;
+          if (!playing || document.hidden) return;
+          if (last)
+            elapsed = Math.min(
+              36,
+              elapsed + Math.min((now - last) / 1000, 0.1),
+            );
+          last = now;
+          root.querySelector("#el-clock").textContent =
+            `SAMPLE · 00:${String(Math.floor(elapsed)).padStart(2, "0")} / 00:36`;
+          updateLog();
+          draw();
+          if (elapsed >= 36) {
+            playing = false;
+            controls();
+            return;
+          }
+          frame = requestAnimationFrame(tick);
+        }
+        function start() {
+          last = 0;
+          if (!frame && playing && !document.hidden)
+            frame = requestAnimationFrame(tick);
+        }
+        play.addEventListener("click", () => {
+          if (elapsed >= 36) {
+            elapsed = 0;
+            lastEvent = -1;
+            playing = !reduced.matches;
+          } else if (reduced.matches) {
+            elapsed = Math.min(36, elapsed + 3);
+            playing = false;
+          } else playing = !playing;
+          if (!playing) {
+            cancelAnimationFrame(frame);
+            frame = 0;
+          }
+          controls();
+          updateLog();
+          root.querySelector("#el-clock").textContent =
+            `SAMPLE · 00:${String(Math.floor(elapsed)).padStart(2, "0")} / 00:36`;
+          start();
+        });
+        document.addEventListener("visibilitychange", () => {
+          if (document.hidden) {
+            cancelAnimationFrame(frame);
+            frame = 0;
+          } else start();
+        });
+        reduced.addEventListener("change", () => {
+          if (reduced.matches) {
+            playing = false;
+            cancelAnimationFrame(frame);
+            frame = 0;
+          }
+          controls();
+        });
+        new ResizeObserver(resize).observe(field);
+        select();
+        controls();
+        resize();
+        updateLog();
+        start();
+      })();
+    </script>
+  </body>
+</html>

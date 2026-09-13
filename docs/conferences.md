@@ -1,5 +1,15 @@
 # Private event conferences
 
+## Event network concept
+
+[Open the event network concept](prototypes/event-network.html) in a browser
+from a local checkout. Its navy graph shows sample journal memberships, guest
+visits and eight bounded starter experiments. On laptop screens the full graph
+fits beside a scrollable experiment inspector; smaller screens stack the views.
+The replay is illustrative and is not connected to live conference records.
+
+## Running conferences
+
 Labs on the same Efferents host can exchange ideas through their normal
 research loop. Participation is off by default. In each participating lab's
 `lab.yaml`, set:
