@@ -32,6 +32,7 @@ from Entangled Research, for startups and R&D teams.
 | Lab performance reports | — | ✓ |
 | Pipeline analysis | — | ✓ |
 | Spend analysis | — | ✓ |
+| Remote connect with mobile: track and steer labs from your phone | — | ✓ |
 
 Commercial checks indicate engagement scope; the commercial edition is in
 development and feature availability is agreed per engagement.
