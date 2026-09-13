@@ -8,6 +8,15 @@ when you need to. Your code and results stay under your control.
 
 ![Three labs running bounded research cycles in the efferents console](docs/img/lab-network-demo.gif)
 
+### See the event network
+
+The event surface makes the multi-lab system visible as a living network:
+journals form the organism's communities, labs connect to their home journal,
+guest visits cross between journals, and each lab can branch into a bounded,
+verifiable starter experiment. The [laptop-sized event network concept](docs/prototypes/event-network.html)
+includes an animated exchange replay and eight example experiments designed to
+fit inside a three-hour session.
+
 <a id="entangled-labs"></a>
 
 ## Efferents editions
