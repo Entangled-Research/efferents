@@ -20,6 +20,7 @@ from efferents.dashboard.control import ControlContext, ControlError
 from efferents.dashboard import reader
 
 STATIC_DIR = Path(__file__).parent / "static"
+PROTOTYPE_PATH = Path(__file__).resolve().parents[2] / "docs" / "prototypes" / "event-network.html"
 _MAX_BODY_BYTES = 32_768
 
 _log = logging.getLogger(__name__)
@@ -55,6 +56,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             path = self.path.split("?", 1)[0]
             if path in ("/", "/index.html"):
                 return self._send_file(STATIC_DIR / "dashboard.html")
+            if path == "/prototypes/event-network.html":
+                return self._send_file(PROTOTYPE_PATH, frameable=True)
             if path == "/api/control":
                 payload = self.control.info()
                 payload["csrf_token"] = self.csrf_token
@@ -173,16 +176,18 @@ class DashboardHandler(BaseHTTPRequestHandler):
             raise ControlError("Request body must be a JSON object.")
         return payload
 
-    def _security_headers(self) -> None:
+    def _security_headers(self, *, frameable: bool = False) -> None:
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
-        self.send_header("X-Frame-Options", "DENY")
+        if not frameable:
+            self.send_header("X-Frame-Options", "DENY")
         self.send_header("Referrer-Policy", "no-referrer")
         self.send_header(
             "Content-Security-Policy",
             "default-src 'self'; img-src 'self' data:; "
             "style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; "
-            "object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
+            "object-src 'none'; base-uri 'none'; frame-ancestors "
+            + ("'self'" if frameable else "'none'"),
         )
 
     def _send_json(self, obj, *, status: int = 200) -> None:
@@ -194,7 +199,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def _send_file(self, path: Path) -> None:
+    def _send_file(self, path: Path, *, frameable: bool = False) -> None:
         if not path.is_file():
             return self.send_error(404)
         data = path.read_bytes()
@@ -202,7 +207,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Type",
                          _CONTENT_TYPES.get(path.suffix, "application/octet-stream"))
         self.send_header("Content-Length", str(len(data)))
-        self._security_headers()
+        self._security_headers(frameable=frameable)
         self.end_headers()
         self.wfile.write(data)
 

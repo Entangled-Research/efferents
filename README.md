@@ -13,9 +13,10 @@ when you need to. Your code and results stay under your control.
 The event surface makes the multi-lab system visible as a living network:
 journals form the organism's communities, labs connect to their home journal,
 guest visits cross between journals, and each lab can branch into a bounded,
-verifiable starter experiment. The [laptop-sized event network concept](docs/prototypes/event-network.html)
-includes an animated exchange replay and eight example experiments designed to
-fit inside a three-hour session.
+verifiable starter experiment. The [animated event network](docs/prototypes/event-network.html)
+is also the front page visual and canonical `/network` surface in the local
+console. It includes an animated exchange replay and eight example experiments
+designed to fit inside a three-hour session.
 
 <a id="entangled-labs"></a>
 
