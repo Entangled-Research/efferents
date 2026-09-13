@@ -29,7 +29,7 @@ For this autoresearch night, use the organizer's hosted workspace instead of
 starting a local dashboard:
 
 ```text
-https://161-35-164-202.sslip.io
+https://efferents-events.161-35-164-202.sslip.io
 ```
 
 Prepare and validate the submission locally first. Do not ask for the event
@@ -301,7 +301,7 @@ Ask for explicit approval before executing any repository-defined command.
 
 In event-hosted mode, do not run `efferents start` or `efferents serve` on the
 participant's machine. After the launch contract is approved, tell the human
-to open `https://161-35-164-202.sslip.io`. This is the point at which the
+to open `https://efferents-events.161-35-164-202.sslip.io`. This is the point at which the
 browser asks for the organizer username and password. Once authenticated, use
 the hosted Connect page with the repository URL, or hand the validated
 submission directory to the organizer for placement on the server. The
