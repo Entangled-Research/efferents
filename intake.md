@@ -19,11 +19,9 @@ chooses the public path and approves the exact artifact being published.
 
 Tell the human:
 
-> Efferents runs on your machine, against commands and a budget you approve.
-> We will create the lab privately first. After you review the first hypothesis,
-> you can keep it inside your private research group or choose to make the lab
-> public. Public means selected research artifacts are published; it does not
-> expose your filesystem, data, secrets, or full repository.
+> Welcome to autoresearch night — we’ll turn your idea into a testable
+> hypothesis, connect it with compatible research, and let you watch agents
+> investigate, share evidence, and challenge one another.
 
 Do not start repository commands yet.
 
