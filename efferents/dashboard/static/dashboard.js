@@ -424,11 +424,15 @@ function renderNetwork() {
   const labs = portfolioState.labs || [];
   const lines = document.getElementById("network-lines");
   const nodes = document.getElementById("network-nodes");
+  const journalsLayer = document.getElementById("network-journals");
+  const ideasLayer = document.getElementById("network-ideas");
   const empty = document.getElementById("network-empty");
   const hub = document.querySelector(".network-hub");
   const positions = new Map();
   lines.innerHTML = "";
   nodes.innerHTML = "";
+  journalsLayer.innerHTML = "";
+  ideasLayer.innerHTML = "";
   text("network-node-count", `${labs.length} ${labs.length === 1 ? "node" : "nodes"}`);
 
   if (!labs.length) {
@@ -462,6 +466,39 @@ function renderNetwork() {
       await openLabTab(lab.lab_id);
     });
     nodes.appendChild(button);
+  });
+
+  // A journal is the live domain community around a lab cluster. The current
+  // hypothesis is shown as a short branch so the map explains what each lab is
+  // exchanging, without inventing an additional feed or status model.
+  const journals = new Map();
+  labs.forEach((lab) => {
+    const key = lab.domain || "unclassified";
+    const group = journals.get(key) || [];
+    group.push(lab);
+    journals.set(key, group);
+  });
+  journals.forEach((members, domain) => {
+    const points = members.map((lab) => positions.get(lab.lab_id));
+    const center = points.reduce((sum, point) => ({ x: sum.x + point.x, y: sum.y + point.y }), { x: 0, y: 0 });
+    center.x /= points.length;
+    center.y /= points.length;
+    const label = document.createElement("div");
+    label.className = "network-journal";
+    label.style.left = `${center.x}%`;
+    label.style.top = `${Math.max(7, center.y - 22)}%`;
+    label.innerHTML = `<small>journal</small>${esc(domain)}`;
+    journalsLayer.appendChild(label);
+    members.forEach((lab) => {
+      const position = positions.get(lab.lab_id);
+      const question = lab.hypothesis?.question || lab.hypothesis?.claim || "Awaiting first hypothesis";
+      const idea = document.createElement("div");
+      idea.className = "network-idea";
+      idea.style.left = `${position.x}%`;
+      idea.style.top = `${Math.min(91, position.y + 15)}%`;
+      idea.textContent = question.length > 78 ? `${question.slice(0, 75)}…` : question;
+      ideasLayer.appendChild(idea);
+    });
   });
 
   (portfolioState.edges || []).forEach((edge) => {

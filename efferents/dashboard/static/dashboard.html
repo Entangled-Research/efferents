@@ -337,10 +337,12 @@
               <h2 id="network-map-title">Connected lab map</h2>
               <span id="network-node-count" class="header-meta">0 nodes</span>
             </header>
-            <div id="lab-map" class="lab-map" aria-label="Map of connected labs">
+            <div id="lab-map" class="lab-map living-network" aria-label="Living network of connected labs and journal communities">
               <svg id="network-lines" viewBox="0 0 1000 560"
                    preserveAspectRatio="none" aria-hidden="true"></svg>
+              <div id="network-journals" class="network-journals" aria-hidden="true"></div>
               <div id="network-nodes" class="network-nodes"></div>
+              <div id="network-ideas" class="network-ideas" aria-hidden="true"></div>
               <div id="network-empty" class="network-empty" hidden></div>
               <div class="network-hub" aria-hidden="true">
                 <span>ℯ</span>
@@ -350,7 +352,9 @@
             <footer class="map-legend">
               <span><i class="legend-dot running"></i> running</span>
               <span><i class="legend-dot stopped"></i> stopped</span>
-              <span><i class="legend-line"></i> shared research domain</span>
+              <span><i class="legend-line"></i> home journal</span>
+              <span><i class="legend-line visiting"></i> visiting journal</span>
+              <span><i class="legend-idea"></i> current hypothesis</span>
             </footer>
           </section>
         </div>
