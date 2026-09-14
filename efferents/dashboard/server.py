@@ -20,7 +20,12 @@ from efferents.dashboard.control import ControlContext, ControlError
 from efferents.dashboard import reader
 
 STATIC_DIR = Path(__file__).parent / "static"
-PROTOTYPE_PATH = Path(__file__).resolve().parents[2] / "docs" / "prototypes" / "event-network.html"
+_PROTOTYPE_CANDIDATES = (
+    Path(__file__).resolve().parents[2] / "docs" / "prototypes" / "event-network.html",
+    Path.cwd() / "docs" / "prototypes" / "event-network.html",
+    Path("/opt/efferents/docs/prototypes/event-network.html"),
+)
+PROTOTYPE_PATH = next((path for path in _PROTOTYPE_CANDIDATES if path.is_file()), _PROTOTYPE_CANDIDATES[0])
 _MAX_BODY_BYTES = 32_768
 
 _log = logging.getLogger(__name__)
