@@ -53,15 +53,21 @@ Read these first:
 - Light mode is the default. Dark mode may be offered only as an explicit,
   persistent user choice. Do not default from the operating-system color
   scheme.
-- Preserve the high-information research-console vocabulary: square panels,
-  white surfaces, dark-navy rules and selections, blocky Petra/typewriter
-  headings, compact monospace metadata, dense evidence tables, visible
-  provenance, and explicit runtime/budget state. Reserve mustard and orange for
-  sparse graphical signals, never small text. Keep interface copy to short
+- Preserve the high-information research-console vocabulary: boxy 1px
+  panels on warm cream paper, blocky mono-led headings, compact monospace
+  metadata, dense evidence tables, visible provenance, and explicit
+  runtime/budget state. The palette is the Portuguese-azulejo trio pinned in
+  `tests/test_research_theme.py`: cream ground (`--bg: #f1ede2`,
+  `--panel: #faf8f0`), cobalt signal (`--signal: #2d5379`) for rules,
+  selections, and links, and terracotta (`--terracotta: #a8502b`) for
+  warnings, danger, and falsification. Reserve mustard (`#a8842d`) and orange
+  (`#c05a2e`) for sparse graphical signals, never small text. Do not
+  "correct" the tokens to white surfaces or navy (`#003b80`): that earlier
+  scheme was rejected and the tests fail on it. Keep interface copy to short
   labels and operational facts; never squeeze or truncate lab statistics. Use
-  the lowercase `ℯ` mark; never abbreviate the product name to `EF`. Avoid pale-blue fills, blur,
-  ambient shadows, rounded card grids, decorative gradients, generic SaaS
-  styling, and oversized whitespace.
+  the lowercase `ℯ` mark; never abbreviate the product name to `EF`. Avoid
+  pale-blue fills, blur, ambient shadows, rounded card grids, decorative
+  gradients, generic SaaS styling, and oversized whitespace.
 - `tests/test_research_theme.py` enforces the example-app boundary. Extend that
   contract when adding a new HTML generator instead of bypassing it.
 
