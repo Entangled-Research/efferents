@@ -190,16 +190,37 @@ function renderRoute() {
       link.removeAttribute("aria-current");
     }
   });
-  const labRail = document.getElementById("lab-rail");
-  const showRail = route !== "connect" && portfolioState.labs.length > 0;
-  labRail.hidden = !showRail;
-  document.getElementById("workspace-frame").classList.toggle("with-lab-rail", showRail);
+  applyLabRail(route);
   if (renderedRoute && renderedRoute !== route) window.scrollTo(0, 0);
   renderedRoute = route;
   document.title = `efferents — ${route}`;
   renderLabTabs();
   renderBudget();
   if (route === "network" && networkWasHidden) renderNetwork();
+}
+
+// The labs rail pops in and out from the topbar. Collapsed by default so the
+// network gets the full width; the choice is a per-browser convenience.
+let labRailOpen = readStored("efferents-lab-rail", false) === true;
+
+function applyLabRail(route) {
+  const available = route !== "connect" && portfolioState.labs.length > 0;
+  const toggle = document.getElementById("lab-rail-toggle");
+  const showRail = available && labRailOpen;
+  toggle.hidden = !available;
+  toggle.setAttribute("aria-expanded", String(showRail));
+  text("lab-rail-toggle-count", String(portfolioState.labs.length).padStart(2, "0"));
+  document.getElementById("lab-rail").hidden = !showRail;
+  document.getElementById("workspace-frame").classList.toggle("with-lab-rail", showRail);
+}
+
+function initLabRailToggle() {
+  document.getElementById("lab-rail-toggle").addEventListener("click", () => {
+    labRailOpen = !labRailOpen;
+    writeStored("efferents-lab-rail", labRailOpen);
+    applyLabRail(currentRoute());
+    if (currentRoute() === "network") renderNetwork();
+  });
 }
 
 function initRouting() {
@@ -644,25 +665,6 @@ function renderNetwork() {
       "subscribe", true, `${name} → ${labDisplayName(lab.lab_id)}: cross-field journal subscription`);
   });
   text("network-node-count", `${labs.length} labs · ${groups.size} journals`);
-  const inspector = document.getElementById("network-selection");
-  if (selected) {
-    const owned = findings.filter(item => item.lab_id === selected.lab_id);
-    const received = observations.filter(item => item.target === selected.lab_id);
-    const latest = owned.at(-1);
-    const board = selected.review_board || (latest ? {status: "accepted", scores: latest.review_scores} : {});
-    inspector.innerHTML = `<h3>${esc(labDisplayName(selected.lab_id))}</h3><dl><dt>Home journal</dt><dd>${esc(homeJournal(selected))}</dd>` +
-      `<dt>Research direction</dt><dd>${esc(selected.hypothesis?.question || selected.approach || selected.domain)}</dd>` +
-      `<dt>Ideas in this lab</dt><dd>${(selected.ideas?.length ? selected.ideas : [{focus: selected.hypothesis?.question || selected.approach || "Initial idea"}]).map((idea, i) => `<b>Idea ${String.fromCharCode(65 + i % 26)}</b>: ${esc(idea.focus)}`).join("<br>")}</dd>` +
-      `<dt>Journal activity</dt><dd>${owned.length} published papers · ${received.length} subscription receipts</dd></dl>` +
-      `<section class="inspector-review-board">${reviewBoardMarkup(board)}${board.campaign_id ? `<small>Paper ${esc(board.campaign_id)}</small>` : ""}</section>` +
-      (board.reviews || []).map(review => `<details class="review-detail"><summary>${esc(review.persona === "enthusiast" ? "optimistic" : review.persona)} · ${esc(review.score)}/10</summary><p>Confidence: ${review.confidence ? `${esc(review.confidence)}/5` : "not recorded"}</p><p>${esc(review.summary)}</p>` +
-        ["strengths", "weaknesses", "questions"].map(key => `<b>${key}</b><ul>${(review[key] || []).map(item => `<li>${esc(item)}</li>`).join("")}</ul>`).join("") + `</details>`).join("") +
-      `<p class="form-hint">Researchers communicate across labs only through reviewed journal publications. Review does not establish replication. Public release requires owner authorization.</p>`;
-    if (!selected.remote) {
-      const open = document.createElement("button"); open.className = "compact-button";
-      open.textContent = "Open lab evidence"; open.onclick = () => openLabTab(selected.lab_id); inspector.appendChild(open);
-    }
-  } else inspector.textContent = "Select a lab to inspect its journal and reviews.";
   renderEventAdmin(); renderExchange();
 }
 
@@ -1532,22 +1534,6 @@ function initRuntimeControls() {
   });
 }
 
-function initNetworkDetails() {
-  const button = document.getElementById("network-details-toggle");
-  const panel = document.getElementById("network-inspector");
-  const grid = document.querySelector(".network-grid");
-  const setOpen = (open) => {
-    panel.hidden = !open;
-    grid.classList.toggle("inspector-collapsed", !open);
-    button.setAttribute("aria-expanded", String(open));
-    button.textContent = open ? "Hide lab details" : "Show lab details";
-    writeStored("efferents-network-details", open);
-    renderNetwork();
-  };
-  setOpen(readStored("efferents-network-details", false) === true);
-  button.addEventListener("click", () => setOpen(panel.hidden));
-}
-
 function initPanelToggles() {
   document.querySelectorAll("[data-panel-toggle]").forEach((button) => {
     button.addEventListener("click", () => {
@@ -1560,7 +1546,7 @@ function initPanelToggles() {
 }
 
 initRouting();
-initNetworkDetails();
+initLabRailToggle();
 initPanelToggles();
 initIntakeTabs();
 initConnectForm();

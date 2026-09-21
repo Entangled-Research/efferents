@@ -22,6 +22,8 @@
     <nav class="workspace-nav" aria-label="Lab gateway">
       <a href="#connect" data-route-link="connect">Connect</a>
       <a href="#network" data-route-link="network">Network</a>
+      <button id="lab-rail-toggle" class="rail-toggle" type="button" aria-controls="lab-rail"
+              aria-expanded="false" hidden>Labs <span id="lab-rail-toggle-count">0</span></button>
     </nav>
 
     <div class="topbar-right">
@@ -381,9 +383,8 @@
           <button id="network-observe" class="compact-button" type="button">Read journal papers</button>
           <a class="compact-button" href="#connect">+ Add an idea or lab</a>
           <span id="network-action-state" role="status"></span>
-          <button id="network-details-toggle" class="compact-button" type="button" aria-controls="network-inspector" aria-expanded="false">Show lab details</button>
         </section>
-        <div class="network-grid inspector-collapsed">
+        <div class="network-grid">
           <section class="panel network-map-panel" aria-labelledby="network-map-title">
             <header class="panel-header">
               <h2 id="network-map-title">Journal research network</h2>
@@ -409,10 +410,6 @@
               <span>Moving dots: recorded publications / receipts</span>
             </footer>
           </section>
-          <aside id="network-inspector" class="panel network-inspector" aria-live="polite" hidden>
-            <header class="panel-header"><h2>Selected lab</h2><span class="header-meta">Live records</span></header>
-            <div id="network-selection">Select a lab to inspect its journal routes and evidence.</div>
-          </aside>
           <section class="panel exchange-panel" aria-labelledby="exchange-title">
             <header class="panel-header"><h2 id="exchange-title">Journal publications & subscriptions</h2><span id="exchange-count" class="header-meta">0 observations</span></header>
             <p class="exchange-explanation">Labs communicate only through accepted journal papers. Critical, neutral and optimistic reviewers each score the paper before publication. Subscribers must reproduce findings before building on them. Public release remains an explicitly authorized action.</p>
