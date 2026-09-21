@@ -2068,8 +2068,7 @@ td.status-insufficient_data {
 #onboard-form { display: grid; gap: 10px; }
 #onboard-form textarea,
 #onboard-form input:not([type="checkbox"]),
-#onboard-form select,
-.network-toolbar select {
+#onboard-form select {
   width: 100%; min-width: 0; padding: 9px; border: 1px solid var(--ink);
   border-radius: 0; background: var(--panel); color: var(--ink); font: inherit;
 }
@@ -2077,11 +2076,7 @@ td.status-insufficient_data {
 .onboard-options { border-top: 1px solid var(--line); padding-top: 10px; }
 .onboard-options summary { cursor: pointer; margin-bottom: 10px; }
 .onboard-options label { display: block; margin: 10px 0 5px; }
-.onboard-actions, .network-toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
-.network-toolbar { padding: 12px 0; font: 12px var(--mono); }
-.network-toolbar select { width: auto; }
-.network-toolbar a { color: var(--on-signal); text-decoration: none; }
-#network-action-state { flex: 1 1 220px; overflow-wrap: anywhere; }
+.onboard-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
 .exchange-panel { min-width: 0; }
 .exchange-explanation { padding: 0 16px; font: 12px/1.5 var(--mono); color: var(--dim); }
 .exchange-feed { max-height: 580px; overflow-y: auto; }
@@ -2466,5 +2461,3 @@ td.status-insufficient_data {
 .rejected-arrow, .network-packet.rejected { fill: var(--danger); }
 .legend-line.accepted { border-color: var(--data); }
 .legend-line.rejected { border-color: var(--danger); }
-.idea-routing-strip { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; border: 1px solid var(--line); padding: 10px 12px; font: 11px/1.5 var(--mono); margin-bottom: 16px; }
-.idea-routing-strip span { color: var(--muted); }

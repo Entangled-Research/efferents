@@ -4,7 +4,6 @@ let portfolioState = { labs: [], edges: [], findings: [], observations: [], even
 let isConnecting = false;
 let runtimeAction = "start";
 let renderedRoute = "";
-let pendingTrialLab = null;
 // Which lab this browser is looking at. Selection is per viewer, never a
 // server-side switch, so many browsers can inspect different labs at once.
 let selectedLabId = null;
@@ -540,13 +539,6 @@ function reviewBoardMarkup(board = {}) {
 
 function renderNetwork() {
   if (document.getElementById("network-view").hidden) return;
-  if (pendingTrialLab) {
-    const lab = portfolioState.labs.find(item => item.lab_id === pendingTrialLab);
-    if (lab && lab.status !== "running") {
-      text("network-action-state", `${labDisplayName(pendingTrialLab)}: trial ended · inspect metrics and verdict`);
-      pendingTrialLab = null;
-    }
-  }
   const labs = portfolioLabs();
   const findings = publishedFindings();
   const publicationById = new Map(findings.map(item => [item.id, item]));
@@ -1403,32 +1395,18 @@ function initOnboarding() {
       renderControl(info);
       showMessage("onboard-message", `${labDisplayName(info.lab_id)} · ${info.decisions.starter} · choices saved in context/onboarding.json`, "success");
       window.location.hash = "network";
-      pendingTrialLab = run ? info.lab_id : null;
-      text("network-action-state", run ? `${labDisplayName(info.lab_id)}: three experiments started` : `${labDisplayName(info.lab_id)}: ready to run`);
       await refreshPortfolio();
     } catch (error) { showMessage("onboard-message", error.message, "error"); }
     finally { buttons.forEach((button) => { button.disabled = false; }); }
   };
   document.getElementById("onboard-form").addEventListener("submit", (event) => { event.preventDefault(); submit(true); });
   document.getElementById("onboard-create").addEventListener("click", () => submit(false));
-  document.getElementById("network-observe").addEventListener("click", async (event) => {
-    event.target.disabled = true;
-    try {
-      const result = await postJSON("/api/network/observe", {});
-      pendingTrialLab = null;
-      text("network-action-state", `${result.received} journal papers received`);
-      await refreshPortfolio();
-    } catch (error) { text("network-action-state", error.message); }
-    finally { event.target.disabled = false; }
-  });
   document.getElementById("trial-lab").addEventListener("click", async (event) => {
     event.target.disabled = true;
     try {
       await postJSON("/api/lab/trial", { runs: 3 });
-      pendingTrialLab = controlState.lab_id;
-      text("network-action-state", "Three real experiments started · no model calls");
       window.location.hash = "network";
-    } catch (error) { text("network-action-state", error.message); }
+    } catch (error) { console.error(error); }
     finally { event.target.disabled = false; }
   });
 }
