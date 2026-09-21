@@ -898,9 +898,15 @@ def _cmd_starter(args: argparse.Namespace) -> int:
     idea, goal = getattr(args, "idea", ""), getattr(args, "goal", "")
     approach, name = getattr(args, "approach", ""), getattr(args, "name", "")
     try:
-        lab_id = suggest_lab_id(idea=idea, goal=goal, approach=approach,
-                                starter=args.starter_name, name=name)
-        target = Path(args.out or lab_id).expanduser().resolve()
+        out = Path(args.out).expanduser().resolve() if args.out else None
+        if out is not None and not (name or idea or approach or goal):
+            name = out.name  # an explicit directory name is what the owner typed
+        # Sibling starter directories count as taken so repeated runs stay distinct.
+        siblings = {p.name for p in (out.parent if out else Path.cwd()).glob("*") if p != out}
+        from efferents.registry import Registry
+        lab_id = suggest_lab_id(idea=idea, goal=goal, approach=approach, starter=args.starter_name,
+                                name=name, taken=siblings | {r.lab_id for r in Registry().list()})
+        target = out or (Path.cwd() / lab_id)
         result = create_lab(target, starter=args.starter_name, idea=idea, goal=goal,
                             approach=approach, exchange=getattr(args, "exchange", False), name=lab_id)
     except (OSError, ValueError) as exc:
