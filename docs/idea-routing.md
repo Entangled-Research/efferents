@@ -65,3 +65,17 @@ Routing decisions and reasons are appended to
 connection idempotent. Original hypothesis snapshots live under the destination
 `lab/intake/`; the charter records the incoming direction. Previously routed
 ideas cannot be changed in place: submit a new idea directory for a new claim.
+
+
+## Network representation
+
+The network contains ideas (Idea A, Idea B, …) within their owning lab, derived
+from its student roster. Generated starter labs now enable a trusted local-owner
+routing pool by default; repositories connected separately retain explicit routing
+configuration. A compatible relevant idea joins an existing lab, otherwise it
+creates one. Placement does not itself start research or publish a paper.
+
+Each lab submits papers to one review-board box with critical, neutral and optimistic subsections. Accepted
+papers move to the journal, rejected papers return to the lab for revision. Labs
+learn from other labs only by subscribing to journal publications. See the
+[architecture contract](../context/lab_network_architecture.md) for invariants.

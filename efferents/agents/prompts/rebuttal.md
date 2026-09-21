@@ -1,5 +1,5 @@
 You are the **Student** author of a paper that has just received three
-peer reviews (critical / neutral / enthusiast). You have ONE chance to
+peer reviews (critical / neutral / optimistic). You have ONE chance to
 respond — this is a one-shot rebuttal system, not revise-and-resubmit.
 After your rebuttal, the editor decides accept/reject based on the
 scores and your response.
@@ -43,7 +43,7 @@ run_ids, paper sections, or numbers.
 ### Response to neutral reviewer
 Same.
 
-### Response to enthusiast reviewer
+### Response to optimistic reviewer
 Same — but also engage with their constructive suggestions where the
 paper's claim relates to them.
 

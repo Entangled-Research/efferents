@@ -172,6 +172,7 @@ function currentRoute() {
 }
 
 function renderRoute() {
+  const networkWasHidden = document.getElementById("network-view").hidden;
   let route = currentRoute();
   if (controlState.hydrated && !controlState.connected && !["connect", "network"].includes(route)) {
     route = "connect";
@@ -198,6 +199,7 @@ function renderRoute() {
   document.title = `efferents — ${route}`;
   renderLabTabs();
   renderBudget();
+  if (route === "network" && networkWasHidden) renderNetwork();
 }
 
 function initRouting() {
@@ -288,7 +290,7 @@ function renderControl(info) {
     return;
   }
 
-  text("observe-lab-title", info.lab_id || "unnamed-lab");
+  text("observe-lab-title", labDisplayName(info.lab_id));
   text("observe-lab-meta", `${info.domain || "unclassified"} / ${info.status || "stopped"}`);
   text("connection-source", info.source || info.submission_dir || "local submission");
   setRuntimeStatus(info.status);
@@ -362,7 +364,7 @@ function renderLabTabs() {
       return `<button class="lab-tab${active ? " active" : ""}" type="button" ` +
         `data-tab="${esc(labId)}" aria-current="${active ? "true" : "false"}">` +
         `<i class="tab-led ${esc(lab.status || "stopped")}" aria-hidden="true"></i>` +
-        `<span class="tab-name">${esc(labId)}</span>` +
+        `<span class="tab-name">${esc(labDisplayName(labId))}</span>` +
         `<span class="tab-close" data-close="${esc(labId)}" title="Close tab">×</span></button>`;
     }).join("");
   strip.querySelector("[data-tab-network]").addEventListener("click", () => {
@@ -424,7 +426,7 @@ function renderLabRail() {
       `type="button" data-lab-select="${esc(lab.lab_id)}" role="listitem" ` +
       `aria-current="${lab.selected ? "true" : "false"}">` +
       `<span class="lab-seq">${String(index + 1).padStart(2, "0")}</span>` +
-      `<span class="lab-list-copy"><strong>${esc(lab.lab_id)}</strong>` +
+      `<span class="lab-list-copy"><strong>${esc(labDisplayName(lab.lab_id))}</strong>` +
       `<small>${esc(lab.domain || "unclassified")}${ownerLine}</small>` +
       `<span>${metric}</span>` +
       `<span class="lab-verdict${lab.verdict?.status === "falsified" ? " falsified" : ""}">` +
@@ -461,18 +463,74 @@ function homeJournal(lab) {
   if (/math|graph|numerical|algorithm|optimi/.test(domain)) return "Mathematics & Computation";
   return lab.domain || "General Research";
 }
+function portfolioLabs() {
+  const localIds = new Set(portfolioState.labs.map(lab => lab.lab_id));
+  return [...portfolioState.labs,
+    ...(portfolioState.eventNetwork?.labs || []).filter(lab => !localIds.has(lab.lab_id))];
+}
+
+function labDisplayName(labId) {
+  if (!labId) return "Unnamed lab";
+  const labs = portfolioLabs();
+  if (!labs.some(lab => lab.lab_id === labId)) labs.push({lab_id: labId});
+  return networkLabNames(labs).get(labId);
+}
+
+function networkLabNames(labs) {
+  const names = new Map();
+  const counts = new Map();
+  let placeholder = 0;
+  const placeholderName = () => {
+    let index = ++placeholder;
+    let suffix = "";
+    while (index > 0) {
+      suffix = String.fromCharCode(65 + (index - 1) % 26) + suffix;
+      index = Math.floor((index - 1) / 26);
+    }
+    return `Lab ${suffix}`;
+  };
+  [...labs].sort((a, b) => a.lab_id.localeCompare(b.lab_id)).forEach(lab => {
+    const actualName = String(lab.display_name || "").trim();
+    const generatedId = /-[a-f0-9]{8,}$/i.test(lab.lab_id || "");
+    const base = actualName || (generatedId || !lab.lab_id
+      ? placeholderName()
+      : lab.lab_id.replace(/[-_]+/g, " ").replace(/^./, c => c.toUpperCase()));
+    const count = (counts.get(base) || 0) + 1;
+    counts.set(base, count);
+    names.set(lab.lab_id, {base, count});
+  });
+  return new Map([...names].map(([id, {base, count}]) =>
+    [id, counts.get(base) > 1 ? `${base} ${count}` : base]));
+}
+function publishedFindings() {
+  return [...portfolioState.findings, ...(portfolioState.eventNetwork?.findings || [])]
+    .filter(item => item.kind === "publication" && item.publication_status === "accepted");
+}
+
+function reviewBoardMarkup(board = {}) {
+  const personas = ["critical", "neutral", "optimistic"];
+  const scores = board.scores || {};
+  return `<div class="review-board-title">Review board <small>${esc(board.status || "awaiting paper")}</small></div>` +
+    `<div class="review-scores">${personas.map(persona => {
+      const score = scores[persona] ?? (persona === "optimistic" ? scores.enthusiast : null);
+      return `<div><span>${persona}</span><strong>${Number.isInteger(score) ? `${score}/10` : "—"}</strong></div>`;
+    }).join("")}</div>`;
+}
+
 function renderNetwork() {
+  if (document.getElementById("network-view").hidden) return;
   if (pendingTrialLab) {
-    const trialLab = portfolioState.labs.find((lab) => lab.lab_id === pendingTrialLab);
-    if (trialLab && trialLab.status !== "running") {
-      text("network-action-state", `${pendingTrialLab}: trial ended · inspect metrics and verdict`);
+    const lab = portfolioState.labs.find(item => item.lab_id === pendingTrialLab);
+    if (lab && lab.status !== "running") {
+      text("network-action-state", `${labDisplayName(pendingTrialLab)}: trial ended · inspect metrics and verdict`);
       pendingTrialLab = null;
     }
   }
-  const localIds = new Set(portfolioState.labs.map(lab => lab.lab_id));
-  const labs = [...portfolioState.labs, ...(portfolioState.eventNetwork?.labs || []).filter(lab => !localIds.has(lab.lab_id))];
-  const findings = [...portfolioState.findings, ...(portfolioState.eventNetwork?.findings || [])];
-  const observations = [...portfolioState.observations, ...(portfolioState.eventNetwork?.observations || [])];
+  const labs = portfolioLabs();
+  const findings = publishedFindings();
+  const publicationById = new Map(findings.map(item => [item.id, item]));
+  const observations = [...portfolioState.observations, ...(portfolioState.eventNetwork?.observations || [])]
+    .filter(item => publicationById.has(item.finding_id));
   const lines = document.getElementById("network-lines");
   const nodes = document.getElementById("network-nodes");
   const journalsLayer = document.getElementById("network-journals");
@@ -481,140 +539,147 @@ function renderNetwork() {
   document.querySelector(".network-hub").hidden = true;
   const empty = document.getElementById("network-empty");
   empty.hidden = labs.length > 0;
-  empty.textContent = "Start a documented lab to send findings to its journal inbox.";
+  empty.textContent = "Connect a lab to build a reviewed journal.";
+  const selected = labs.find(lab => lab.lab_id === networkSelection) || labs[0];
+  networkSelection = selected?.lab_id || null;
   const groups = new Map();
-  labs.forEach(lab => {
-    const key = homeJournal(lab);
-    groups.set(key, [...(groups.get(key) || []), lab]);
-  });
-  const narrow = document.getElementById("lab-map").clientWidth < 600;
-  const cols = narrow ? 1 : 2;
-  const rowSize = 290;
-  const groupRows = [...groups.values()].map(m => Math.ceil(m.length / 2));
-  const rowHeights = [];
-  for (let i=0; i<groupRows.length; i+=cols) rowHeights.push(100 + rowSize * Math.max(...groupRows.slice(i,i+cols)));
-  const height = Math.max(460, rowHeights.reduce((a,b) => a+b,0));
-  document.getElementById("lab-map").style.height = height + "px";
-  document.getElementById("lab-map").style.minHeight = height + "px";
+  labs.forEach(lab => groups.set(homeJournal(lab), [...(groups.get(homeJournal(lab)) || []), lab]));
+  const map = document.getElementById("lab-map");
+  const compact = map.clientWidth < 600;
+  const columns = compact ? 1 : 2;
+  const rowHeight = 410;
+  const height = Math.max(460, [...groups.values()].reduce((sum, members) =>
+    sum + Math.ceil(members.length / columns) * rowHeight + 150, 0));
+  map.style.height = map.style.minHeight = `${height}px`;
   lines.setAttribute("viewBox", `0 0 1000 ${height}`);
-  const positions = new Map();
-  const centers = new Map();
   const defs = svgElement("defs", {});
-  const marker = svgElement("marker", {id:"observation-arrow", viewBox:"0 0 10 10", refX:9, refY:5, markerWidth:6, markerHeight:6, orient:"auto"});
-  marker.appendChild(svgElement("path", {d:"M0 0 L10 5 L0 10", fill:"none", class:"observation-arrow"}));
-  defs.appendChild(marker); lines.appendChild(defs);
-  const path = (a,b,cls,offset=0) => {
-    const bend = (a.y+b.y)/2;
-    return svgElement("path", {d:`M${a.x},${a.y} C${a.x+offset},${bend} ${b.x+offset},${bend} ${b.x},${b.y}`, class:cls, fill:"none"});
-  };
-  const packet = (a, b, offset, cls = "") => {
-    const bend = (a.y + b.y) / 2;
-    const motion = svgElement("animateMotion", {
-      dur: `${2.6 + (Math.abs(a.x - b.x) % 9) / 10}s`,
-      begin: `-${(Math.abs(a.x + b.y) % 24) / 10}s`,
-      repeatCount: "indefinite",
-      path: `M${a.x},${a.y} C${a.x + offset},${bend} ${b.x + offset},${bend} ${b.x},${b.y}`,
-    });
-    const dot = svgElement("circle", { r: 3, class: `network-packet ${cls}` });
-    dot.appendChild(motion);
-    lines.appendChild(dot);
-  };
-  [...groups.entries()].forEach(([name,members],gi) => {
-    const row = Math.floor(gi/cols);
-    const y = rowHeights.slice(0,row).reduce((a,b)=>a+b,0)+45;
-    const x = (gi%cols+0.5)*1000/cols;
-    centers.set(name,{x,y:y+28});
-    const label = document.createElement("div");
-    label.className = "network-journal";
-    label.style.left = x/10+"%"; label.style.top = y+"px";
-    const routed = findings.filter(item => homeJournal(item) === name).length;
-    label.innerHTML = `<small>JOURNAL · DOMAIN INBOX</small><b>${esc(name)}</b><small>${members.length} labs · ${routed} shared records</small>`;
-    const labGrid = document.createElement("div");
-    labGrid.className = "journal-labs";
-    label.appendChild(labGrid);
-    journalsLayer.appendChild(label);
-    members.sort((a,b)=>(a.goal||a.approach||a.lab_id).localeCompare(b.goal||b.approach||b.lab_id)).forEach((lab,i) => {
-      const p = {x:x+(i%2 ? 1:-1)*(narrow?225:120), y:y+135+Math.floor(i/2)*rowSize};
-      positions.set(lab.lab_id,p);
-      for(let f=-2;f<=2;f++) lines.appendChild(path(centers.get(name),p,"journal-fiber",f*7));
-      // The prototype's branching nuclei distinguish a lab from its journal hub.
-      for(let f=0;f<18;f++) {
-        const angle=f*Math.PI/9;
-        const tip={x:p.x+Math.cos(angle)*30,y:p.y+Math.sin(angle)*26};
-        lines.appendChild(path(p,tip,"lab-fiber",Math.sin(f)*12));
-      }
-      lines.appendChild(svgElement("circle",{cx:p.x,cy:p.y,r:6,class:"lab-nucleus"}));
-      const owner = lab.owner_name ? `<small class="map-node-owner">${esc(lab.owner_name)}</small>` : "";
-      const question = lab.hypothesis?.question || lab.hypothesis?.claim || lab.approach || "Awaiting first hypothesis";
-      const card = document.createElement("article");
-      card.className = `lab-structure ${lab.status || "stopped"}${lab.selected ? " selected" : ""}`;
-      card.innerHTML = `<button type="button" class="lab-identity"><strong>${esc(lab.lab_id)}</strong><small>${esc(lab.status || "stopped")}${lab.remote ? " · read only" : ""}</small>${owner}</button>` +
-        `<div class="lab-loop" aria-label="Autoresearch loop"><span>owner steering</span><i>→</i><span>supervisor + agents</span><i>→</i><span class="gate">hypothesis</span><i>→</i><span class="gate">bounded run</span><i>→</i><span>evidence + paper</span><b class="lab-flow-packet" aria-hidden="true">◆</b></div>` +
-        `<div class="lab-ideas"><small>GROUP OF IDEAS</small><p>${esc(question)}</p></div>`;
-      card.querySelector(".lab-identity").addEventListener("click", () => { networkSelection = lab.lab_id; renderNetwork(); });
-      labGrid.appendChild(card);
-      lines.appendChild(path({x:p.x,y:p.y+84},{x:p.x,y:p.y+111},"idea-branch",20));
-    });
-  });
-  const pairs=new Map(observations.map(o=>[`${o.source}:${o.target}`,o]));
-  pairs.forEach(o=>{
-    const a=positions.get(o.source),b=positions.get(o.target);
-    if(!a||!b)return;
-    const edge=path(a,b,"observation-edge visiting-branch",a.x<b.x?-45:45);
-    edge.setAttribute("marker-end","url(#observation-arrow)");
-    const title=svgElement("title",{});title.textContent=`${o.target} received a finding from ${o.source}`;
-    edge.appendChild(title);lines.appendChild(edge);
-    packet(a, b, a.x < b.x ? -45 : 45, "visiting");
-  });
-  const guestVisits = observations.filter((o) => {
-    const source = labs.find((lab) => lab.lab_id === o.source);
-    const target = labs.find((lab) => lab.lab_id === o.target);
-    return source && target && homeJournal(source) !== homeJournal(target);
-  });
-  if (guestVisits.length > 0) {
-    const note = document.createElement("div");
-    note.className = "network-visit-note";
-    note.innerHTML = `<b>guest conference route</b><small>${guestVisits.length} cross-journal subscription${guestVisits.length === 1 ? "" : "s"}</small>`;
-    note.style.left = "50%";
-    note.style.top = Math.max(88, Math.round(height / 2)) + "px";
-    journalsLayer.appendChild(note);
+  for (const kind of ["publish", "subscribe", "accepted", "rejected"]) {
+    const marker = svgElement("marker", {id: `${kind}-arrow`, viewBox: "0 0 10 10",
+      refX: 9, refY: 5, markerWidth: 9, markerHeight: 9, markerUnits: "userSpaceOnUse", orient: "auto"});
+    marker.appendChild(svgElement("path", {d: "M0 0 L10 5 L0 10 Z", class: `${kind}-arrow`}));
+    defs.appendChild(marker);
   }
-  (portfolioState.edges || []).forEach((edge) => {
-    const a = positions.get(edge.source), b = positions.get(edge.target);
-    if (!a || !b) return;
-    const offset = a.x < b.x ? 30 : -30;
-    lines.appendChild(path(a, b, `domain-edge edge-${String(edge.kind || "shared-domain")}`, offset));
-    packet(a, b, offset, "domain");
+  lines.appendChild(defs);
+  const route = (d, kind, active, label) => {
+    const edge = svgElement("path", {d, fill: "none", class: `journal-route ${kind}${active ? " active" : " pending"}`,
+      "marker-end": `url(#${kind}-arrow)`});
+    const title = svgElement("title", {}); title.textContent = label;
+    edge.appendChild(title); lines.appendChild(edge);
+    if (active) {
+      const dot = svgElement("circle", {r: 3, class: `network-packet ${kind}`});
+      dot.appendChild(svgElement("animateMotion", {dur: "4s", repeatCount: "indefinite", path: d}));
+      lines.appendChild(dot);
+    }
+  };
+  const labPorts = new Map(), journalPorts = new Map();
+  let groupTop = 0;
+  [...groups.entries()].forEach(([name, members]) => {
+    const rows = Math.ceil(members.length / columns);
+    const journalY = groupTop + rows * rowHeight + 15;
+    members.forEach((lab, index) => {
+      const column = index % columns;
+      const x = columns === 1 ? 500 : (column ? 730 : 270);
+      const y = groupTop + Math.floor(index / columns) * rowHeight + 24;
+      const width = columns === 1 ? 76 : 36;
+      const card = document.createElement("article");
+      card.className = "network-lab-boundary";
+      Object.assign(card.style, {left: `${x / 10}%`, top: `${y}px`, width: `${width}%`});
+      const ideas = lab.ideas?.length ? lab.ideas : [{id: "primary", focus: lab.hypothesis?.question || lab.approach || "Initial research idea"}];
+      card.innerHTML = `<button type="button" class="lab-identity" aria-pressed="${lab.lab_id === networkSelection}"><strong>${esc(labDisplayName(lab.lab_id))}</strong><small>${esc(lab.status || "stopped")}${lab.remote ? " · read only" : ""}</small></button>` +
+        `<div class="lab-idea-nodes">${ideas.map((idea, i) => `<span class="lab-idea-node" title="${esc(idea.focus)}">Idea ${String.fromCharCode(65 + i % 26)}${i >= 26 ? Math.floor(i / 26) + 1 : ""}</span>`).join("")}</div>` +
+        `<div class="internal-research"><span>Supervisor · Researcher · Librarian</span><b>Hypothesis → Experiment</b><b>Evidence → Paper</b><span>Executor · Coder · Analyst · Writer</span></div>`;
+      card.querySelector("button").onclick = () => {networkSelection = lab.lab_id; renderNetwork();};
+      nodes.appendChild(card);
+      const owned = findings.filter(item => item.lab_id === lab.lab_id);
+      const latest = owned.at(-1);
+      const board = lab.review_board || (latest ? {status: "accepted", scores: latest.review_scores} : {});
+      const review = document.createElement("div");
+      review.className = "network-review-board";
+      Object.assign(review.style, {left: `${x / 10}%`, top: `${y + 242}px`, width: `${width}%`});
+      review.innerHTML = reviewBoardMarkup(board);
+      nodes.appendChild(review);
+      route(`M${x},${y + 210} V${y + 237}`, "publish", false,
+        `${labDisplayName(lab.lab_id)} submits a paper to its three-reviewer board`);
+      if (board.status === "rejected") {
+        const returnX = x + width * 5 + 20;
+        route(`M${x + width * 5},${y + 300} H${returnX} V${y + 110} H${x + width * 5 + 5}`,
+          "rejected", true, `Rejected paper → ${labDisplayName(lab.lab_id)} for revision`);
+      }
+      // Outside lanes keep publication paths out of other labs in larger journals.
+      const outside = columns === 1 ? 900 : column ? 940 : 60;
+      const accepted = board.status === "accepted" && owned.some(item =>
+        !board.campaign_id || item.campaign_id === board.campaign_id);
+      if (board.status !== "rejected") {
+        route(`M${x},${y + 332} V${y + 350} H${outside} V${journalY + 35} H${outside < 500 ? 100 : 900}`,
+          accepted ? "accepted" : "publish", accepted, `${labDisplayName(lab.lab_id)} → ${name}: accepted papers only`);
+      }
+      labPorts.set(lab.lab_id, {x: x - width * 5, y: y + 75, lane: columns === 1 ? 25 : column ? 515 : 25});
+    });
+    const published = findings.filter(item => (item.journal || homeJournal(item)) === name);
+    const journal = document.createElement("div");
+    journal.className = "shared-journal-node";
+    Object.assign(journal.style, {left: "10%", top: `${journalY}px`, width: "80%"});
+    journal.innerHTML = `<small>SHARED JOURNAL · ACCEPTED PAPERS</small><strong>${esc(name)}</strong><small>${published.length} publications · append-only evidence</small>`;
+    journalsLayer.appendChild(journal);
+    journalPorts.set(name, {y: journalY + 70});
+    // Subscription capability is visible; animation requires a persisted receipt.
+    members.forEach(lab => {
+      const port = labPorts.get(lab.lab_id);
+      const active = observations.some(item => item.target === lab.lab_id && publicationById.get(item.finding_id)?.journal === name);
+      route(`M150,${journalY + 70} V${journalY + 94} H${port.lane} V${port.y} H${port.x - 7}`,
+        "subscribe", active, `${name} → ${labDisplayName(lab.lab_id)}: journal subscription`);
+    });
+    groupTop += rows * rowHeight + 150;
+  });
+  const subscriptions = new Set();
+  observations.forEach(receipt => {
+    const publication = publicationById.get(receipt.finding_id);
+    const name = publication.journal || homeJournal(publication);
+    const lab = labs.find(item => item.lab_id === receipt.target);
+    const journal = journalPorts.get(name), port = labPorts.get(receipt.target);
+    const key = `${name}:${receipt.target}`;
+    if (!journal || !port || !lab || homeJournal(lab) === name || subscriptions.has(key)) return;
+    subscriptions.add(key);
+    route(`M850,${journal.y} V${journal.y + 110} H985 V${port.y - 16} H${port.x - 7} V${port.y}`,
+      "subscribe", true, `${name} → ${labDisplayName(lab.lab_id)}: cross-field journal subscription`);
   });
   text("network-node-count", `${labs.length} labs · ${groups.size} journals`);
-  const selected=labs.find(l=>l.lab_id===networkSelection)||labs[0];
-  const inspector=document.getElementById("network-selection");
-  if(selected){
-    networkSelection=selected.lab_id;
-    const owned=findings.filter(f=>f.lab_id===selected.lab_id);
-    const received=observations.filter(o=>o.target===selected.lab_id);
-    const visits=[...new Set(received.map(o=>labs.find(l=>l.lab_id===o.source)).filter(Boolean).map(homeJournal))].filter(j=>j!==homeJournal(selected));
-    inspector.innerHTML=`<h3>${esc(selected.lab_id)}</h3><dl><dt>Home journal</dt><dd>${esc(homeJournal(selected))}</dd><dt>Visiting connections</dt><dd>${visits.map(esc).join(" · ")||"No cross-journal receipts yet"}</dd><dt>Research direction</dt><dd>${esc(selected.hypothesis?.question||selected.approach||selected.domain)}</dd><dt>Shared goal</dt><dd>${esc(selected.goal||"Independent research")}</dd><dt>Evidence</dt><dd>${owned.length} shared records · ${received.length} receipts</dd><dt>Status</dt><dd>${esc(selected.status||"stopped")} · ${esc(selected.verdict?.line||"Awaiting evidence")}</dd></dl><p class="form-hint">Journal routing is not acceptance or public publication. Visiting connections show receipt, not replication.</p>`;
-    if(!selected.remote){const open=document.createElement("button");open.className="compact-button";open.textContent="Open lab evidence";open.onclick=()=>openLabTab(selected.lab_id);inspector.appendChild(open);}
-  }else inspector.textContent="Select a lab to inspect journal routes and evidence.";
-  if(!controlState.connected && labs.length)setRuntimeStatus("ready");
-  renderEventAdmin();renderExchange();
+  const inspector = document.getElementById("network-selection");
+  if (selected) {
+    const owned = findings.filter(item => item.lab_id === selected.lab_id);
+    const received = observations.filter(item => item.target === selected.lab_id);
+    const latest = owned.at(-1);
+    const board = selected.review_board || (latest ? {status: "accepted", scores: latest.review_scores} : {});
+    inspector.innerHTML = `<h3>${esc(labDisplayName(selected.lab_id))}</h3><dl><dt>Home journal</dt><dd>${esc(homeJournal(selected))}</dd>` +
+      `<dt>Research direction</dt><dd>${esc(selected.hypothesis?.question || selected.approach || selected.domain)}</dd>` +
+      `<dt>Ideas in this lab</dt><dd>${(selected.ideas?.length ? selected.ideas : [{focus: selected.hypothesis?.question || selected.approach || "Initial idea"}]).map((idea, i) => `<b>Idea ${String.fromCharCode(65 + i % 26)}</b>: ${esc(idea.focus)}`).join("<br>")}</dd>` +
+      `<dt>Journal activity</dt><dd>${owned.length} published papers · ${received.length} subscription receipts</dd></dl>` +
+      `<section class="inspector-review-board">${reviewBoardMarkup(board)}${board.campaign_id ? `<small>Paper ${esc(board.campaign_id)}</small>` : ""}</section>` +
+      (board.reviews || []).map(review => `<details class="review-detail"><summary>${esc(review.persona === "enthusiast" ? "optimistic" : review.persona)} · ${esc(review.score)}/10</summary><p>Confidence: ${review.confidence ? `${esc(review.confidence)}/5` : "not recorded"}</p><p>${esc(review.summary)}</p>` +
+        ["strengths", "weaknesses", "questions"].map(key => `<b>${key}</b><ul>${(review[key] || []).map(item => `<li>${esc(item)}</li>`).join("")}</ul>`).join("") + `</details>`).join("") +
+      `<p class="form-hint">Researchers communicate across labs only through reviewed journal publications. Review does not establish replication. Public release requires owner authorization.</p>`;
+    if (!selected.remote) {
+      const open = document.createElement("button"); open.className = "compact-button";
+      open.textContent = "Open lab evidence"; open.onclick = () => openLabTab(selected.lab_id); inspector.appendChild(open);
+    }
+  } else inspector.textContent = "Select a lab to inspect its journal and reviews.";
+  renderEventAdmin(); renderExchange();
 }
 
 function renderExchange() {
-  const findings = new Map([...portfolioState.findings, ...(portfolioState.eventNetwork?.findings || [])].map((item) => [item.id, item]));
-  const receipts = [...portfolioState.observations, ...(portfolioState.eventNetwork?.observations || [])];
-  text("exchange-count", `${findings.size} shared items · ${receipts.length} receipts`);
+  const findings = new Map(publishedFindings().map(item => [item.id, item]));
+  const receipts = [...portfolioState.observations, ...(portfolioState.eventNetwork?.observations || [])].filter(item => findings.has(item.finding_id));
+  text("exchange-count", `${findings.size} published papers · ${receipts.length} receipts`);
   const feed = document.getElementById("exchange-feed");
   const rows = Array.from(findings.values()).reverse().slice(0, 30);
   feed.innerHTML = rows.length ? rows.map((item) => {
     const observers = [...new Set(receipts.filter((r) => r.finding_id === item.id).map((r) => r.target))];
-    return `<article class="exchange-record"><div class="exchange-record-meta"><strong>${esc(item.lab_id)}</strong>` +
+    return `<article class="exchange-record"><div class="exchange-record-meta"><strong>${esc(labDisplayName(item.lab_id))}</strong>` +
       `<span>${esc(item.kind)} → ${esc(homeJournal(item))}</span></div>` +
       (item.kind === "hypothesis" ? `<details><summary>Experiment claim</summary><p>${esc(item.body)}</p></details>` : `<p>${esc(item.body)}</p>`) + `<div class="exchange-provenance">` +
       `${item.run_id ? `Run ${esc(item.run_id)} · ` : ""}Record ${esc(item.id.slice(0, 12))}` +
-      `</div><div class="exchange-receipt">${observers.length ? `Received by ${observers.map(esc).join(", ")}` : "Awaiting a peer visit"}</div></article>`;
-  }).join("") : '<div class="empty-state">Opt in to exchange, then run an experiment. Real findings and delivery receipts appear here.</div>';
+      `</div><div class="exchange-receipt">${observers.length ? `Received by ${observers.map(id => esc(labDisplayName(id))).join(", ")}` : "Awaiting a peer visit"}</div></article>`;
+  }).join("") : '<div class="empty-state">No published papers yet. Papers must pass the three-reviewer board before other labs can subscribe.</div>';
   const goals = [...new Set(portfolioState.labs.map((lab) => lab.goal).filter(Boolean))];
   document.getElementById("known-goals").innerHTML = goals.map((goal) => `<option value="${esc(goal)}"></option>`).join("");
 }
@@ -633,7 +698,7 @@ function renderEventAdmin() {
   const body = document.querySelector("#event-tokens tbody");
   const tokens = Array.isArray(network.tokens) ? network.tokens : [];
   body.innerHTML = tokens.length ? tokens.map((token) =>
-    `<tr><td>${esc(token.token_id)}</td><td>${esc(token.lab_id)}</td>` +
+    `<tr><td>${esc(token.token_id)}</td><td>${esc(labDisplayName(token.lab_id))}</td>` +
     `<td>${esc(token.status)}</td><td>$${Number(token.spent_usd || 0).toFixed(4)} / $${Number(token.cap_usd || 0).toFixed(2)}</td>` +
     `<td>${esc(token.requests || 0)}</td><td>${esc(formatTimestamp(token.last_sync_at, true))}</td></tr>`
   ).join("") : '<tr><td colspan="6" class="empty-state">No event tokens issued</td></tr>';
@@ -653,6 +718,7 @@ function renderPortfolio(payload) {
     if (serverDefault) selectedLabId = serverDefault.lab_id;
   }
   markSelected();
+  text("observe-lab-title", labDisplayName(selectedLabId || controlState.lab_id));
   portfolioBudget = portfolioState.labs.reduce(
     (sum, lab) => ({
       spent: sum.spent + Number(lab.budget?.spent || 0),
@@ -1294,12 +1360,13 @@ function initConnectForm() {
     showMessage("connect-message", "Checking out and validating the submission contract…");
     try {
       const info = await postJSON("/api/connect", { source });
+      await refreshPortfolio();
       renderControl(info);
       showMessage(
         "connect-message",
         info.routing?.applied
-          ? `${info.lab_id} · joined as student ${info.routing.student_id}`
-          : `${info.lab_id} connected · not executed`,
+          ? `${labDisplayName(info.lab_id)} · joined as student ${info.routing.student_id}`
+          : `${labDisplayName(info.lab_id)} connected · not executed`,
         "success",
       );
       window.location.hash = "observe";
@@ -1330,11 +1397,12 @@ function initOnboarding() {
         approach: document.getElementById("onboard-approach").value,
         exchange: document.getElementById("onboard-exchange").checked,
       });
+      await refreshPortfolio();
       renderControl(info);
-      showMessage("onboard-message", `${info.lab_id} · ${info.decisions.starter} · choices saved in context/onboarding.json`, "success");
+      showMessage("onboard-message", `${labDisplayName(info.lab_id)} · ${info.decisions.starter} · choices saved in context/onboarding.json`, "success");
       window.location.hash = "network";
       pendingTrialLab = run ? info.lab_id : null;
-      text("network-action-state", run ? `${info.lab_id}: three experiments started` : `${info.lab_id}: ready to run`);
+      text("network-action-state", run ? `${labDisplayName(info.lab_id)}: three experiments started` : `${labDisplayName(info.lab_id)}: ready to run`);
       await refreshPortfolio();
     } catch (error) { showMessage("onboard-message", error.message, "error"); }
     finally { buttons.forEach((button) => { button.disabled = false; }); }
@@ -1346,7 +1414,7 @@ function initOnboarding() {
     try {
       const result = await postJSON("/api/network/observe", {});
       pendingTrialLab = null;
-      text("network-action-state", `${result.received} new findings received`);
+      text("network-action-state", `${result.received} journal papers received`);
       await refreshPortfolio();
     } catch (error) { text("network-action-state", error.message); }
     finally { event.target.disabled = false; }
@@ -1464,6 +1532,22 @@ function initRuntimeControls() {
   });
 }
 
+function initNetworkDetails() {
+  const button = document.getElementById("network-details-toggle");
+  const panel = document.getElementById("network-inspector");
+  const grid = document.querySelector(".network-grid");
+  const setOpen = (open) => {
+    panel.hidden = !open;
+    grid.classList.toggle("inspector-collapsed", !open);
+    button.setAttribute("aria-expanded", String(open));
+    button.textContent = open ? "Hide lab details" : "Show lab details";
+    writeStored("efferents-network-details", open);
+    renderNetwork();
+  };
+  setOpen(readStored("efferents-network-details", false) === true);
+  button.addEventListener("click", () => setOpen(panel.hidden));
+}
+
 function initPanelToggles() {
   document.querySelectorAll("[data-panel-toggle]").forEach((button) => {
     button.addEventListener("click", () => {
@@ -1476,6 +1560,7 @@ function initPanelToggles() {
 }
 
 initRouting();
+initNetworkDetails();
 initPanelToggles();
 initIntakeTabs();
 initConnectForm();

@@ -10,13 +10,11 @@ when you need to. Your code and results stay under your control.
 
 ### See the event network
 
-The event surface makes the multi-lab system visible as a living network:
-journals form the organism's communities, labs connect to their home journal,
-guest visits cross between journals, and each lab can branch into a bounded,
-verifiable starter experiment. The [animated event network](docs/prototypes/event-network.html)
-is the front-page visual and canonical `/network` surface in the local
-console. It includes an animated exchange replay and eight example experiments
-designed to fit inside a three-hour session.
+The network shows ideas inside their labs, a three-reviewer board between each
+lab and journal, and journal subscriptions. Critical, neutral and optimistic
+reviewers score papers; rejected work returns to the lab and accepted papers enter
+the journal. Researchers never communicate directly across lab boundaries. See the
+[current architecture contract](context/lab_network_architecture.md).
 
 Run a private event with participant-owned execution using the
 [participant quickstart](docs/event-quickstart.md). The versioned evacuation and
@@ -29,7 +27,7 @@ before sharing the participant URL.
 The console's **Start an idea → Infer defaults and run** creates a lightweight
 experiment contract and runs three real CPU experiments without model calls or
 a Popper installation. Labs can share a `research_goal` or explore independent
-domains. The central graph shows actual finding receipts, with full evidence
+domains. The central graph shows accepted papers and journal subscription receipts, with full evidence
 kept locally. [Test the private event workspace](docs/event-testing.md).
 
 <a id="entangled-labs"></a>

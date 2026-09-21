@@ -19,6 +19,8 @@ submit to common research communities.
 
 Read these first:
 
+- [`context/lab_network_architecture.md`](./context/lab_network_architecture.md) — current idea containment, three-reviewer board, and journal-only communication contract
+
 - [`README.md`](./README.md) — current product surface and runnable flows
 - [`context/journal_vision.md`](./context/journal_vision.md) — multi-lab north
   star and governance model

@@ -49,16 +49,13 @@ def test_two_domains_real_evidence_shared_goal_and_observation(tmp_path, monkeyp
     assert rows[0][1] < 1e-14  # Simpson integrates the cubic exactly.
     assert max(row[1] for row in rows) < 0.0001
     control = ControlContext()
-    assert control.observe_peers()["received"] > 0
+    assert control.observe_peers()["received"] == 0
     graph = control.portfolio()
     assert len(graph["labs"]) == 3
-    assert any(row["kind"] == "measurement" and row.get("run_id") for row in graph["findings"])
-    assert any(row["track"] == "interdisciplinary" for row in graph["observations"])
+    assert graph["findings"] == []  # Raw trials are private, not journal publications.
+    assert graph["observations"] == []
     assert any(row["goal"] == "Reduce congestion" for row in graph["labs"])
-    context = conference.prompt_context(paths[2] / "lab", numerical)
-    assert "untrusted claims" in context
-    assert "measurement" in context
-    assert "reproduce before building" in context
+    assert conference.prompt_context(paths[2] / "lab", numerical) == ""
     assert len(Registry().list()) == 3
     from efferents.dashboard.reader import _current_hypothesis
     assert _current_hypothesis(paths[2] / "lab", numerical.lab_id)["falsifier"]

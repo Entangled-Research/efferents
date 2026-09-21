@@ -8,7 +8,7 @@ before it can be accepted into the journal. The three personas are:
                   alternative mechanisms. Score-ceiling 6 unless airtight.
     neutral     — balanced; is the claim supported, methodology reproducible,
                   contribution clear.
-    enthusiast  — constructive; takes the claim seriously, suggests
+    optimistic  — constructive; takes the claim seriously, suggests
                   strengthenings; ceiling 9 (no 10s without exceptional case).
 
 Each reviewer scores 1–10 (OpenReview-style; see the prompts) and surfaces
@@ -27,8 +27,8 @@ from efferents.agents.budget import BudgetTracker, CallUsage, billing_model, mod
 from efferents.agents.prompts.loader import load_prompt
 from efferents.agents.state import parse_json_with_one_retry
 
-Persona = Literal["critical", "neutral", "enthusiast"]
-PERSONAS: tuple[Persona, ...] = ("critical", "neutral", "enthusiast")
+Persona = Literal["critical", "neutral", "optimistic"]
+PERSONAS: tuple[Persona, ...] = ("critical", "neutral", "optimistic")
 
 
 @dataclass
@@ -40,12 +40,15 @@ class Review:
     weaknesses: list[str] = field(default_factory=list)
     questions: list[str] = field(default_factory=list)
     raw_md: str = ""
+    confidence: int | None = None
+    valid: bool = True
 
     def to_markdown(self) -> str:
         """Render as a markdown block for the per-paper reviews.md side-car."""
         lines = [
             f"### Reviewer: {self.persona} — score {self.score}/10",
             "",
+            f"**Confidence**: {self.confidence}/5" if self.confidence is not None else "**Confidence**: not recorded",
             f"**Summary**: {self.summary}",
             "",
             "**Strengths**:",
@@ -62,7 +65,7 @@ class Review:
 
 
 def _prompt_for(persona: Persona) -> str:
-    return load_prompt(f"reviewer_{persona}")
+    return load_prompt(f"reviewer_{'enthusiast' if persona == 'optimistic' else persona}")
 
 
 def review(
@@ -124,13 +127,11 @@ def review(
         },
     )
 
-    # Coerce types defensively.
-    score = parsed.get("score", 5)
-    try:
-        score_int = int(score)
-    except (TypeError, ValueError):
-        score_int = 5
-    score_int = max(1, min(10, score_int))
+    score = parsed.get("score")
+    confidence = parsed.get("confidence")
+    valid = (not parsed.get("_parse_error") and type(score) is int and 1 <= score <= 10
+             and type(confidence) is int and 1 <= confidence <= 5)
+    score_int = score if type(score) is int and 1 <= score <= 10 else 0
 
     def _as_str_list(v: Any) -> list[str]:
         if isinstance(v, list):
@@ -145,6 +146,8 @@ def review(
         weaknesses=_as_str_list(parsed.get("weaknesses")),
         questions=_as_str_list(parsed.get("questions")),
         raw_md="",
+        confidence=confidence if type(confidence) is int and 1 <= confidence <= 5 else None,
+        valid=valid,
     )
     rev.raw_md = rev.to_markdown()
     return rev
@@ -165,12 +168,14 @@ def decide(
         accept_mean = accept_mean if accept_mean is not None else _lab.PEER_REVIEW_ACCEPT_MEAN_THRESHOLD
         accept_min = accept_min if accept_min is not None else _lab.PEER_REVIEW_ACCEPT_MIN_THRESHOLD
 
-    if not reviews:
+    personas = {"optimistic" if r.persona == "enthusiast" else r.persona for r in reviews}
+    if (len(reviews) != 3 or personas != set(PERSONAS)
+            or any(not r.valid or type(r.score) is not int or not 1 <= r.score <= 10 for r in reviews)):
         return {
             "accept": False,
             "mean_score": 0.0,
             "min_score": 0,
-            "reason": "no reviews",
+            "reason": "three complete, valid reviews required",
             "per_persona": {},
         }
 

@@ -16,6 +16,8 @@ whole file. Rejected.md is plain append-only (chronological).
 from __future__ import annotations
 
 import subprocess
+import json
+from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -70,6 +72,10 @@ def write_reviews_file(
         lines.append("---")
         lines.append("")
     out_path.write_text("\n".join(lines).rstrip() + "\n")
+    out_path.with_suffix(".json").write_text(json.dumps({
+        "campaign_id": campaign_id, "decision": decision,
+        "reviews": [asdict(review) for review in reviews],
+    }, indent=2) + "\n")
 
 
 def write_rebuttal_file(out_path: Path, *, campaign_id: str, rebuttal_text: str) -> None:
@@ -267,6 +273,7 @@ def auto_commit_paper(
     files = [
         f"paper/{campaign_id}.md",
         f"paper/{campaign_id}.reviews.md",
+        f"paper/{campaign_id}.reviews.json",
         f"paper/{campaign_id}.rebuttal.md",
         "paper/journal.md",
     ]
@@ -275,7 +282,7 @@ def auto_commit_paper(
 
     per_persona = decision.get("per_persona") or {}
     scores_str = ", ".join(f"{k}={v}" for k, v in per_persona.items())
-    co_authors = ["critical-reviewer", "neutral-reviewer", "enthusiast-reviewer", "Student"]
+    co_authors = ["critical-reviewer", "neutral-reviewer", "optimistic-reviewer", "Student"]
     msg = (
         f"paper({campaign_id}): {headline}\n\n"
         f"Accepted by peer review (mean={decision.get('mean_score', 0.0):.1f}, "

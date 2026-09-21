@@ -83,6 +83,10 @@ def create_lab(destination: Path, *, starter: str = "auto", idea: str = "",
             f"## Stop condition\n\n{spec['stop']}\n")
     raw["lab_id"] = suggest_lab_id(idea=idea, goal=goal, approach=approach, starter=starter, name=name)
     raw["hypothesis_validation"] = "lightweight"
+    raw["peer_review"] = {**(raw.get("peer_review") or {}), "enabled": True}
+    # Generated ideas share one explicit trusted-host resource-owner pool.
+    # The router still requires topic relevance and executor compatibility.
+    raw["routing"] = {"pool": "local-onboarding", "owner": "local-owner", "accept_students": True}
     raw["research_goal"] = goal.strip()
     raw["approach"] = approach.strip() or raw["approach"]
     trial_config_path = destination / "configs" / "default.yaml"
@@ -145,7 +149,7 @@ def create_lab(destination: Path, *, starter: str = "auto", idea: str = "",
     return decisions
 
 
-def trial(submission: Path, *, runs: int = 3) -> dict:
+def trial(submission: Path, *, runs: int = 3, student_id: str | None = None) -> dict:
     """Run distinct seeds through the ordinary evidence pipeline, without an LLM."""
     if type(runs) is not int or not 1 <= runs <= 12:
         raise ValueError("runs must be between 1 and 12")
@@ -158,6 +162,9 @@ def trial(submission: Path, *, runs: int = 3) -> dict:
     from efferents.registry import Registry, LabRecord
 
     cfg = LabConfig.from_submission(submission)
+    student_id = student_id or cfg.default_student_id
+    if student_id not in {student["id"] for student in cfg.students}:
+        raise ValueError("Unknown idea/student track")
     lab_mod.set_config(cfg)
     root = submission / "lab"
     root.mkdir(parents=True, exist_ok=True)
@@ -181,7 +188,8 @@ def trial(submission: Path, *, runs: int = 3) -> dict:
         Registry().register(LabRecord(cfg.lab_id, str(submission), str(root), os.getpid(), now_iso(), "running"))
         paths = lab_paths(root)
         init_lab(paths)
-        campaigns = campaign_open_list(root / "runs.sqlite", cfg.lab_id)
+        campaigns = [campaign for campaign in campaign_open_list(root / "runs.sqlite", cfg.lab_id)
+                     if campaign.get("student_id") == student_id]
         outcomes = []
         with sqlite3.connect(root / "runs.sqlite") as conn:
             next_seed = int(conn.execute("SELECT COALESCE(MAX(seed),-1)+1 FROM runs").fetchone()[0])
@@ -199,7 +207,7 @@ def trial(submission: Path, *, runs: int = 3) -> dict:
                 outcomes.append(execute(paths=paths, proposal={
                     "name": f"trial-seed-{seed}", "config_overrides": {"seed": seed, "run.seed": seed},
                     "campaign_id": campaigns[0]["id"] if campaigns else None,
-                    "student_id": cfg.default_student_id,
+                    "student_id": student_id,
                 }))
                 if not outcomes[-1].get("ok"):
                     (root / "halt_reason.txt").write_text(str(outcomes[-1].get("error") or "Experiment failed"))

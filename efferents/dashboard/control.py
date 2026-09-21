@@ -580,10 +580,11 @@ class ControlContext:
             )
             info = self.connect(str(destination))
             if payload.get("run") is True:
-                self.run_trial(3)
+                routed_student = (info.get("routing") or {}).get("student_id")
+                self.run_trial(3, student_id=routed_student)
             return {**info, "decisions": decisions}
 
-    def run_trial(self, runs: int = 3) -> dict:
+    def run_trial(self, runs: int = 3, *, student_id: str | None = None) -> dict:
         self._require_mutable()
         connected = self.snapshot()
         if connected is None:
@@ -593,13 +594,16 @@ class ControlContext:
         pid = daemon.read_pidfile(connected.lab_root / "daemon.pid")
         if pid and daemon.is_pid_alive(pid):
             raise ControlError("This lab is already running.", 409)
+        if student_id is not None and student_id not in {s["id"] for s in connected.cfg.students}:
+            raise ControlError("Unknown idea/student track.")
         log_path = connected.lab_root / "trial.log"
         env = os.environ.copy()
         env["PATH"] = f"{Path(sys.executable).parent}{os.pathsep}{env.get('PATH', '')}"
         with log_path.open("a") as log:
             process = subprocess.Popen(
                 [sys.executable, "-m", "efferents", "trial", "--submission",
-                 str(connected.submission_dir), "--runs", str(runs)],
+                 str(connected.submission_dir), "--runs", str(runs),
+                 *(["--student-id", student_id] if student_id else [])],
                 cwd=connected.submission_dir, env=env, stdout=log, stderr=log, start_new_session=True,
             )
         # Reap the child without holding a request open for experiment execution.

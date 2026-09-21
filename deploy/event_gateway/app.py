@@ -41,6 +41,16 @@ MAX_REASONING_BODY = 200_000  # below Azure GPT-5.6 long-context pricing thresho
 log = logging.getLogger("efferents.event_gateway")
 
 
+def is_journal_publication(item: dict) -> bool:
+    """Standalone gateway protocol check; historic direct messages stay archival."""
+    scores = item.get("review_scores")
+    return (item.get("kind") == "publication" and item.get("publication_status") == "accepted"
+            and isinstance(item.get("campaign_id"), str) and bool(item["campaign_id"])
+            and isinstance(item.get("journal"), str) and bool(item["journal"])
+            and isinstance(scores, dict) and set(scores) == {"critical", "neutral", "optimistic"}
+            and all(type(value) is int and 1 <= value <= 10 for value in scores.values()))
+
+
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -371,23 +381,14 @@ class Store:
                 raise ApiError(403, "finding exchange was not enabled at join")
             event_id = token["event_id"]
             for item in publications:
-                allowed = {"kind", "body", "run_id", "measured_at", "eligible", "reply_to", "student_id"}
+                allowed = {"kind", "body", "campaign_id", "publication_status", "review_scores", "journal"}
                 if (not isinstance(item, dict) or set(item) - allowed
-                        or item.get("kind") not in {"measurement", "question", "discussion"}
+                        or not is_journal_publication(item)
                         or not isinstance(item.get("body"), str) or not 1 <= len(item["body"]) <= 4000):
-                    raise ApiError(400, "invalid bounded publication")
-                for key in set(item) - {"body", "kind", "eligible"}:
-                    if not isinstance(item[key], str) or len(item[key]) > 160:
+                    raise ApiError(400, "invalid bounded journal publication; direct messages are prohibited")
+                for key in ("campaign_id", "journal"):
+                    if len(item[key]) > 160:
                         raise ApiError(400, f"invalid publication {key}")
-                if "eligible" in item and type(item["eligible"]) is not bool:
-                    raise ApiError(400, "eligible must be boolean")
-                if item["kind"] == "measurement" and not item.get("run_id"):
-                    raise ApiError(400, "measurements require local run provenance")
-                if item.get("reply_to") and not conn.execute(
-                    "SELECT 1 FROM deliveries WHERE event_id=? AND token_id=? AND finding_id=?",
-                    (event_id, token["token_id"], item["reply_to"]),
-                ).fetchone():
-                    raise ApiError(400, "responses must reference a received finding")
                 talk = {**item, "lab_id": token["lab_id"], "domain": token["domain"],
                         "goal": token["goal"], "venue": event_id}
                 talk["id"] = digest(json.dumps(talk, sort_keys=True))
@@ -408,6 +409,8 @@ class Store:
             ).fetchall()
             same, cross = [], []
             for row in rows:
+                if not is_journal_publication(json.loads(row["payload_json"])):
+                    continue
                 related = row["domain"].casefold() == token["domain"].casefold() or bool(
                     token["goal"] and row["goal"].casefold() == token["goal"].casefold())
                 (same if related else cross).append(row)
@@ -515,6 +518,9 @@ class Store:
                 "JOIN tokens t ON t.token_id=d.token_id WHERE d.event_id=? AND d.observed_at IS NOT NULL "
                 "ORDER BY d.observed_at DESC LIMIT 200", (event_id,),
             ).fetchall()
+        publications = [json.loads(row["payload_json"]) for row in findings
+                        if is_journal_publication(json.loads(row["payload_json"]))]
+        publication_ids = {item["id"] for item in publications}
         labs = []
         for row in current:
             item = json.loads(row["payload_json"])
@@ -537,8 +543,8 @@ class Store:
             },
             "labs": labs,
             "tokens": [dict(row) for row in tokens],
-            "findings": [json.loads(row["payload_json"]) for row in findings],
-            "observations": [{**dict(row), "kind": "observation"} for row in observations],
+            "findings": publications,
+            "observations": [{**dict(row), "kind": "observation"} for row in observations if row["finding_id"] in publication_ids],
             "generated_at": now_iso(),
         }
 

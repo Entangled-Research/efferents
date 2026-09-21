@@ -920,7 +920,7 @@ def _cmd_starter(args: argparse.Namespace) -> int:
 def _cmd_trial(args: argparse.Namespace) -> int:
     from efferents.onboarding import trial
     try:
-        result = trial(Path(args.submission).expanduser().resolve(), runs=args.runs)
+        result = trial(Path(args.submission).expanduser().resolve(), runs=args.runs, student_id=getattr(args, "student_id", None))
     except (OSError, ValueError) as exc:
         print(f"trial failed: {exc}", file=sys.stderr)
         return 1
@@ -986,7 +986,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_event_join.add_argument("--url", required=True, help="Event HTTPS origin")
     p_event_join.add_argument("--event-id", required=True)
     p_event_join.add_argument("--share-findings", action="store_true",
-                             help="Opt in to bounded measurements and agent discussion within this private event")
+                             help="Opt in to accepted journal publications within this private event")
     p_event_join.add_argument(
         "--enrollment-code", default=None,
         help="Enrollment code (omit to enter it without shell-history exposure)",
@@ -1012,12 +1012,13 @@ def build_parser() -> argparse.ArgumentParser:
     p_starter.add_argument("--idea", default="")
     p_starter.add_argument("--goal", default="")
     p_starter.add_argument("--approach", default="")
-    p_starter.add_argument("--exchange", action="store_true", help="Share bounded findings with local event labs")
+    p_starter.add_argument("--exchange", action="store_true", help="Share accepted journal publications with local event labs")
     p_starter.set_defaults(func=_cmd_starter)
 
     p_trial = sub.add_parser("trial", help="Run a bounded sequence of real experiments without model calls")
     p_trial.add_argument("--submission", default=".")
     p_trial.add_argument("--runs", type=int, default=3)
+    p_trial.add_argument("--student-id", help="Attribute the trial to an existing idea/student track")
     p_trial.set_defaults(func=_cmd_trial)
     p_migrate = sub.add_parser(
         "migrate-paper-dir",

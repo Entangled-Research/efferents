@@ -37,11 +37,12 @@ recognize when something is genuinely useful even if narrow.
 ## Output format
 
 **Your first character of output MUST be an opening curly brace.** Strict
-JSON. No prose. No code fences. The object has exactly four keys, shown below
+JSON. No prose. No code fences. The object has exactly six keys, shown below
 brace-free; your actual output must be real JSON:
 
 ```
 score: an integer from 1 to 10
+confidence: an integer from 1 (low confidence) to 5 (expert, highly confident)
 summary: 1-2 sentence headline — bottom-line accept/reject lean + main reason.
 strengths: array of 1-4 items; what the paper does well.
 weaknesses: array of 1-4 items; specific gaps.

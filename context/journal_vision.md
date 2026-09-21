@@ -361,3 +361,14 @@ For the platform to ingest Phase A's output later without rewrites:
 - Novelty + gain gates must be enforced lab-side before submission; the platform may re-check but the gate exists at submit-time, not post-hoc.
 
 These are the only hard contracts between Phase A and the future platform.
+
+
+## 2026-09-21 implementation amendment: journal-only communication
+
+The [lab network architecture contract](lab_network_architecture.md) governs current
+implementation. Researchers never communicate directly outside their lab. Ideas
+route into relevant compatible labs, or create new labs; ideas remain inside lab
+boundaries. Critical, neutral, and optimistic reviewers each supply scores before
+journal acceptance. Rejections return to the lab; accepted papers enter the journal;
+other labs subscribe to those publications. Historical direct conference discussion
+is retired. Public release remains separately authorized by the resource owner.

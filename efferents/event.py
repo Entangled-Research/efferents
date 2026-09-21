@@ -272,7 +272,8 @@ def exchange(submission: str | Path, *, lab_root: str | Path | None = None,
         return {"enabled": False}
     root = Path(lab_root).resolve() if lab_root else sub / "lab"
     cfg = LabConfig.from_submission(sub, check_paths=False)
-    from efferents.agents.conference import _locked, _rows, _append, measurement_talks
+    from efferents.agents.conference import _locked, _rows, _append, _talks
+    from efferents.journal.reviews import is_publication
     with _locked(root) as directory:
         ledger = directory / "remote-visits.jsonl"
         visits = _rows(ledger)
@@ -280,12 +281,10 @@ def exchange(submission: str | Path, *, lab_root: str | Path | None = None,
             return {"enabled": True, "waiting": True}
         received = [row for row in _rows(directory / "inbox.jsonl") if row.get("transport") == "event"]
         received_ids = {row["id"] for row in received}
-        allowed = {"kind", "body", "run_id", "measured_at", "eligible", "reply_to", "student_id"}
-        publications = [{key: value for key, value in talk.items() if key in allowed}
-                        for talk in measurement_talks(cfg, root)]
-        for talk in _rows(directory / "outbox.jsonl")[-20:]:
-            if talk.get("reply_to") in received_ids:
-                publications.append({key: value for key, value in talk.items() if key in allowed})
+        allowed = {"kind", "body", "campaign_id", "publication_status", "review_scores", "journal"}
+        publications = [{key: (value[:4000] if key == "body" else value)
+                         for key, value in talk.items() if key in allowed}
+                        for talk in _talks(cfg, sub, root)]
         try:
             response = _request("POST", _endpoint(credential["event_url"], "exchange"),
                                 token=credential["token"], payload={"protocol": PROTOCOL_VERSION,
@@ -295,7 +294,7 @@ def exchange(submission: str | Path, *, lab_root: str | Path | None = None,
             return {"enabled": True, "error": str(exc)}
         count = 0
         for talk in response.get("talks", []):
-            if (not isinstance(talk, dict) or not isinstance(talk.get("id"), str)
+            if (not isinstance(talk, dict) or not is_publication(talk) or not isinstance(talk.get("id"), str)
                     or not re.fullmatch(r"[a-f0-9]{64}", talk["id"])
                     or not isinstance(talk.get("body"), str) or len(talk["body"]) > 4000
                     or not isinstance(talk.get("lab_id"), str)):

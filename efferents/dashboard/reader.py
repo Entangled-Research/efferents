@@ -497,6 +497,32 @@ def read_activity(lab_root: Path, n: int = 20) -> list[dict]:
     return entries[:n]
 
 
+def read_review_board(lab_root: Path) -> dict:
+    """Latest real review artifact, including rejected boards; no synthetic scores."""
+    from efferents.journal.reviews import review_scores
+    candidates = [p for directory in paper_dirs(lab_root) if directory.exists()
+                  for p in directory.glob("*.reviews.md")
+                  if p.resolve().is_relative_to(Path(lab_root).resolve().parent)]
+    if not candidates:
+        return {"status": "awaiting paper", "scores": {}}
+    path = max(candidates, key=lambda p: p.stat().st_mtime)
+    content = path.read_text()[:100_000]
+    board = {"campaign_id": path.name.removesuffix(".reviews.md"),
+             "status": "accepted" if "**Verdict**: **ACCEPT**" in content else "rejected",
+             "scores": review_scores(content)}
+    structured = path.with_suffix(".json")
+    if structured.exists() and structured.resolve().is_relative_to(Path(lab_root).resolve().parent):
+        try:
+            data = json.loads(structured.read_text()[:100_000])
+            board["reviews"] = data.get("reviews", [])
+            board["decision"] = data.get("decision", {})
+            if len(board["reviews"]) != 3 or any(not review.get("valid", True) for review in board["reviews"]):
+                board["status"] = "review incomplete"
+        except (ValueError, OSError):
+            pass
+    return board
+
+
 def read_summary(lab_root: Path, cfg: "LabConfig") -> dict:
     """Return the compact, evidence-backed state used by the lab portfolio rail."""
     state = read_state(lab_root, cfg=cfg)
@@ -526,6 +552,10 @@ def read_summary(lab_root: Path, cfg: "LabConfig") -> dict:
             "observations": state_mod.runs_count(lab_root / "runs.sqlite"),
         },
         "papers": len(papers),
+        "review_board": read_review_board(lab_root),
+        "ideas": [{"id": student["id"], "focus": student.get("focus") or
+                   state["hypothesis"].get("question") or cfg.approach or cfg.domain}
+                  for student in cfg.students],
         "last_activity": last_activity,
         "hypothesis": state["hypothesis"],
         "verdict": {"status": verdict, "line": _verdict_line(verdict, falsifiers)},

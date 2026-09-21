@@ -26,18 +26,24 @@ def labs(tmp_path, monkeypatch):
         root.mkdir(exist_ok=True)
         cfg = LabConfig.from_submission(submission)
         registry.register(LabRecord(name, str(submission), str(root), 0, "", "stopped"))
+        paper = root / "paper"
+        paper.mkdir(exist_ok=True)
+        (paper / "journal.md").write_text(
+            f"## 2026-09-11 10:00 UTC — experiment-1\n**Lab**: {name}\n"
+            "**Headline**: Reviewed result\n**Scores**: critical=6, neutral=7, enthusiast=8 (mean=7.0)\n")
+        (paper / "experiment-1.md").write_text("## Methods\nBounded experiment.\n## Results\nEvidence.")
         result[name] = (cfg, root)
     return registry, result
 
 
-def test_routing_cadence_restart_and_response_roundtrip(labs):
+def test_publication_subscription_cadence_restart_and_no_direct_responses(labs):
     registry, pairs = labs
     cfg, root = pairs["geometry"]
     first = conference.attend(cfg=cfg, lab_root=root, registry=registry, now=0)
     assert len(first["received"]) == 1
     inbox = conference._rows(root / "conference/inbox.jsonl")
     assert inbox[0]["lab_id"] == "sampling"
-    assert inbox[0]["kind"] == "hypothesis"
+    assert inbox[0]["kind"] == "publication"
     assert conference.attend(cfg=cfg, lab_root=root, registry=registry, now=599) is None
     for visit in range(2, 6):
         result = conference.attend(cfg=cfg, lab_root=root, registry=Registry(), now=(visit-1)*600)
@@ -46,18 +52,9 @@ def test_routing_cadence_restart_and_response_roundtrip(labs):
     assert inbox[-1]["lab_id"] == "biology"
     assert inbox[-1]["track"] == "interdisciplinary"
     response = dict(reply_to=inbox[0]["id"], kind="question", body="How will you control answer length?")
-    assert conference.record_responses(root, cfg, [response], "primary") == 1
     assert conference.record_responses(root, cfg, [response], "primary") == 0
-    peer_cfg, peer_root = pairs["sampling"]
-    conference.attend(cfg=peer_cfg, lab_root=peer_root, registry=registry, now=3000)
-    received = conference._rows(peer_root / "conference/inbox.jsonl")
-    question = next(row for row in received if row["kind"] == "question")
-    assert question["reply_to"] == inbox[0]["id"]
-    assert question["id"] in conference.prompt_context(peer_root, peer_cfg)
-    reply = dict(reply_to=question["id"], kind="discussion", body="We will hold the output limit fixed.")
-    assert conference.record_responses(peer_root, peer_cfg, [reply], "primary") == 1
-    conference.attend(cfg=cfg, lab_root=root, registry=registry, now=3600)
-    assert "hold the output limit" in conference.prompt_context(root, cfg)
+    assert not (root / "conference/outbox.jsonl").exists()
+    assert "only through accepted journal publications" in conference.prompt_context(root, cfg)
 
 
 def test_opt_in_venue_isolation_and_disabled_no_state(labs):
@@ -80,19 +77,19 @@ def test_finding_snapshot_provenance_and_no_automatic_verification(labs):
     cfg, root = pairs["geometry"]
     peer_cfg, peer_root = pairs["sampling"]
     paper = peer_root / "paper"
-    paper.mkdir()
-    body = "## 2026-09-11 10:00 UTC — experiment-1\n**Lab**: sampling\n**Headline**: Pilot result\n"
+    paper.mkdir(exist_ok=True)
+    body = "## 2026-09-11 10:00 UTC — experiment-1\n**Lab**: sampling\n**Headline**: Pilot result\n**Scores**: critical=6, neutral=7, optimistic=8 (mean=7.0)\n"
     (paper / "journal.md").write_text(body)
     (paper / "experiment-1.md").write_text("## Methods\nExact-answer comparison.\n## Results\nrun_id: actual-run-id")
     conference.attend(cfg=cfg, lab_root=root, registry=registry, now=0)
-    findings = [r for r in conference._rows(root / "conference/inbox.jsonl") if r["kind"] == "finding"]
+    findings = [r for r in conference._rows(root / "conference/inbox.jsonl") if r["kind"] == "publication"]
     assert len(findings) == 1
     assert "actual-run-id" in findings[0]["body"]
     assert findings[0]["campaign_id"] == "experiment-1"
     original = findings[0]["id"]
     (paper / "experiment-1.md").write_text("Revised result")
     conference.attend(cfg=cfg, lab_root=root, registry=registry, now=600)
-    findings = [r for r in conference._rows(root / "conference/inbox.jsonl") if r["kind"] == "finding"]
+    findings = [r for r in conference._rows(root / "conference/inbox.jsonl") if r["kind"] == "publication"]
     assert len(findings) == 2 and findings[0]["id"] == original
     assert findings[1]["id"] != original
     assert foundational_dependency_violations(root / "paper", {
@@ -147,3 +144,19 @@ def test_daemon_attends_before_research_and_respects_pause(labs, monkeypatch):
     assert daemon.step()["event"] == "no_proposal"
     assert '"lab_id": "sampling"' in observed[0]
     assert "conference visit 1" in daemon.paths.notebook.read_text()
+
+
+def test_unpublished_material_and_historical_messages_never_cross_labs(labs):
+    registry, pairs = labs
+    cfg, root = pairs["geometry"]
+    peer, peer_root = pairs["sampling"]
+    (peer_root / "paper/journal.md").unlink()
+    with conference._locked(peer_root) as directory:
+        conference._append(directory / "outbox.jsonl", conference._talk(
+            peer, "discussion", "PRIVATE DIRECT MESSAGE", reply_to="x", student_id="primary"))
+    assert conference._talks(peer, peer_root.parent, peer_root) == []
+    with conference._locked(root) as directory:
+        conference._append(directory / "inbox.jsonl", {
+            "id": "historical", "kind": "measurement", "body": "UNREVIEWED", "lab_id": "sampling"})
+    assert conference.prompt_context(root, cfg) == ""
+    assert conference._rows(root / "conference/inbox.jsonl")[0]["body"] == "UNREVIEWED"

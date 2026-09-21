@@ -156,7 +156,12 @@ def test_remote_exchange_consent_identity_provenance_and_cross_domain_cadence(st
     collaborator = enroll("collaborator", domain="math", goal="Shared objective")
     outsider = enroll("outsider", domain="biology")
     request = {"protocol": app.PROTOCOL, "publications": [], "observed": []}
-    measurement = {"kind": "measurement", "body": "Error = 0.01", "run_id": "run-1", "eligible": True}
+    measurement = {"kind": "publication", "body": "Reviewed paper: error = 0.01", "campaign_id": "paper-1",
+                   "publication_status": "accepted", "journal": "Methods",
+                   "review_scores": {"critical": 6, "neutral": 7, "optimistic": 8}}
+    for kind in ("measurement", "hypothesis", "question", "discussion"):
+        with pytest.raises(app.ApiError, match="direct messages"):
+            store.exchange(author["token"], {**request, "publications": [{"kind": kind, "body": "No"}]})
     store.exchange(author["token"], {**request, "publications": [measurement]})
     incoming = store.exchange(collaborator["token"], request)["talks"]
     assert len(incoming) == 1 and incoming[0]["lab_id"] == "author"

@@ -54,7 +54,7 @@ the lightweight event starters.
 
 Obtain the HTTPS origin, event ID and enrollment code from the organizer.
 The code is entered at a hidden prompt. Add `--share-findings` only if you
-consent to exchanging bounded measurement summaries with event participants.
+consent to exchanging accepted journal publications with event participants.
 
 ```bash
 uv run efferents validate --submission ../my-event-lab
@@ -73,14 +73,14 @@ agent iterations; an iteration can make several calls within the configured budg
 
 The central graph groups labs by shared goal or domain. Related labs sample
 each other's findings; every third exchange adds a cross-domain sample.
-**Observe peer findings** requests an immediate local visit. Directed arrows
+**Read journal papers** requests an immediate local visit. Directed arrows
 record receipt, not agreement, understanding or independent reproduction.
 Inspect the findings list for run IDs, provenance and recipients.
 
 A heartbeat contains identity/domain, optional goal/topic/approach, runtime and
 activity, headline metric, run count, verdict and coarse budget state. It excludes
 source, config bodies, prompts, credentials, raw data, artifacts and steering.
-Opt-in remote finding exchange adds bounded measurement text and provenance.
+Opt-in remote exchange adds accepted journal papers, reviewer scores and provenance.
 Network failures preserve local evidence and queue later synchronization.
 
 ## Steer, stop and leave

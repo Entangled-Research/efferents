@@ -375,22 +375,24 @@
     </section>
 
       <section id="network-view" class="app-view" data-route-view="network" hidden>
+        <div class="idea-routing-strip"><b>Submitted idea → relevance check</b><span>Relevant + compatible → idea in an existing lab · Otherwise → new lab</span></div>
         <section class="network-toolbar" aria-label="Network controls">
           <span class="header-meta">Global journals · local evidence</span>
-          <button id="network-observe" class="compact-button" type="button">Observe peer findings</button>
+          <button id="network-observe" class="compact-button" type="button">Read journal papers</button>
           <a class="compact-button" href="#connect">+ Add an idea or lab</a>
           <span id="network-action-state" role="status"></span>
+          <button id="network-details-toggle" class="compact-button" type="button" aria-controls="network-inspector" aria-expanded="false">Show lab details</button>
         </section>
-        <div class="network-grid">
+        <div class="network-grid inspector-collapsed">
           <section class="panel network-map-panel" aria-labelledby="network-map-title">
             <header class="panel-header">
-              <h2 id="network-map-title">A living research network</h2>
+              <h2 id="network-map-title">Journal research network</h2>
               <span id="network-node-count" class="header-meta">0 nodes</span>
             </header>
             <div id="lab-map" class="lab-map living-network" aria-label="Living network of connected labs and journal communities">
               <svg id="network-lines" viewBox="0 0 1000 560"
                    preserveAspectRatio="none" aria-hidden="true"></svg>
-              <div id="network-journals" class="network-journals" aria-hidden="true"></div>
+              <div id="network-journals" class="network-journals"></div>
               <div id="network-nodes" class="network-nodes"></div>
               <div id="network-ideas" class="network-ideas" aria-hidden="true"></div>
               <div id="network-empty" class="network-empty" hidden></div>
@@ -400,23 +402,20 @@
               </div>
             </div>
             <footer class="map-legend">
-              <span><i class="legend-dot running"></i> running</span>
-              <span><i class="legend-dot paused"></i> paused</span>
-              <span><i class="legend-dot stopped"></i> stopped</span>
-              <span><i class="legend-dot stale"></i> stale</span>
-              <span><i class="legend-dot sample"></i> offline sample</span>
-              <span><i class="legend-line"></i> journal route</span>
-              <span><i class="legend-line observation"></i> finding received →</span>
-              <span><i class="legend-idea"></i> research approach</span>
+              <span><i class="legend-line publish"></i> paper → review → journal</span>
+              <span><i class="legend-line subscribe"></i> journal → lab subscription</span>
+              <span><i class="legend-line accepted"></i> accepted → journal</span>
+              <span><i class="legend-line rejected"></i> rejected → lab</span>
+              <span>Moving dots: recorded publications / receipts</span>
             </footer>
           </section>
-          <aside id="network-inspector" class="panel network-inspector" aria-live="polite">
+          <aside id="network-inspector" class="panel network-inspector" aria-live="polite" hidden>
             <header class="panel-header"><h2>Selected lab</h2><span class="header-meta">Live records</span></header>
             <div id="network-selection">Select a lab to inspect its journal routes and evidence.</div>
           </aside>
           <section class="panel exchange-panel" aria-labelledby="exchange-title">
-            <header class="panel-header"><h2 id="exchange-title">Findings & observations</h2><span id="exchange-count" class="header-meta">0 observations</span></header>
-            <p class="exchange-explanation">Arrows record findings received into another lab’s research inbox. Measurements remain provisional until reproduced. Running labs visit at research-cycle boundaries, at most every two minutes; every third visit includes another domain. Use Observe peer findings for an immediate local visit.</p>
+            <header class="panel-header"><h2 id="exchange-title">Journal publications & subscriptions</h2><span id="exchange-count" class="header-meta">0 observations</span></header>
+            <p class="exchange-explanation">Labs communicate only through accepted journal papers. Critical, neutral and optimistic reviewers each score the paper before publication. Subscribers must reproduce findings before building on them. Public release remains an explicitly authorized action.</p>
             <div id="exchange-feed" class="exchange-feed"></div>
           </section>
           <section id="event-admin-panel" class="panel event-admin-panel" hidden aria-labelledby="event-admin-title">

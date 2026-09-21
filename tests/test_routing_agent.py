@@ -126,3 +126,19 @@ def test_changed_routed_hypothesis_cannot_overwrite_snapshot(intake):
     with pytest.raises(ValueError, match="changed"):
         routing.route(incoming, apply=True, use_model=False)
     assert Path(result["hypothesis_snapshot"]).read_text() == original
+
+
+def test_generated_ideas_route_within_owner_pool_and_keep_review_enabled(tmp_path, monkeypatch):
+    from efferents.onboarding import create_lab
+    monkeypatch.setenv("EFFERENTS_HOME", str(tmp_path / "registry"))
+    first, related, unrelated = [tmp_path / name for name in ("first", "related", "unrelated")]
+    create_lab(first, starter="evacuation", idea="Frequent rerouting")
+    create_lab(related, starter="evacuation", idea="Stable routes")
+    create_lab(unrelated, starter="integration", idea="Quadrature")
+    cfg = LabConfig.from_submission(first)
+    assert cfg.peer_review_enabled
+    Registry().register(LabRecord(cfg.lab_id, str(first), str(first / "lab"), 0, "", "stopped"))
+    joined = routing.route(related, apply=True, use_model=False)
+    assert joined["action"] == "join"
+    assert len(LabConfig.from_submission(first).students) == 2
+    assert routing.route(unrelated, apply=True, use_model=False)["action"] == "create"
