@@ -29,8 +29,10 @@ def test_dashboard_has_portfolio_rail_and_network_map():
     assert 'id="event-admin-panel"' in html
     assert "lab.remote ? \"div\" : \"button\"" in javascript
     assert "read only" in javascript
-    # The canonical animated network is present on entry and network views.
-    assert html.count('src="/prototypes/event-network.html"') == 2
+    # The network route renders the animated live graph; the entry page stays
+    # focused on onboarding and does not embed the illustrative prototype.
+    assert 'src="/prototypes/event-network.html"' not in html
+    assert "network-packet" in javascript
 
 
 def test_shared_visual_contract_is_minimal_paper_and_ink_research_ledger():

@@ -507,6 +507,18 @@ function renderNetwork() {
     const bend = (a.y+b.y)/2;
     return svgElement("path", {d:`M${a.x},${a.y} C${a.x+offset},${bend} ${b.x+offset},${bend} ${b.x},${b.y}`, class:cls, fill:"none"});
   };
+  const packet = (a, b, offset, cls = "") => {
+    const bend = (a.y + b.y) / 2;
+    const motion = svgElement("animateMotion", {
+      dur: `${2.6 + (Math.abs(a.x - b.x) % 9) / 10}s`,
+      begin: `-${(Math.abs(a.x + b.y) % 24) / 10}s`,
+      repeatCount: "indefinite",
+      path: `M${a.x},${a.y} C${a.x + offset},${bend} ${b.x + offset},${bend} ${b.x},${b.y}`,
+    });
+    const dot = svgElement("circle", { r: 3, class: `network-packet ${cls}` });
+    dot.appendChild(motion);
+    lines.appendChild(dot);
+  };
   [...groups.entries()].forEach(([name,members],gi) => {
     const row = Math.floor(gi/cols);
     const y = rowHeights.slice(0,row).reduce((a,b)=>a+b,0)+45;
@@ -554,11 +566,14 @@ function renderNetwork() {
     edge.setAttribute("marker-end","url(#observation-arrow)");
     const title=svgElement("title",{});title.textContent=`${o.target} received a finding from ${o.source}`;
     edge.appendChild(title);lines.appendChild(edge);
+    packet(a, b, a.x < b.x ? -45 : 45, "visiting");
   });
   (portfolioState.edges || []).forEach((edge) => {
     const a = positions.get(edge.source), b = positions.get(edge.target);
     if (!a || !b) return;
-    lines.appendChild(path(a, b, `domain-edge edge-${String(edge.kind || "shared-domain")}`, a.x < b.x ? 30 : -30));
+    const offset = a.x < b.x ? 30 : -30;
+    lines.appendChild(path(a, b, `domain-edge edge-${String(edge.kind || "shared-domain")}`, offset));
+    packet(a, b, offset, "domain");
   });
   text("network-node-count", `${labs.length} labs · ${groups.size} journals`);
   const selected=labs.find(l=>l.lab_id===networkSelection)||labs[0];
