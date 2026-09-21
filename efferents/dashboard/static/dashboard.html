@@ -45,6 +45,8 @@
       <span id="api-key-state" class="key-state">API key unknown</span>
       <button id="start-lab" class="compact-button" type="button">Start lab</button>
       <button id="trial-lab" class="compact-button" type="button">Run 3 experiments · no model</button>
+      <button id="pause-lab" class="compact-button" type="button" hidden>Pause</button>
+      <button id="resume-lab" class="compact-button" type="button" hidden>Resume</button>
       <button id="stop-lab" class="compact-button danger" type="button" hidden>Stop lab</button>
     </div>
   </div>
@@ -65,6 +67,7 @@
 
     <main id="app">
     <nav id="lab-tabs" class="lab-tabs" aria-label="Open labs" hidden></nav>
+
     <section id="connect-view" class="app-view" data-route-view="connect">
       <div class="entry-layout">
         <div class="entry-intro">

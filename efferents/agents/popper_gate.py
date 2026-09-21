@@ -53,6 +53,69 @@ character must be a literal "---" opening the frontmatter.
 """.strip()
 
 
+
+INTERACTIVE_INSTRUCTION = """
+INTERACTIVE WEB MODE — IMPORTANT
+
+You are the Popperian probe. The human you are sparring with types in a web
+chat and reads your replies there. Follow the protocol above with these
+adjustments:
+
+- You have NO tools: no filesystem, no web search, no papers. Probe 0's
+  paper-based pieces are unavailable; say so if the human asks. Everything
+  you know about the field comes from training, hedged as the protocol says.
+- Stay in ONE probe stage per turn and ask ONE question per turn. Keep each
+  reply under 150 words unless you are emitting the hypothesis file.
+- The human's claim will be tested by an automated experiment runner that
+  reports numeric metrics per run. Push the operational restatement and the
+  falsifier toward quantities such a runner could measure per run.
+- When the gate is decided (passed OR failed), emit the COMPLETE
+  hypothesis.md inside exactly one fenced block whose info string is
+  `hypothesis.md`, then ask: "Approve, or tell me what to change?" If the
+  human asks for changes, re-emit the whole corrected file the same way.
+- Frontmatter must carry `slug`, `created` (today's ISO date), `status`,
+  `falsifiability_gate`, and `literature_pass: none`. Leave the
+  `## References` section empty (no `- path:` entries) — nothing can be
+  attached from a web chat.
+- Never write about files being saved; the server stores the draft.
+""".strip()
+
+_HYPOTHESIS_BLOCK_RE = __import__("re").compile(
+    r"```(?:hypothesis\.md|hypothesis|markdown|md|yaml)?[ \t]*\r?\n(---\r?\n[\s\S]*?)\r?\n```",
+)
+
+
+def extract_hypothesis_block(text: str) -> str | None:
+    """The last fenced hypothesis.md draft in a model reply, or None."""
+    matches = _HYPOTHESIS_BLOCK_RE.findall(text or "")
+    if not matches:
+        return None
+    body = matches[-1].strip()
+    return body + "\n" if not body.endswith("\n") else body
+
+
+def validate_hypothesis_text(text: str, scratch_dir: Path) -> tuple[bool, str]:
+    """Run popper-probe's validator over an in-memory draft."""
+    scratch_dir = Path(scratch_dir)
+    scratch_dir.mkdir(parents=True, exist_ok=True)
+    draft = scratch_dir / "hypothesis.md"
+    draft.write_text(text)
+    return _validate(draft)
+
+
+def frontmatter_value(text: str, key: str) -> str | None:
+    """Read one scalar from a hypothesis.md frontmatter block."""
+    lines = (text or "").splitlines()
+    if not lines or lines[0].strip() != "---":
+        return None
+    for line in lines[1:]:
+        if line.strip() == "---":
+            break
+        k, sep, v = line.partition(":")
+        if sep and k.strip() == key:
+            return v.strip().strip("'\"")
+    return None
+
 @dataclass
 class GateResult:
     ok: bool

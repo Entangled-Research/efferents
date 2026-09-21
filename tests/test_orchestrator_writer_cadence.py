@@ -88,7 +88,9 @@ def test_skips_campaign_with_existing_paper(tmp_path, monkeypatch):
     o = _make_orch(tmp_path)
     _seed_campaign(o)
     _seed_runs(o.paths.runs_db, 25)
-    paper_dir = o.paths.runs_db.parent / "paper"
+    # Canonical Writer output lives beside lab/, in <submission>/paper/.
+    paper_dir = o.submission_dir / "paper"
+    assert paper_dir == o.paths.runs_db.parent.parent / "paper"
     paper_dir.mkdir(parents=True, exist_ok=True)
     (paper_dir / "c1.md").write_text("already written")
 

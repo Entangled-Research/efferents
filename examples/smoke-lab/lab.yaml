@@ -27,3 +27,19 @@ metrics:
 budget:
   daily_cap_usd: 2.0
   sonnet_default: true
+
+# Optional: how often the loop synthesizes. Defaults suit a long-running lab
+# (digest every 40 runs / 4 h, paper every 20 runs / 6 h). A bounded session
+# such as a workshop lowers them so progress is visible within minutes. Any
+# key can also be overridden per daemon with EFFERENTS_CADENCE_<KEY>.
+# cadence:
+#   runs_per_digest: 3
+#   hours_per_digest: 0.1667
+#   min_runs_for_digest: 1
+#   runs_per_paper: 5
+#   hours_per_paper: 0.5
+#   empty_queue_sleep_s: 20
+#   step_pause_s: 20
+#   researcher_min_interval_s: 360
+#   stall_hours: 0.25
+#   backoff_cap_s: 300

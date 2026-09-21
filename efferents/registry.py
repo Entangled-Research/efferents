@@ -92,6 +92,13 @@ class Registry:
             records[:] = [r for r in records if r.lab_id != rec.lab_id]
             records.append(rec)
 
+    def remove(self, lab_id: str) -> bool:
+        """Drop a record. Returns True when one was removed."""
+        with self._locked(write=True) as records:
+            before = len(records)
+            records[:] = [r for r in records if r.lab_id != lab_id]
+            return len(records) != before
+
     def update_status(self, lab_id: str, status: str) -> bool:
         """Set ``status`` on an existing record. Returns False (no-op) if absent."""
         with self._locked(write=True) as records:

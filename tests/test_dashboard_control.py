@@ -100,6 +100,45 @@ def test_steering_is_appended_with_optional_mode(tmp_path, monkeypatch):
     assert "Prioritize the held-out seed" in log
     assert "force_mode: devils_advocate" in log
     assert result["steering"][0]["mode"] == "devils_advocate"
+    assert result["steering"][0]["by"] == "lab owner"
+    assert result["steering"][0]["acknowledged"] is False
+    # Web steering lands in the same auditable ledger as the CLI: the charter
+    # and the queued steering records the daemon acknowledges.
+    charter = (sub / "context" / "popper.md").read_text()
+    assert "Prioritize the held-out seed" in charter
+    ledger = (sub / "lab" / "steering.jsonl").read_text().strip().splitlines()
+    assert len(ledger) == 1
+    record = json.loads(ledger[0])
+    assert record["text"].startswith("Prioritize the held-out seed")
+    assert record["mode"] == "devils_advocate" and record["ack"] is None
+
+
+def test_web_steering_without_mode_leaves_research_log_alone(tmp_path, monkeypatch):
+    monkeypatch.setenv("EFFERENTS_HOME", str(tmp_path / "home"))
+    sub = _submission(tmp_path)
+    control = ControlContext()
+    control.connect(str(sub / "README.md"))
+    before = (sub / "context" / "research_log.md").read_text()
+    control.steer("Stay on the small models.")
+    assert (sub / "context" / "research_log.md").read_text() == before
+    assert "Stay on the small models." in (sub / "context" / "popper.md").read_text()
+
+
+def test_pause_and_resume_queue_owner_steering(tmp_path, monkeypatch):
+    monkeypatch.setenv("EFFERENTS_HOME", str(tmp_path / "home"))
+    sub = _submission(tmp_path)
+    control = ControlContext()
+    control.connect(str(sub / "README.md"))
+    lab = control.snapshot()
+    paused = control.pause_lab(lab, "event budget review", by="participant:Ada")
+    assert paused["queued"] == "pause"
+    resumed = control.resume_lab(lab, by="participant:Ada")
+    assert resumed["queued"] == "resume"
+    records = [json.loads(line) for line in
+               (sub / "lab" / "steering.jsonl").read_text().splitlines()]
+    assert [r["action"] for r in records] == ["pause", "resume"]
+    assert all(r["by"] == "participant:Ada" for r in records)
+    assert records[0]["text"] == "event budget review"
 
 
 def test_start_requires_explicit_confirmation_and_api_key(tmp_path, monkeypatch):
