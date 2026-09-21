@@ -46,7 +46,8 @@ def generate_access_credentials() -> dict[str, str]:
     """Return a memorable handoff credential with high random entropy."""
     username = f"{secrets.choice(_USERNAME_WORDS)}-{secrets.choice(_USERNAME_ANIMALS)}-{secrets.randbelow(10000):04d}"
     phrase = "-".join(secrets.choice(_PASSWORD_WORDS) for _ in range(4))
-    password = f"{phrase}-{secrets.token_urlsafe(9)}"
+    # hex only: the suffix must never contain the "-" that separates words
+    password = f"{phrase}-{secrets.token_hex(6)}"
     return {"username": username, "password": password}
 
 

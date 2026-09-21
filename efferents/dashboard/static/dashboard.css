@@ -1865,9 +1865,6 @@ td.status-insufficient_data {
   background-image: radial-gradient(var(--line-soft) 1px, transparent 1px);
   background-size: 26px 26px;
 }
-.entry-network-preview { margin-top: 24px; padding: 14px; background: #06162f; color: #e9f3ff; }
-.entry-network-preview h2 { margin: 6px 0 12px; font-size: 18px; }
-.entry-network-frame { display: block; width: 100%; height: clamp(240px, 30vw, 360px); border: 1px solid #253a54; background: #06162f; }
 
 #network-lines,
 .network-nodes,
