@@ -528,7 +528,10 @@ function renderNetwork() {
     label.className = "network-journal";
     label.style.left = x/10+"%"; label.style.top = y+"px";
     const routed = findings.filter(item => homeJournal(item) === name).length;
-    label.innerHTML = `<small>GLOBAL JOURNAL · PRIVATE INBOX</small><b>${esc(name)}</b><small>${members.length} labs · ${routed} shared records</small>`;
+    label.innerHTML = `<small>JOURNAL · DOMAIN INBOX</small><b>${esc(name)}</b><small>${members.length} labs · ${routed} shared records</small>`;
+    const labGrid = document.createElement("div");
+    labGrid.className = "journal-labs";
+    label.appendChild(labGrid);
     journalsLayer.appendChild(label);
     members.sort((a,b)=>(a.goal||a.approach||a.lab_id).localeCompare(b.goal||b.approach||b.lab_id)).forEach((lab,i) => {
       const p = {x:x+(i%2 ? 1:-1)*(narrow?225:120), y:y+135+Math.floor(i/2)*rowSize};
@@ -541,20 +544,15 @@ function renderNetwork() {
         lines.appendChild(path(p,tip,"lab-fiber",Math.sin(f)*12));
       }
       lines.appendChild(svgElement("circle",{cx:p.x,cy:p.y,r:6,class:"lab-nucleus"}));
-      const button = document.createElement(lab.remote ? "div" : "button");
-      if(!lab.remote) button.type="button";
-      button.className = "map-node organism-lab " + (lab.status||"stopped") + (lab.selected ? " selected" : "");
-      button.dataset.mapLab=lab.lab_id;
-      button.style.left=p.x/10+"%"; button.style.top=(p.y+52)+"px";
-      button.setAttribute("aria-pressed", String(networkSelection===lab.lab_id));
       const owner = lab.owner_name ? `<small class="map-node-owner">${esc(lab.owner_name)}</small>` : "";
-      button.innerHTML=`<strong>${esc(lab.lab_id)}</strong><small>${esc(lab.status||"stopped")}${lab.remote?" · read only":""}</small>${owner}`;
-      button.addEventListener("click",()=>{networkSelection=lab.lab_id;renderNetwork();});
-      nodes.appendChild(button);
-      const idea=document.createElement("div");idea.className="network-idea";
-      idea.style.left=p.x/10+"%";idea.style.top=(p.y+125)+"px";
-      idea.textContent=lab.approach||lab.hypothesis?.question||lab.domain;
-      ideasLayer.appendChild(idea);
+      const question = lab.hypothesis?.question || lab.hypothesis?.claim || lab.approach || "Awaiting first hypothesis";
+      const card = document.createElement("article");
+      card.className = `lab-structure ${lab.status || "stopped"}${lab.selected ? " selected" : ""}`;
+      card.innerHTML = `<button type="button" class="lab-identity"><strong>${esc(lab.lab_id)}</strong><small>${esc(lab.status || "stopped")}${lab.remote ? " · read only" : ""}</small>${owner}</button>` +
+        `<div class="lab-loop" aria-label="Autoresearch loop"><span>owner steering</span><i>→</i><span>supervisor + agents</span><i>→</i><span class="gate">hypothesis</span><i>→</i><span class="gate">bounded run</span><i>→</i><span>evidence + paper</span><b class="lab-flow-packet" aria-hidden="true">◆</b></div>` +
+        `<div class="lab-ideas"><small>GROUP OF IDEAS</small><p>${esc(question)}</p></div>`;
+      card.querySelector(".lab-identity").addEventListener("click", () => { networkSelection = lab.lab_id; renderNetwork(); });
+      labGrid.appendChild(card);
       lines.appendChild(path({x:p.x,y:p.y+84},{x:p.x,y:p.y+111},"idea-branch",20));
     });
   });
@@ -568,6 +566,19 @@ function renderNetwork() {
     edge.appendChild(title);lines.appendChild(edge);
     packet(a, b, a.x < b.x ? -45 : 45, "visiting");
   });
+  const guestVisits = observations.filter((o) => {
+    const source = labs.find((lab) => lab.lab_id === o.source);
+    const target = labs.find((lab) => lab.lab_id === o.target);
+    return source && target && homeJournal(source) !== homeJournal(target);
+  });
+  if (guestVisits.length > 0) {
+    const note = document.createElement("div");
+    note.className = "network-visit-note";
+    note.innerHTML = `<b>guest conference route</b><small>${guestVisits.length} cross-journal subscription${guestVisits.length === 1 ? "" : "s"}</small>`;
+    note.style.left = "50%";
+    note.style.top = Math.max(88, Math.round(height / 2)) + "px";
+    journalsLayer.appendChild(note);
+  }
   (portfolioState.edges || []).forEach((edge) => {
     const a = positions.get(edge.source), b = positions.get(edge.target);
     if (!a || !b) return;

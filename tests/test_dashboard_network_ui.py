@@ -27,7 +27,7 @@ def test_dashboard_has_portfolio_rail_and_network_map():
     assert 'labPath("control")' in javascript
     assert "renderNetwork();" in javascript
     assert 'id="event-admin-panel"' in html
-    assert "lab.remote ? \"div\" : \"button\"" in javascript
+    assert "lab-structure" in javascript
     assert "read only" in javascript
     # The network route renders the animated live graph; the entry page stays
     # focused on onboarding and does not embed the illustrative prototype.
