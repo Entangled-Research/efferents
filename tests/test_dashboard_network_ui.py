@@ -35,6 +35,38 @@ def test_dashboard_has_portfolio_rail_and_network_map():
     assert "network-packet" in javascript
 
 
+def test_network_map_is_a_pan_zoom_viewport():
+    html = (STATIC / "dashboard.html").read_text()
+    css = (STATIC / "dashboard.css").read_text()
+    javascript = (STATIC / "dashboard.js").read_text()
+
+    # The map is a focusable fixed viewport; every layer lives in one world.
+    assert 'id="lab-map" class="lab-map living-network" tabindex="0"' in html
+    world = html.index('id="network-world"')
+    for layer in ("network-lines", "network-journals", "network-nodes", "network-ideas"):
+        assert html.index(f'id="{layer}"') > world
+    assert 'data-map-zoom="in"' in html
+    assert 'data-map-zoom="out"' in html
+    assert 'data-map-zoom="fit"' in html
+    assert 'id="map-zoom-level"' in html
+    assert "transform-origin: 0 0;" in css
+    assert ".map-controls" in css
+    # Wheel zoom must be able to preventDefault, so the listener is non-passive.
+    assert "}, {passive: false});" in javascript
+    assert "setPointerCapture" in javascript
+    assert "initMapPanZoom();" in javascript
+    assert "translate(${mapView.x}px, ${mapView.y}px) scale(${mapView.k})" in javascript
+    # Clicking a local lab in the map opens it; remote labs only get selected.
+    assert "if (lab.remote) renderNetwork(); else openLabTab(lab.lab_id);" in javascript
+    # Layout follows the viewport shape and the lab set, not the poll interval.
+    assert "function chooseMapLayout(sizes)" in javascript
+    assert "labs.map(lab => lab.lab_id).sort()" in javascript
+    assert "change.view || (change.content && !mapView.moved)" in javascript
+    assert 'lines.setAttribute("viewBox", `0 0 ${world.width} ${world.height}`);' in javascript
+    # The map no longer grows to its content height.
+    assert "map.style.minHeight" not in javascript
+
+
 def test_shared_visual_contract_is_minimal_paper_and_ink_research_ledger():
     css = (STATIC / "dashboard.css").read_text()
     html = (STATIC / "dashboard.html").read_text()

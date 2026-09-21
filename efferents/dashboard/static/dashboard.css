@@ -1881,11 +1881,56 @@ td.status-insufficient_data {
 
 .lab-map {
   position: relative;
-  min-height: clamp(440px, calc(100vh - 300px), 650px);
+  height: clamp(320px, calc(100vh - 300px), 650px);
   overflow: hidden;
   background: var(--panel);
   color: var(--ink);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
 }
+.lab-map.panning { cursor: grabbing; }
+.lab-map:focus-visible { outline: 2px solid var(--signal); outline-offset: -2px; }
+
+/* Pan/zoom: the world keeps its natural layout size; only this transform changes. */
+.network-world {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+}
+.network-world.animated { transition: transform 0.16s ease-out; }
+
+.map-controls {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 5;
+  display: flex;
+  align-items: stretch;
+  border: 1px solid var(--ink);
+  background: var(--panel);
+  color: var(--ink);
+  font: 600 10px/1 var(--mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: default;
+}
+.map-controls button {
+  min-width: 28px;
+  padding: 7px 9px;
+  border: 0;
+  border-right: 1px solid var(--ink);
+  background: var(--panel);
+  color: var(--ink);
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+}
+.map-controls button:hover { background: var(--ink); color: var(--bg); }
+.map-controls output { min-width: 44px; padding: 7px 9px; color: var(--muted); text-align: right; }
 .living-network .network-lab {
   position: absolute;
   transform: translate(-50%, -50%);

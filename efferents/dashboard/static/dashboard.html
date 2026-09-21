@@ -383,12 +383,20 @@
               <h2 id="network-map-title">Journal research network</h2>
               <span id="network-node-count" class="header-meta">0 nodes</span>
             </header>
-            <div id="lab-map" class="lab-map living-network" aria-label="Living network of connected labs and journal communities">
-              <svg id="network-lines" viewBox="0 0 1000 560"
-                   preserveAspectRatio="none" aria-hidden="true"></svg>
-              <div id="network-journals" class="network-journals"></div>
-              <div id="network-nodes" class="network-nodes"></div>
-              <div id="network-ideas" class="network-ideas" aria-hidden="true"></div>
+            <div id="lab-map" class="lab-map living-network" tabindex="0" aria-label="Living network of connected labs and journal communities. Scroll to zoom, drag to pan, plus and minus zoom, zero fits, arrow keys pan.">
+              <div id="network-world" class="network-world">
+                <svg id="network-lines" viewBox="0 0 1000 560"
+                     preserveAspectRatio="none" aria-hidden="true"></svg>
+                <div id="network-journals" class="network-journals"></div>
+                <div id="network-nodes" class="network-nodes"></div>
+                <div id="network-ideas" class="network-ideas" aria-hidden="true"></div>
+              </div>
+              <div class="map-controls" role="group" aria-label="Map zoom">
+                <button type="button" data-map-zoom="in" aria-label="Zoom in">+</button>
+                <button type="button" data-map-zoom="out" aria-label="Zoom out">−</button>
+                <button type="button" data-map-zoom="fit" aria-label="Fit network to view">fit</button>
+                <output id="map-zoom-level" aria-live="off">100%</output>
+              </div>
               <div id="network-empty" class="network-empty" hidden></div>
               <div class="network-hub" aria-hidden="true">
                 <span>ℯ</span>
