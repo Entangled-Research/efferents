@@ -1861,10 +1861,32 @@ td.status-insufficient_data {
 .lab-map {
   position: relative;
   min-height: clamp(440px, calc(100vh - 300px), 650px);
-  background: var(--panel);
-  background-image: radial-gradient(var(--line-soft) 1px, transparent 1px);
-  background-size: 26px 26px;
+  overflow: hidden;
+  background: #06162f;
+  color: #e9f3ff;
 }
+.living-network .network-journal { border-color: #253a54; background: #0a1b35; color: #e9f3ff; }
+.living-network .network-journal small { color: #acbed6; }
+.living-network .journal-labs { gap: 10px; }
+.living-network .lab-structure { border-color: #253a54; background: #081f45; }
+.living-network .lab-structure.selected { border-color: #38b8ff; box-shadow: inset 0 0 0 1px #38b8ff; }
+.living-network .lab-identity { color: #e9f3ff; }
+.living-network .lab-identity small { color: #acbed6; }
+.living-network .lab-loop { border-color: #253a54; color: #acbed6; }
+.living-network .lab-loop span { border-color: #253a54; background: #0a1b35; }
+.living-network .lab-loop span.gate { border-color: #a8502b; color: #ffb394; }
+.living-network .lab-loop i { color: #38b8ff; }
+.living-network .lab-ideas { border-color: #253a54; }
+.living-network .lab-ideas small, .living-network .lab-ideas p { color: #acbed6; }
+.living-network .lab-flow-packet { color: #38b8ff; }
+.living-network #network-lines .journal-fiber { stroke: #269ce5; opacity: .7; }
+.living-network #network-lines .lab-fiber { stroke: #38b8ff; opacity: .38; }
+.living-network #network-lines .idea-branch { stroke: #38b8ff; opacity: .65; }
+.living-network #network-lines .domain-edge { stroke: #a8842d; }
+.living-network #network-lines .observation-edge { stroke: #ff9b78; }
+.living-network .network-packet { fill: #38b8ff; stroke: #06162f; }
+.living-network .network-packet.domain { fill: #a8842d; }
+.living-network .network-visit-note { border-color: #ff9b78; background: #0a1b35; color: #ffb394; }
 .network-packet {
   fill: var(--terracotta);
   stroke: var(--panel);
