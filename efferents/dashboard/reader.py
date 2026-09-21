@@ -375,6 +375,30 @@ def _falsifier_results(rows: list[dict], cfg: "LabConfig") -> list[dict]:
 _SHORT_STATUS = {"insufficient_data": "insufficient"}
 
 
+_NAME_STOPWORDS = frozenset(
+    "a an and at by for from in of on or that the to with".split())
+
+
+def _idea_name(student: dict, cfg: "LabConfig", question: str = "") -> str:
+    """Readable idea (autoresearcher) name: its handle, else its id. The
+    implicit ``primary`` idea is named after the running claim: its slug,
+    else the first words of what it investigates."""
+    handle = str(student.get("handle") or "").strip()
+    if handle:
+        return handle
+    slug = student["id"]
+    if slug == "primary":
+        if cfg.hypothesis_slug:
+            slug = cfg.hypothesis_slug
+        else:
+            source = student.get("focus") or question or cfg.approach or ""
+            words = str(source).split()[:6]
+            while words and words[-1].lower().strip(".,:;?!") in _NAME_STOPWORDS:
+                words.pop()
+            return " ".join(words).rstrip(" .,:;?!") or slug
+    return slug.replace("-", " ").replace("_", " ")
+
+
 def _verdict_line(status: str, falsifiers: list[dict]) -> str:
     if not falsifiers:
         return f"verdict: {status} · no falsifiers"
@@ -553,8 +577,14 @@ def read_summary(lab_root: Path, cfg: "LabConfig") -> dict:
         },
         "papers": len(papers),
         "review_board": read_review_board(lab_root),
-        "ideas": [{"id": student["id"], "focus": student.get("focus") or
-                   state["hypothesis"].get("question") or cfg.approach or cfg.domain}
+        # A verdict falsifies an idea, never the lab: the lab's declared
+        # falsifiers test the running claim, which the default idea owns.
+        "ideas": [{"id": student["id"],
+                   "name": _idea_name(student, cfg, state["hypothesis"].get("question") or ""),
+                   "focus": student.get("focus") or
+                   state["hypothesis"].get("question") or cfg.approach or cfg.domain,
+                   "verdict": verdict if student["id"] == cfg.default_student_id
+                   else "undecided"}
                   for student in cfg.students],
         "last_activity": last_activity,
         "hypothesis": state["hypothesis"],

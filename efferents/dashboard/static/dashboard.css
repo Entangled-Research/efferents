@@ -577,8 +577,11 @@ main#app {
   font: 11px/1.5 var(--mono);
 }
 
-.lab-list-copy .lab-verdict.falsified {
-  color: var(--terracotta);
+.lab-list-copy .lab-ideas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 3px;
 }
 
 .lab-list-state {
@@ -2494,8 +2497,10 @@ td.status-insufficient_data {
 .legend-line.publish { border-color: var(--terracotta); }
 .legend-line.subscribe { border-color: var(--signal); border-top-style: dashed; }
 
-.lab-idea-nodes { display: flex; flex-wrap: wrap; gap: 5px; max-height: 40px; overflow: auto; margin: 3px 0 8px; }
+.lab-idea-nodes { display: flex; flex-wrap: wrap; gap: 5px; max-height: 58px; overflow: auto; margin: 3px 0 8px; }
+.lab-idea-label { flex-basis: 100%; color: var(--muted); font: 9.5px/1.4 var(--mono); text-transform: uppercase; letter-spacing: .06em; }
 .lab-idea-node { border: 1px solid var(--signal); padding: 3px 6px; color: var(--signal); font: 10px/1.3 var(--mono); }
+.lab-idea-node.falsified { border-color: var(--terracotta); color: var(--terracotta); }
 .network-review-board { border: 1px solid var(--signal); padding: 10px; background: var(--panel); }
 .network-review-board .review-scores { gap: 8px; }
 .network-review-board .review-scores div { border-left: 1px solid var(--line); padding-left: 8px; }

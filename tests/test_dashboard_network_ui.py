@@ -134,3 +134,18 @@ def test_observer_is_compact_validity_aware_and_supports_visual_evidence():
     assert "groupEvidenceRecords" in javascript
     assert "Matched comparison" in javascript
     assert "Eligible-run summary statistics" in html
+
+
+def test_ideas_are_named_and_carry_the_verdict_not_the_lab():
+    static = Path(__file__).resolve().parents[1] / "efferents" / "dashboard" / "static"
+    js = (static / "dashboard.js").read_text()
+    html = (static / "dashboard.html").read_text()
+    # Ideas are listed by name inside their lab, on the map and in the rail.
+    assert "function labIdeas(lab)" in js
+    assert "esc(ideaName(idea))" in js
+    assert 'class="lab-idea-label">Ideas · ${ideas.length}' in js
+    assert "Idea ${String.fromCharCode" not in js
+    # A lab is never marked falsified; only an idea is.
+    assert "lab-verdict" not in js
+    assert 'idea.verdict === "falsified"' in js
+    assert '<h2 id="verdict-title">Idea verdict</h2>' in html

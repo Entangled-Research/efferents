@@ -427,6 +427,29 @@ async function openLabTab(labId) {
   await selectPortfolioLab(labId, true);
 }
 
+// Ideas (autoresearchers) belong to a lab and are shown by name. A verdict
+// falsifies an idea, never the lab that hosts it.
+const IDEA_NAME_STOPWORDS = new Set("a an and at by for from in of on or that the to with".split(" "));
+function ideaName(idea) {
+  if (idea.name) return idea.name;
+  if (idea.id && idea.id !== "primary") return idea.id.replace(/[-_]/g, " ");
+  const words = String(idea.focus || "").split(/\s+/).filter(Boolean).slice(0, 6);
+  while (words.length && IDEA_NAME_STOPWORDS.has(words.at(-1).toLowerCase())) words.pop();
+  return words.join(" ").replace(/[ .,:;?!]+$/, "") || idea.id || "idea";
+}
+
+function labIdeas(lab) {
+  if (lab.ideas?.length) return lab.ideas;
+  const focus = lab.hypothesis?.question || lab.approach || "Initial research idea";
+  return [{id: "primary", focus, verdict: lab.verdict?.status || "undecided"}];
+}
+
+function ideaLineMarkup(idea) {
+  const falsified = idea.verdict === "falsified";
+  return `<span class="lab-idea-node${falsified ? " falsified" : ""}" title="${esc(idea.focus || "")}">` +
+    `${esc(ideaName(idea))}${falsified ? " · falsified" : ""}</span>`;
+}
+
 function renderLabRail() {
   const labs = Array.isArray(portfolioState.labs) ? portfolioState.labs : [];
   text("lab-portfolio-count", String(labs.length).padStart(2, "0"));
@@ -449,8 +472,7 @@ function renderLabRail() {
       `<span class="lab-list-copy"><strong>${esc(labDisplayName(lab.lab_id))}</strong>` +
       `<small>${esc(lab.domain || "unclassified")}${ownerLine}</small>` +
       `<span>${metric}</span>` +
-      `<span class="lab-verdict${lab.verdict?.status === "falsified" ? " falsified" : ""}">` +
-      `${esc(lab.verdict?.line || "verdict: undecided")}</span></span>` +
+      `<span class="lab-ideas">${labIdeas(lab).map(ideaLineMarkup).join("")}</span></span>` +
       `<span class="lab-list-state ${esc(lab.status || "stopped")}">` +
       `<i aria-hidden="true"></i>${esc(formatRelativeTime(lab.last_activity))}</span>` +
       `</button>`;
@@ -599,9 +621,9 @@ function renderNetwork() {
       const card = document.createElement("article");
       card.className = "network-lab-boundary";
       Object.assign(card.style, {left: `${x}px`, top: `${y}px`, width: `${width}px`});
-      const ideas = lab.ideas?.length ? lab.ideas : [{id: "primary", focus: lab.hypothesis?.question || lab.approach || "Initial research idea"}];
+      const ideas = labIdeas(lab);
       card.innerHTML = `<button type="button" class="lab-identity" aria-pressed="${lab.lab_id === networkSelection}"><strong>${esc(labDisplayName(lab.lab_id))}</strong><small>${esc(lab.status || "stopped")}${lab.remote ? " · read only" : ""}</small></button>` +
-        `<div class="lab-idea-nodes">${ideas.map((idea, i) => `<span class="lab-idea-node" title="${esc(idea.focus)}">Idea ${String.fromCharCode(65 + i % 26)}${i >= 26 ? Math.floor(i / 26) + 1 : ""}</span>`).join("")}</div>` +
+        `<div class="lab-idea-nodes" aria-label="Ideas in ${esc(labDisplayName(lab.lab_id))}"><span class="lab-idea-label">Ideas · ${ideas.length}</span>${ideas.map(ideaLineMarkup).join("")}</div>` +
         `<div class="internal-research"><span>Supervisor · Researcher · Librarian</span><b>Hypothesis → Experiment</b><b>Evidence → Paper</b><span>Executor · Coder · Analyst · Writer</span></div>`;
       // Local labs open in their tab; remote read-only labs have no local evidence to show.
       card.querySelector("button").onclick = () => {

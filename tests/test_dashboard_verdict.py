@@ -129,6 +129,15 @@ def test_read_summary_carries_verdict_line(tmp_path):
     bare = reader.read_summary(tmp_path, make_cfg(tmp_path))
     assert bare["verdict"] == {"status": "undecided",
                                "line": "verdict: undecided · no falsifiers"}
+    # The verdict falsifies the idea that owns the running claim, by name.
+    assert [(i["name"], i["verdict"]) for i in summary["ideas"]] == [("primary", "falsified")]
+    assert [i["verdict"] for i in bare["ideas"]] == ["undecided"]
+    # The implicit idea is named after what it investigates, not "primary".
+    student = {"id": "primary", "handle": None,
+               "focus": "Congestion-aware replanning reduces median evacuation time by at least 10%."}
+    assert reader._idea_name(student, make_cfg(tmp_path)) == (
+        "Congestion-aware replanning reduces median evacuation time")
+    assert reader._idea_name({"id": "seed-sweep", "handle": None}, make_cfg(tmp_path)) == "seed sweep"
 
 
 @pytest.fixture
@@ -184,8 +193,9 @@ def test_workspace_renders_verdict_and_bucket_panels(verdict_server):
     assert 'data?.line || "verdict: undecided"' in js
     assert "No falsifiers declared in lab.yaml" in js
     assert "formatCI(p.ci95)" in js
-    # Portfolio rail shows the compact verdict line.
-    assert "lab.verdict?.line" in js
+    # The portfolio rail names each idea; the verdict marks the idea, not the lab.
+    assert "labIdeas(lab).map(ideaLineMarkup)" in js
+    assert "lab.verdict?.line" not in js
     # Only theme tokens; falsification uses the terracotta warning colour.
     assert "td.status-fired {\n  color: var(--terracotta);" in css
     verdict_css = (
