@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import json
 import os
-import secrets
 import shutil
 import signal
 import sqlite3
@@ -14,16 +13,50 @@ import yaml
 from efferents.lab import LabConfig
 from efferents.starter_catalog import DOCUMENTED
 
+TEMPLATE_TITLES = {"evacuation": "Congestion-aware evacuation", "integration": "Numerical integration"}
+
+
+def suggest_lab_id(*, idea: str = "", goal: str = "", approach: str = "",
+                   starter: str = "auto", name: str = "", taken: set[str] | None = None) -> str:
+    """Derive a readable lab_id from the owner's own words, unique among local labs.
+
+    Precedence: explicit name, then idea, approach, goal, then the starter title.
+    The result matches the lab_id grammar and is deduplicated with -2, -3, ...
+    """
+    import re
+    from efferents.registry import Registry
+
+    source = next((text for text in (name, idea, approach, goal) if text and text.strip()), "")
+    if not source:
+        source = TEMPLATE_TITLES.get(starter) or DOCUMENTED.get(starter, {}).get("title") or starter
+    words = [w for w in re.sub(r"[^a-z0-9]+", " ", source.lower()).split() if w]
+    slug = ""
+    for word in words[:6]:
+        candidate = f"{slug}-{word}" if slug else word
+        if len(candidate) > 48:
+            break
+        slug = candidate
+    if not slug:
+        slug = "lab"
+    if taken is None:
+        taken = {record.lab_id for record in Registry().list()}
+    unique, counter = slug, 2
+    while unique in taken:
+        unique, counter = f"{slug}-{counter}", counter + 1
+    return unique
+
 TEMPLATES = {"evacuation": "starter-evacuation-lab", "integration": "starter-integration-lab"}
 TEMPLATES.update({name: "starter-documented-lab" for name in DOCUMENTED})
 
 
 def create_lab(destination: Path, *, starter: str = "auto", idea: str = "",
-               goal: str = "", approach: str = "", exchange: bool = False) -> dict:
+               goal: str = "", approach: str = "", exchange: bool = False,
+               name: str = "") -> dict:
     """Infer reversible choices, preserve the owner's idea, record every default."""
-    for name, value, limit in (("idea", idea, 4000), ("goal", goal, 160), ("approach", approach, 160)):
+    for field, value, limit in (("idea", idea, 4000), ("goal", goal, 160), ("approach", approach, 160),
+                                ("name", name, 128)):
         if not isinstance(value, str) or len(value) > limit or "\x00" in value:
-            raise ValueError(f"{name} must be text of at most {limit} characters")
+            raise ValueError(f"{field} must be text of at most {limit} characters")
     if starter == "auto":
         words = idea.lower()
         starter = next((name for name, keys in (
@@ -48,7 +81,7 @@ def create_lab(destination: Path, *, starter: str = "auto", idea: str = "",
             f"---\nslug: {starter}\nvalidation: lightweight\nstatus: active\n---\n\n"
             f"## Claim\n\n{spec['claim']}\n\n## Measurement\n\n{spec['measurement']}\n\n"
             f"## Stop condition\n\n{spec['stop']}\n")
-    raw["lab_id"] = f"{starter}-{secrets.token_hex(6)}"
+    raw["lab_id"] = suggest_lab_id(idea=idea, goal=goal, approach=approach, starter=starter, name=name)
     raw["hypothesis_validation"] = "lightweight"
     raw["research_goal"] = goal.strip()
     raw["approach"] = approach.strip() or raw["approach"]

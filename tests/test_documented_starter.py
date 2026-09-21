@@ -53,3 +53,21 @@ def test_each_documented_starter_is_real_fast_and_deterministic(tmp_path, starte
     artifacts = {item["kind"]: Path(item["path"]) for item in first["artifacts"]}
     assert artifacts["provenance"].is_file()
     assert artifacts[starter].suffix == ".svg"
+
+
+def test_lab_ids_come_from_the_owners_words(tmp_path, monkeypatch):
+    from efferents.onboarding import suggest_lab_id
+
+    monkeypatch.setenv("EFFERENTS_HOME", str(tmp_path / "home"))
+    assert suggest_lab_id(idea="Frequent rerouting: does it help?", taken=set()) == "frequent-rerouting-does-it-help"
+    assert suggest_lab_id(name="My Lab", idea="ignored", taken=set()) == "my-lab"
+    assert suggest_lab_id(starter="orbit", taken=set()) == "keep-a-planet-in-orbit"
+    assert suggest_lab_id(starter="evacuation", taken=set()) == "congestion-aware-evacuation"
+    assert suggest_lab_id(idea="Stable routes", taken={"stable-routes", "stable-routes-2"}) == "stable-routes-3"
+    assert suggest_lab_id(idea="!!!", taken=set()) == "lab"
+    long = suggest_lab_id(idea="one two three four five six seven eight", taken=set())
+    assert long == "one-two-three-four-five-six" and len(long) <= 48
+
+    decisions = create_lab(tmp_path / "lab", idea="Frequent rerouting", goal="Reduce congestion")
+    assert decisions["lab_id"] == "frequent-rerouting"
+    assert LabConfig.from_submission(tmp_path / "lab").lab_id == "frequent-rerouting"

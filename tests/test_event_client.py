@@ -204,7 +204,7 @@ def test_starter_command_creates_complete_ignored_local_boundary(tmp_path):
     target = tmp_path / "starter"
     assert main(["starter", "evacuation", "--out", str(target)]) == 0
     assert (target / "src" / "run_experiment.py").is_file()
-    assert (target / "lab.yaml").read_text().startswith("lab_id: evacuation-")
+    assert (target / "lab.yaml").read_text().startswith("lab_id: congestion-aware-evacuation\n")
     assert "lab_id: evacuation-starter" not in (target / "lab.yaml").read_text()
     other = tmp_path / "other-starter"
     assert main(["starter", "evacuation", "--out", str(other)]) == 0

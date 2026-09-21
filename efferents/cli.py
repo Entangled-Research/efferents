@@ -894,12 +894,15 @@ def _cmd_event(args: argparse.Namespace) -> int:
 
 
 def _cmd_starter(args: argparse.Namespace) -> int:
-    from efferents.onboarding import create_lab
-    target = Path(args.out).expanduser().resolve()
+    from efferents.onboarding import create_lab, suggest_lab_id
+    idea, goal = getattr(args, "idea", ""), getattr(args, "goal", "")
+    approach, name = getattr(args, "approach", ""), getattr(args, "name", "")
     try:
-        result = create_lab(target, starter=args.starter_name,
-                            idea=getattr(args, "idea", ""), goal=getattr(args, "goal", ""),
-                            approach=getattr(args, "approach", ""), exchange=getattr(args, "exchange", False))
+        lab_id = suggest_lab_id(idea=idea, goal=goal, approach=approach,
+                                starter=args.starter_name, name=name)
+        target = Path(args.out or lab_id).expanduser().resolve()
+        result = create_lab(target, starter=args.starter_name, idea=idea, goal=goal,
+                            approach=approach, exchange=getattr(args, "exchange", False), name=lab_id)
     except (OSError, ValueError) as exc:
         print(f"starter: could not create {target}: {exc}", file=sys.stderr)
         return 1
@@ -998,7 +1001,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_starter = sub.add_parser("starter", help="Create a versioned starter lab")
     p_starter.add_argument("starter_name", choices=("coloring", "active-learning", "orbit", "vehicle", "evacuation", "integration", "auto"), nargs="?", default="auto")
-    p_starter.add_argument("--out", default="starter-evacuation-lab")
+    p_starter.add_argument("--out", default=None, help="Destination directory (default: ./<lab id>)")
+    p_starter.add_argument("--name", default="", help="Lab id (default: derived from --idea)")
     p_starter.add_argument("--idea", default="")
     p_starter.add_argument("--goal", default="")
     p_starter.add_argument("--approach", default="")

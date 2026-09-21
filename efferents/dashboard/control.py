@@ -561,16 +561,22 @@ class ControlContext:
 
     def onboard(self, payload: dict) -> dict:
         self._require_mutable()
-        from efferents.onboarding import create_lab
-        import secrets
+        from efferents.onboarding import create_lab, suggest_lab_id
         if payload.get("confirmed") is not True:
             raise ControlError("Choose Create lab or Infer defaults and run to accept the displayed scope.", 409)
-        destination = _efferents_home() / "labs" / ("lab-" + secrets.token_hex(6))
+        choices = {key: payload.get(key, "") for key in ("starter", "idea", "goal", "approach", "name")}
+        choices["starter"] = choices["starter"] or "auto"
+        for key, value in choices.items():
+            if not isinstance(value, str):
+                raise ControlError(f"{key} must be text.")
         with self._lock:
+            labs_dir = _efferents_home() / "labs"
+            existing = {path.name for path in labs_dir.glob("*")} if labs_dir.is_dir() else set()
+            lab_id = suggest_lab_id(**choices, taken=existing | {r.lab_id for r in Registry().list()})
+            destination = labs_dir / lab_id
             decisions = create_lab(
-                destination, starter=payload.get("starter", "auto"), idea=payload.get("idea", ""),
-                goal=payload.get("goal", ""), approach=payload.get("approach", ""),
-                exchange=payload.get("exchange") is True,
+                destination, starter=choices["starter"], idea=choices["idea"], goal=choices["goal"],
+                approach=choices["approach"], exchange=payload.get("exchange") is True, name=lab_id,
             )
             info = self.connect(str(destination))
             if payload.get("run") is True:
