@@ -4,6 +4,10 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   test:
@@ -21,3 +25,83 @@ jobs:
         run: uv sync --extra dev
       - name: Test
         run: uv run pytest -m "not integration and not slow" -q
+
+  deploy-digitalocean:
+    name: deploy DigitalOcean
+    needs: test
+    if: >-
+      vars.DIGITALOCEAN_DEPLOY_ENABLED == 'true' &&
+      ((github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    environment: production
+    concurrency:
+      group: digitalocean-production
+      cancel-in-progress: false
+    env:
+      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+      DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+      DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+      DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure deployment SSH key
+        shell: bash
+        run: |
+          test -n "$DEPLOY_HOST"
+          test -n "$DEPLOY_USER"
+          test -n "$DEPLOY_SSH_KEY"
+          test -n "$DEPLOY_KNOWN_HOSTS"
+          install -m 0700 -d "$HOME/.ssh"
+          printf '%s\n' "$DEPLOY_SSH_KEY" > "$HOME/.ssh/deploy_key"
+          chmod 0600 "$HOME/.ssh/deploy_key"
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 0644 "$HOME/.ssh/known_hosts"
+
+      - name: Prepare deployment directories
+        shell: bash
+        run: |
+          ssh -i "$HOME/.ssh/deploy_key" \
+            -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            "$DEPLOY_USER@$DEPLOY_HOST" \
+            'mkdir -p /opt/efferents/efferents /opt/efferents/deploy/digitalocean /opt/efferents/deploy/event_gateway /opt/efferents/docs/prototypes /opt/efferents/examples/smoke-lab'
+
+      - name: Sync tracked deployment inputs
+        shell: bash
+        run: |
+          RSYNC_SSH="ssh -i $HOME/.ssh/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes"
+          TARGET="$DEPLOY_USER@$DEPLOY_HOST:/opt/efferents"
+
+          rsync -az -e "$RSYNC_SSH" \
+            pyproject.toml README.md LICENSE NOTICE .dockerignore \
+            "$TARGET/"
+          rsync -az --delete -e "$RSYNC_SSH" \
+            efferents/ "$TARGET/efferents/"
+          rsync -az --delete --exclude='.env' -e "$RSYNC_SSH" \
+            deploy/digitalocean/ "$TARGET/deploy/digitalocean/"
+          rsync -az --delete -e "$RSYNC_SSH" \
+            deploy/event_gateway/ "$TARGET/deploy/event_gateway/"
+          rsync -az -e "$RSYNC_SSH" \
+            docs/prototypes/event-network.html "$TARGET/docs/prototypes/event-network.html"
+          rsync -az --delete --exclude='.env' --exclude='lab/' -e "$RSYNC_SSH" \
+            examples/smoke-lab/ "$TARGET/examples/smoke-lab/"
+
+      - name: Rebuild and verify the control plane
+        shell: bash
+        run: |
+          ssh -i "$HOME/.ssh/deploy_key" \
+            -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            "$DEPLOY_USER@$DEPLOY_HOST" 'bash -se' <<'REMOTE'
+          set -euo pipefail
+          cd /opt/efferents/deploy/digitalocean
+          test -f .env
+          docker compose config --quiet
+          docker compose up -d --build --remove-orphans
+          docker compose exec caddy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+          curl --fail --silent --show-error --retry 12 --retry-delay 5 --retry-connrefused \
+            http://127.0.0.1:8800/api/labs >/dev/null
+          curl --fail --silent --show-error --retry 12 --retry-delay 5 --retry-connrefused \
+            http://127.0.0.1:8801/healthz >/dev/null
+          docker compose ps
+          REMOTE

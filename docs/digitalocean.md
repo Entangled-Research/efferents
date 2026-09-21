@@ -72,9 +72,10 @@ otherwise.
 tar -xzf /tmp/efferents-hosting.tgz -C /opt/efferents
 ```
 
-For future deployments from GitHub, verify `origin` points to
-`https://github.com/Entangled-Research/efferents.git` before pulling. The upload
-above works even while these files exist only locally.
+The automatic deployment described below checks out the canonical GitHub
+repository on a GitHub-hosted runner and syncs only the deployment inputs; the
+Droplet does not need its own Git checkout. The upload above also works while
+the files exist only locally.
 
 ## 3. Install Docker
 
@@ -260,7 +261,87 @@ does not persist prompt bodies.
 
 ## Persistence, updates, and scaling
 
-### Refresh the hosted web after a local implementation change
+### Deploy `main` automatically after CI
+
+The `deploy-digitalocean` job in `.github/workflows/ci.yml` runs only for a
+push to `main`, after both CI test jobs pass. It syncs the tracked deployment
+inputs, rebuilds the Compose services, and checks the two loopback health
+endpoints. It never copies the deployment `.env`, and `docker compose up`
+preserves the named volumes.
+
+Set up a dedicated deployment key and user once. On the Mac, generate a key
+that is used only by GitHub Actions:
+
+```bash
+ssh-keygen -t ed25519 -f "$HOME/.ssh/efferents_github_deploy" -C github-actions-efferents
+```
+
+On the Droplet, create the deployment user and give it access to Docker and the
+existing application directory:
+
+```bash
+adduser --disabled-password --gecos '' efferents-deploy
+usermod -aG docker efferents-deploy
+apt-get update && apt-get install -y rsync
+install -d -m 0700 -o efferents-deploy -g efferents-deploy /home/efferents-deploy/.ssh
+chown -R efferents-deploy:efferents-deploy /opt/efferents
+```
+
+From the Mac, install only the new public key for that user:
+
+```bash
+ssh-copy-id -i "$HOME/.ssh/efferents_github_deploy.pub" efferents-deploy@YOUR_DROPLET_IP
+ssh -i "$HOME/.ssh/efferents_github_deploy" efferents-deploy@YOUR_DROPLET_IP \
+  'docker compose version && test -f /opt/efferents/deploy/digitalocean/.env'
+```
+
+Record the Droplet host key only after comparing its fingerprint with the host
+key shown from a trusted Droplet console session:
+
+```bash
+ssh-keyscan -t ed25519 YOUR_DROPLET_IP > /tmp/efferents-known-hosts
+ssh-keygen -lf /tmp/efferents-known-hosts
+# On the Droplet console, compare with:
+ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub
+```
+
+In the GitHub repository, create an environment named `production` under
+**Settings → Environments**. Do not add a required reviewer if every successful
+`main` push should deploy without a manual approval. Add these environment
+secrets:
+
+| Secret | Value |
+| --- | --- |
+| `DEPLOY_HOST` | Droplet IP address or hostname |
+| `DEPLOY_USER` | `efferents-deploy` |
+| `DEPLOY_SSH_KEY` | Entire contents of `~/.ssh/efferents_github_deploy` |
+| `DEPLOY_KNOWN_HOSTS` | Entire contents of `/tmp/efferents-known-hosts` |
+
+After the key, firewall, and all four secrets are ready, open **Settings →
+Secrets and variables → Actions → Variables** and create the repository
+variable `DIGITALOCEAN_DEPLOY_ENABLED` with the value `true`. Until this switch
+is enabled, pushes still run CI but deliberately skip the deployment job.
+
+GitHub-hosted runners must be able to reach TCP port 22 on the Droplet. A
+DigitalOcean firewall restricted only to the operator's home IP will block the
+workflow. The simplest configuration permits port 22 from the internet while
+OpenSSH allows key authentication only; keep password authentication disabled
+and use the dedicated key above. If that exposure is unacceptable, use a
+self-hosted runner or private network tunnel instead of widening the firewall.
+GitHub's hosted-runner address ranges are broad and change over time, so a
+copied static allowlist is not reliable.
+
+After enabling the switch, open **GitHub → Actions → ci → Run workflow** and
+select `main` for the first deployment. Both `test` matrix jobs must finish
+before `deploy DigitalOcean` starts. Later pushes to `main` deploy
+automatically. The `production` environment deployment history records the
+exact commit deployed.
+
+The deploy job serializes updates rather than cancelling a running deployment.
+If a deploy fails, inspect that job's logs and the server-side Compose logs; do
+not rerun with volume deletion.
+
+### Manually refresh the hosted web
 
 The server-side `.env` and all named volumes are deliberately excluded from the
 upload. From the local checkout:
