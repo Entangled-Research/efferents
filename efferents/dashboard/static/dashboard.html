@@ -44,6 +44,7 @@
     <div class="connection-actions">
       <span id="api-key-state" class="key-state">API key unknown</span>
       <button id="start-lab" class="compact-button" type="button">Start lab</button>
+      <button id="trial-lab" class="compact-button" type="button">Run 3 experiments · no model</button>
       <button id="stop-lab" class="compact-button danger" type="button" hidden>Stop lab</button>
     </div>
   </div>
@@ -67,10 +68,9 @@
     <section id="connect-view" class="app-view" data-route-view="connect">
       <div class="entry-layout">
         <div class="entry-intro">
-          <h1>Connect a lab.</h1>
-          <section class="entry-network-preview panel" aria-labelledby="entry-network-title">
-            <div class="route-kicker">Live organism</div>
-            <h2 id="entry-network-title">Labs exchange ideas through journals.</h2>
+          <h1>Start with an idea.</h1>
+          <section class="entry-network-preview panel" aria-label="Illustrative journal network">
+            <div class="route-kicker">Illustrative network</div>
             <iframe class="entry-network-frame" src="/prototypes/event-network.html" title="Animated Efferents event network"></iframe>
           </section>
         </div>
@@ -78,16 +78,56 @@
         <section class="connector panel" aria-labelledby="connector-heading">
           <h2 id="connector-heading" class="visually-hidden">Connect a lab</h2>
           <div class="intake-tabs" role="tablist" aria-label="Ways to connect">
+            <button class="intake-tab" type="button" role="tab" id="intake-tab-idea"
+                    data-intake-tab="idea" aria-selected="true"
+                    aria-controls="intake-panel-idea">Start an idea</button>
             <button class="intake-tab" type="button" role="tab" id="intake-tab-agent"
-                    data-intake-tab="agent" aria-selected="true"
+                    data-intake-tab="agent" aria-selected="false"
                     aria-controls="intake-panel-agent">Launch via agent</button>
             <button class="intake-tab" type="button" role="tab" id="intake-tab-submit"
                     data-intake-tab="submit" aria-selected="false"
                     aria-controls="intake-panel-submit">Submit a repo</button>
           </div>
 
+          <div id="intake-panel-idea" class="intake-panel" role="tabpanel"
+               aria-labelledby="intake-tab-idea" data-intake-panel="idea">
+            <form id="onboard-form" class="connector-form">
+              <label for="onboard-idea">What would you like to explore? <small>Optional</small></label>
+              <textarea id="onboard-idea" rows="3" maxlength="4000" placeholder="Try another approach to congestion, or explore numerical integration."></textarea>
+              <label for="onboard-mode">How should this lab participate?</label>
+              <select id="onboard-mode">
+                <option value="independent">Independent lab · occasional cross-domain observations</option>
+                <option value="shared">Shared goal · different approaches</option>
+              </select>
+              <div id="onboard-goal-field" hidden>
+                <label for="onboard-goal">Shared goal</label>
+                <input id="onboard-goal" maxlength="160" placeholder="Reduce congestion" list="known-goals">
+                <datalist id="known-goals"></datalist>
+              </div>
+              <details class="onboard-options">
+                <summary>Choose details</summary>
+                <label for="onboard-starter">First executable experiment</label>
+                <select id="onboard-starter">
+                  <option value="auto">Infer from my idea</option>
+                  <option value="evacuation">Congestion-aware evacuation · routing</option>
+                  <option value="integration">Numerical integration · analytic ground truth</option>
+                </select>
+                <label for="onboard-approach">Approach <small>Optional</small></label>
+                <input id="onboard-approach" maxlength="160" placeholder="Infer from the starter">
+              </details>
+              <label class="execution-confirm"><input id="onboard-exchange" type="checkbox" checked>
+                <span>Share experiment claims and bounded findings with labs in this private workspace.</span></label>
+              <p class="form-hint">Three real CPU experiments on this machine, no model calls. Inferred choices are saved for review. Evacuation is the fallback starter; custom domains use Submit a repo. Agent runs later use a $1 daily / $2 total cap; code changes await review.</p>
+              <div class="onboard-actions">
+                <button id="onboard-run" class="primary-button" type="submit">Infer defaults and run</button>
+                <button id="onboard-create" class="secondary-button" type="button">Create without running</button>
+              </div>
+              <div id="onboard-message" class="form-message" role="status" aria-live="polite"></div>
+            </form>
+          </div>
+
           <div id="intake-panel-agent" class="intake-panel" role="tabpanel"
-               aria-labelledby="intake-tab-agent" data-intake-panel="agent">
+               aria-labelledby="intake-tab-agent" data-intake-panel="agent" hidden>
             <ol class="intake-steps">
               <li>Open a terminal.</li>
               <li>Go to your research repo — or a fresh folder.</li>
@@ -99,7 +139,7 @@
               <button id="copy-command" class="compact-button" type="button">Copy</button>
             </div>
             <p class="form-hint">The agent installs efferents, configures the lab
-            around your code, gates a first hypothesis, and runs a bounded first
+            around your code, records a measurable experiment contract, and runs a bounded first
             cycle.</p>
             <a class="repo-link" href="https://github.com/Entangled-Research/efferents"
                target="_blank" rel="noopener">github.com/Entangled-Research/efferents ↗</a>
@@ -133,7 +173,7 @@
             </li>
             <li data-contract="hypothesis">
               <span class="check-mark" aria-hidden="true">03</span>
-              <span><b>Falsifiability gate</b><small>hypothesis.md passed</small></span>
+              <span><b>Experiment contract</b><small>Claim, measurement, stop condition</small></span>
               <span class="check-state">waiting</span>
             </li>
           </ol>
@@ -336,15 +376,19 @@
     </section>
 
       <section id="network-view" class="app-view" data-route-view="network" hidden>
+        <section class="network-toolbar" aria-label="Network controls">
+          <span class="header-meta">Global journals · local evidence</span>
+          <button id="network-observe" class="compact-button" type="button">Observe peer findings</button>
+          <a class="compact-button" href="#connect">+ Add an idea or lab</a>
+          <span id="network-action-state" role="status"></span>
+        </section>
         <div class="network-grid">
           <section class="panel network-map-panel" aria-labelledby="network-map-title">
             <header class="panel-header">
-              <h2 id="network-map-title">Connected lab map</h2>
+              <h2 id="network-map-title">A living research network</h2>
               <span id="network-node-count" class="header-meta">0 nodes</span>
             </header>
             <div id="lab-map" class="lab-map living-network" aria-label="Living network of connected labs and journal communities">
-              <iframe class="canonical-network-frame" src="/prototypes/event-network.html" title="Canonical Efferents living event network"></iframe>
-              <iframe class="canonical-network-frame" src="/prototypes/event-network.html" title="Canonical Efferents living event network"></iframe>
               <svg id="network-lines" viewBox="0 0 1000 560"
                    preserveAspectRatio="none" aria-hidden="true"></svg>
               <div id="network-journals" class="network-journals" aria-hidden="true"></div>
@@ -358,11 +402,41 @@
             </div>
             <footer class="map-legend">
               <span><i class="legend-dot running"></i> running</span>
+              <span><i class="legend-dot paused"></i> paused</span>
               <span><i class="legend-dot stopped"></i> stopped</span>
-              <span><i class="legend-line"></i> home journal</span>
-              <span><i class="legend-line visiting"></i> visiting journal</span>
-              <span><i class="legend-idea"></i> current hypothesis</span>
+              <span><i class="legend-dot stale"></i> stale</span>
+              <span><i class="legend-dot sample"></i> offline sample</span>
+              <span><i class="legend-line"></i> journal route</span>
+              <span><i class="legend-line observation"></i> finding received →</span>
+              <span><i class="legend-idea"></i> research approach</span>
             </footer>
+          </section>
+          <aside id="network-inspector" class="panel network-inspector" aria-live="polite">
+            <header class="panel-header"><h2>Selected lab</h2><span class="header-meta">Live records</span></header>
+            <div id="network-selection">Select a lab to inspect its journal routes and evidence.</div>
+          </aside>
+          <section class="panel exchange-panel" aria-labelledby="exchange-title">
+            <header class="panel-header"><h2 id="exchange-title">Findings & observations</h2><span id="exchange-count" class="header-meta">0 observations</span></header>
+            <p class="exchange-explanation">Arrows record findings received into another lab’s research inbox. Measurements remain provisional until reproduced. Running labs visit at research-cycle boundaries, at most every two minutes; every third visit includes another domain. Use Observe peer findings for an immediate local visit.</p>
+            <div id="exchange-feed" class="exchange-feed"></div>
+          </section>
+          <section id="event-admin-panel" class="panel event-admin-panel" hidden aria-labelledby="event-admin-title">
+            <header class="panel-header">
+              <h2 id="event-admin-title">Event proxy</h2>
+              <span id="event-admin-meta" class="header-meta">not configured</span>
+            </header>
+            <div class="event-admin-summary">
+              <div><span class="field-label">Event</span><strong id="event-id">—</strong></div>
+              <div><span class="field-label">Aggregate spend</span><strong id="event-spend">—</strong></div>
+              <div><span class="field-label">Tokens</span><strong id="event-token-count">—</strong></div>
+              <div><span class="field-label">Snapshot</span><strong id="event-generated-at">—</strong></div>
+            </div>
+            <div class="table-wrap">
+              <table id="event-tokens">
+                <thead><tr><th>Token id</th><th>Lab</th><th>Status</th><th>Spend / cap</th><th>Requests</th><th>Last sync</th></tr></thead>
+                <tbody></tbody>
+              </table>
+            </div>
           </section>
         </div>
       </section>

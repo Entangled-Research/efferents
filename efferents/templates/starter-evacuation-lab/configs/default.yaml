@@ -1,0 +1,15 @@
+seed: 1
+layout:
+  width: 23
+  height: 17
+  agents: 56
+  obstacle_pairs: 3
+simulation:
+  max_steps: 120
+candidate:
+  policy: congestion
+  congestion_weight: 3.5
+  reroute_interval: 4
+  reservation_depth: 12
+run:
+  name: starter-default

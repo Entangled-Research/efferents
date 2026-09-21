@@ -9,6 +9,9 @@ confirmed by the user.
 from __future__ import annotations
 
 import json
+import base64
+import hashlib
+import os
 import logging
 import secrets
 import webbrowser
@@ -18,6 +21,7 @@ from pathlib import Path
 
 from efferents.dashboard.control import ControlContext, ControlError
 from efferents.dashboard import reader
+from efferents.dashboard.event_feed import dashboard_payload, read_remote_event
 
 STATIC_DIR = Path(__file__).parent / "static"
 _PROTOTYPE_CANDIDATES = (
@@ -57,8 +61,16 @@ class DashboardHandler(BaseHTTPRequestHandler):
         super().__init__(*args, **kwargs)
 
     def do_GET(self):  # noqa: N802 (stdlib naming)
+        if not self._authenticate():
+            return
         try:
             path = self.path.split("?", 1)[0]
+            if path in {"/network", "/join"}:
+                self.send_response(302)
+                self.send_header("Location", "/#network" if path == "/network" else "/#connect")
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
             if path in ("/", "/index.html"):
                 return self._send_file(STATIC_DIR / "dashboard.html")
             if path == "/prototypes/event-network.html":
@@ -68,7 +80,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 payload["csrf_token"] = self.csrf_token
                 return self._send_json(payload)
             if path == "/api/labs":
-                return self._send_json(self.control.portfolio())
+                payload = self.control.portfolio()
+                payload["event_network"] = dashboard_payload(read_remote_event())
+                return self._send_json(payload)
 
             connected = self.control.snapshot()
             if path == "/api/state":
@@ -126,10 +140,18 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self.send_error(500)
 
     def do_POST(self):  # noqa: N802 (stdlib naming)
+        if not self._authenticate():
+            return
         path = self.path.split("?", 1)[0]
         try:
             self._require_csrf()
             payload = self._read_json()
+            if path == "/api/onboard":
+                return self._send_json(self.control.onboard(payload))
+            if path == "/api/lab/trial":
+                return self._send_json(self.control.run_trial(payload.get("runs", 3)))
+            if path == "/api/network/observe":
+                return self._send_json(self.control.observe_peers())
             if path == "/api/connect":
                 return self._send_json(
                     self.control.connect(str(payload.get("source") or "")),
@@ -155,11 +177,34 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self.send_error(404)
         except ControlError as exc:
             self._send_json({"error": str(exc)}, status=exc.status)
-        except (json.JSONDecodeError, UnicodeDecodeError, TypeError, ValueError):
+        except (json.JSONDecodeError, UnicodeDecodeError, TypeError):
             self._send_json({"error": "Request body must be valid JSON."}, status=400)
+        except ValueError as exc:
+            self._send_json({"error": str(exc)}, status=400)
         except Exception:
             _log.exception("dashboard mutation failed: %s", path)
             self._send_json({"error": "Local control request failed."}, status=500)
+
+    def _authenticate(self) -> bool:
+        expected = os.environ.get("EFFERENTS_DASHBOARD_PASSWORD_HASH", "")
+        if not expected:
+            return True
+        try:
+            scheme, value = self.headers.get("Authorization", "").split(" ", 1)
+            user, password = base64.b64decode(value, validate=True).decode().split(":", 1)
+            valid = (scheme == "Basic"
+                     and secrets.compare_digest(user, os.environ.get("EFFERENTS_DASHBOARD_USER", "organizer"))
+                     and secrets.compare_digest(hashlib.sha256(password.encode()).hexdigest(), expected))
+        except (ValueError, UnicodeError):
+            valid = False
+        if valid:
+            return True
+        self.send_response(401)
+        self.send_header("WWW-Authenticate", 'Basic realm="Efferents private event"')
+        self.send_header("Content-Length", "0")
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        return False
 
     def _require_csrf(self) -> None:
         supplied = self.headers.get("X-Efferents-CSRF", "")
@@ -213,6 +258,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
                          _CONTENT_TYPES.get(path.suffix, "application/octet-stream"))
         self.send_header("Content-Length", str(len(data)))
         self._security_headers(frameable=frameable)
+        if path.suffix == ".svg":
+            self.send_header("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; sandbox")
         self.end_headers()
         self.wfile.write(data)
 

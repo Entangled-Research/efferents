@@ -1,0 +1,1 @@
+"""Private event gateway service."""

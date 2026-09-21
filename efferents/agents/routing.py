@@ -107,7 +107,7 @@ def decide(submission: Path, *, registry: Registry, use_model: bool = True) -> d
     decision["candidates"] = [profile["lab_id"] for _, profile in candidates]
     if not candidates:
         return decision
-    model = model_for("router") or "zai/glm-5.3"
+    model = model_for("router") or model_for("student")
     if use_model and credentials_available(model):
         from efferents.agents.researcher import _simple_call
         ledger = _home() / "routing" / "costs.jsonl"

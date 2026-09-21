@@ -1,9 +1,10 @@
 let csrfToken = "";
 let controlState = { connected: false, hydrated: false };
-let portfolioState = { labs: [], edges: [] };
+let portfolioState = { labs: [], edges: [], findings: [], observations: [], eventNetwork: null };
 let isConnecting = false;
 let runtimeAction = "start";
 let renderedRoute = "";
+let pendingTrialLab = null;
 
 function readStored(key, fallback) {
   try {
@@ -279,6 +280,7 @@ function renderControl(info) {
   text("observe-lab-meta", `${info.domain || "unclassified"} / ${info.status || "stopped"}`);
   text("connection-source", info.source || info.submission_dir || "local submission");
   setRuntimeStatus(info.status);
+  document.getElementById("trial-lab").disabled = pausedDemo || info.status === "running";
   setContractState(info.contract);
   renderSteering(info.steering);
 
@@ -420,106 +422,171 @@ function portfolioNodePosition(index, count) {
   };
 }
 
+// Geometry adapted from docs/prototypes/event-network.html: journal hubs,
+// curved home branches, lab nuclei, idea tips and a selected-lab inspector.
+let networkSelection = null;
+function homeJournal(lab) {
+  if (lab.journal) return lab.journal;
+  const domain = (lab.domain || "").toLowerCase();
+  if (/machine.learning|active.learning|^ml$/.test(domain)) return "ML & Autonomous Systems";
+  if (/vehicle|traffic|simulation|routing|transport/.test(domain)) return "Simulation & Autonomous Systems";
+  if (/physics|orbit|mechanics/.test(domain)) return "Physics & Dynamics";
+  if (/math|graph|numerical|algorithm|optimi/.test(domain)) return "Mathematics & Computation";
+  return lab.domain || "General Research";
+}
 function renderNetwork() {
-  const labs = portfolioState.labs || [];
+  if (pendingTrialLab) {
+    const trialLab = portfolioState.labs.find((lab) => lab.lab_id === pendingTrialLab);
+    if (trialLab && trialLab.status !== "running") {
+      text("network-action-state", `${pendingTrialLab}: trial ended · inspect metrics and verdict`);
+      pendingTrialLab = null;
+    }
+  }
+  const localIds = new Set(portfolioState.labs.map(lab => lab.lab_id));
+  const labs = [...portfolioState.labs, ...(portfolioState.eventNetwork?.labs || []).filter(lab => !localIds.has(lab.lab_id))];
+  const findings = [...portfolioState.findings, ...(portfolioState.eventNetwork?.findings || [])];
+  const observations = [...portfolioState.observations, ...(portfolioState.eventNetwork?.observations || [])];
   const lines = document.getElementById("network-lines");
   const nodes = document.getElementById("network-nodes");
   const journalsLayer = document.getElementById("network-journals");
   const ideasLayer = document.getElementById("network-ideas");
+  [lines, nodes, journalsLayer, ideasLayer].forEach(el => el.replaceChildren());
+  document.querySelector(".network-hub").hidden = true;
   const empty = document.getElementById("network-empty");
-  const hub = document.querySelector(".network-hub");
+  empty.hidden = labs.length > 0;
+  empty.textContent = "Start a documented lab to send findings to its journal inbox.";
+  const groups = new Map();
+  labs.forEach(lab => {
+    const key = homeJournal(lab);
+    groups.set(key, [...(groups.get(key) || []), lab]);
+  });
+  const narrow = document.getElementById("lab-map").clientWidth < 600;
+  const cols = narrow ? 1 : 2;
+  const rowSize = 290;
+  const groupRows = [...groups.values()].map(m => Math.ceil(m.length / 2));
+  const rowHeights = [];
+  for (let i=0; i<groupRows.length; i+=cols) rowHeights.push(100 + rowSize * Math.max(...groupRows.slice(i,i+cols)));
+  const height = Math.max(460, rowHeights.reduce((a,b) => a+b,0));
+  document.getElementById("lab-map").style.height = height + "px";
+  document.getElementById("lab-map").style.minHeight = height + "px";
+  lines.setAttribute("viewBox", `0 0 1000 ${height}`);
   const positions = new Map();
-  lines.innerHTML = "";
-  nodes.innerHTML = "";
-  journalsLayer.innerHTML = "";
-  ideasLayer.innerHTML = "";
-  text("network-node-count", `${labs.length} ${labs.length === 1 ? "node" : "nodes"}`);
-
-  if (!labs.length) {
-    empty.hidden = false;
-    empty.textContent = "Connect a lab";
-    hub.hidden = true;
-    return;
-  }
-  empty.hidden = true;
-  hub.hidden = false;
-
-  labs.forEach((lab, index) => {
-    const position = portfolioNodePosition(index, labs.length);
-    positions.set(lab.lab_id, position);
-    lines.appendChild(svgElement("line", {
-      x1: 500,
-      y1: 280,
-      x2: position.x * 10,
-      y2: position.y * 5.6,
-      class: "hub-edge",
-    }));
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = `map-node ${lab.status || "stopped"}${lab.selected ? " selected" : ""}`;
-    button.dataset.mapLab = lab.lab_id;
-    button.style.left = `${position.x}%`;
-    button.style.top = `${position.y}%`;
-    button.innerHTML = `<span class="map-node-state"><i aria-hidden="true"></i>${esc(lab.status || "stopped")}</span>` +
-      `<strong>${esc(lab.lab_id)}</strong><small>${esc(lab.domain || "unclassified")}</small>`;
-    button.addEventListener("click", async () => {
-      await openLabTab(lab.lab_id);
-    });
-    nodes.appendChild(button);
-  });
-
-  // A journal is the live domain community around a lab cluster. The current
-  // hypothesis is shown as a short branch so the map explains what each lab is
-  // exchanging, without inventing an additional feed or status model.
-  const journals = new Map();
-  labs.forEach((lab) => {
-    const key = lab.domain || "unclassified";
-    const group = journals.get(key) || [];
-    group.push(lab);
-    journals.set(key, group);
-  });
-  journals.forEach((members, domain) => {
-    const points = members.map((lab) => positions.get(lab.lab_id));
-    const center = points.reduce((sum, point) => ({ x: sum.x + point.x, y: sum.y + point.y }), { x: 0, y: 0 });
-    center.x /= points.length;
-    center.y /= points.length;
+  const centers = new Map();
+  const defs = svgElement("defs", {});
+  const marker = svgElement("marker", {id:"observation-arrow", viewBox:"0 0 10 10", refX:9, refY:5, markerWidth:6, markerHeight:6, orient:"auto"});
+  marker.appendChild(svgElement("path", {d:"M0 0 L10 5 L0 10", fill:"none", class:"observation-arrow"}));
+  defs.appendChild(marker); lines.appendChild(defs);
+  const path = (a,b,cls,offset=0) => {
+    const bend = (a.y+b.y)/2;
+    return svgElement("path", {d:`M${a.x},${a.y} C${a.x+offset},${bend} ${b.x+offset},${bend} ${b.x},${b.y}`, class:cls, fill:"none"});
+  };
+  [...groups.entries()].forEach(([name,members],gi) => {
+    const row = Math.floor(gi/cols);
+    const y = rowHeights.slice(0,row).reduce((a,b)=>a+b,0)+45;
+    const x = (gi%cols+0.5)*1000/cols;
+    centers.set(name,{x,y:y+28});
     const label = document.createElement("div");
     label.className = "network-journal";
-    label.style.left = `${center.x}%`;
-    label.style.top = `${Math.max(7, center.y - 22)}%`;
-    label.innerHTML = `<small>journal</small>${esc(domain)}`;
+    label.style.left = x/10+"%"; label.style.top = y+"px";
+    const routed = findings.filter(item => homeJournal(item) === name).length;
+    label.innerHTML = `<small>GLOBAL JOURNAL · PRIVATE INBOX</small><b>${esc(name)}</b><small>${members.length} labs · ${routed} shared records</small>`;
     journalsLayer.appendChild(label);
-    members.forEach((lab) => {
-      const position = positions.get(lab.lab_id);
-      const question = lab.hypothesis?.question || lab.hypothesis?.claim || "Awaiting first hypothesis";
-      const idea = document.createElement("div");
-      idea.className = "network-idea";
-      idea.style.left = `${position.x}%`;
-      idea.style.top = `${Math.min(91, position.y + 15)}%`;
-      idea.textContent = question.length > 78 ? `${question.slice(0, 75)}…` : question;
+    members.sort((a,b)=>(a.goal||a.approach||a.lab_id).localeCompare(b.goal||b.approach||b.lab_id)).forEach((lab,i) => {
+      const p = {x:x+(i%2 ? 1:-1)*(narrow?225:120), y:y+135+Math.floor(i/2)*rowSize};
+      positions.set(lab.lab_id,p);
+      for(let f=-2;f<=2;f++) lines.appendChild(path(centers.get(name),p,"journal-fiber",f*7));
+      // The prototype's branching nuclei distinguish a lab from its journal hub.
+      for(let f=0;f<18;f++) {
+        const angle=f*Math.PI/9;
+        const tip={x:p.x+Math.cos(angle)*30,y:p.y+Math.sin(angle)*26};
+        lines.appendChild(path(p,tip,"lab-fiber",Math.sin(f)*12));
+      }
+      lines.appendChild(svgElement("circle",{cx:p.x,cy:p.y,r:6,class:"lab-nucleus"}));
+      const button = document.createElement(lab.remote ? "div" : "button");
+      if(!lab.remote) button.type="button";
+      button.className = "map-node organism-lab " + (lab.status||"stopped");
+      button.dataset.mapLab=lab.lab_id;
+      button.style.left=p.x/10+"%"; button.style.top=(p.y+52)+"px";
+      button.setAttribute("aria-pressed", String(networkSelection===lab.lab_id));
+      button.innerHTML=`<strong>${esc(lab.lab_id)}</strong><small>${esc(lab.status||"stopped")}${lab.remote?" · read only":""}</small>`;
+      button.addEventListener("click",()=>{networkSelection=lab.lab_id;renderNetwork();});
+      nodes.appendChild(button);
+      const idea=document.createElement("div");idea.className="network-idea";
+      idea.style.left=p.x/10+"%";idea.style.top=(p.y+125)+"px";
+      idea.textContent=lab.approach||lab.hypothesis?.question||lab.domain;
       ideasLayer.appendChild(idea);
+      lines.appendChild(path({x:p.x,y:p.y+84},{x:p.x,y:p.y+111},"idea-branch",20));
     });
   });
-
-  (portfolioState.edges || []).forEach((edge) => {
-    const source = positions.get(edge.source);
-    const target = positions.get(edge.target);
-    if (!source || !target) return;
-    lines.appendChild(svgElement("line", {
-      x1: source.x * 10,
-      y1: source.y * 5.6,
-      x2: target.x * 10,
-      y2: target.y * 5.6,
-      class: "domain-edge",
-    }));
+  const pairs=new Map(observations.map(o=>[`${o.source}:${o.target}`,o]));
+  pairs.forEach(o=>{
+    const a=positions.get(o.source),b=positions.get(o.target);
+    if(!a||!b)return;
+    const edge=path(a,b,"observation-edge visiting-branch",a.x<b.x?-45:45);
+    edge.setAttribute("marker-end","url(#observation-arrow)");
+    const title=svgElement("title",{});title.textContent=`${o.target} received a finding from ${o.source}`;
+    edge.appendChild(title);lines.appendChild(edge);
   });
+  text("network-node-count", `${labs.length} labs · ${groups.size} journals`);
+  const selected=labs.find(l=>l.lab_id===networkSelection)||labs[0];
+  const inspector=document.getElementById("network-selection");
+  if(selected){
+    networkSelection=selected.lab_id;
+    const owned=findings.filter(f=>f.lab_id===selected.lab_id);
+    const received=observations.filter(o=>o.target===selected.lab_id);
+    const visits=[...new Set(received.map(o=>labs.find(l=>l.lab_id===o.source)).filter(Boolean).map(homeJournal))].filter(j=>j!==homeJournal(selected));
+    inspector.innerHTML=`<h3>${esc(selected.lab_id)}</h3><dl><dt>Home journal</dt><dd>${esc(homeJournal(selected))}</dd><dt>Visiting connections</dt><dd>${visits.map(esc).join(" · ")||"No cross-journal receipts yet"}</dd><dt>Research direction</dt><dd>${esc(selected.hypothesis?.question||selected.approach||selected.domain)}</dd><dt>Shared goal</dt><dd>${esc(selected.goal||"Independent research")}</dd><dt>Evidence</dt><dd>${owned.length} shared records · ${received.length} receipts</dd><dt>Status</dt><dd>${esc(selected.status||"stopped")} · ${esc(selected.verdict?.line||"Awaiting evidence")}</dd></dl><p class="form-hint">Journal routing is not acceptance or public publication. Visiting connections show receipt, not replication.</p>`;
+    if(!selected.remote){const open=document.createElement("button");open.className="compact-button";open.textContent="Open lab evidence";open.onclick=()=>openLabTab(selected.lab_id);inspector.appendChild(open);}
+  }else inspector.textContent="Select a lab to inspect journal routes and evidence.";
+  if(!controlState.connected && labs.length)setRuntimeStatus("ready");
+  renderEventAdmin();renderExchange();
+}
 
+function renderExchange() {
+  const findings = new Map([...portfolioState.findings, ...(portfolioState.eventNetwork?.findings || [])].map((item) => [item.id, item]));
+  const receipts = [...portfolioState.observations, ...(portfolioState.eventNetwork?.observations || [])];
+  text("exchange-count", `${findings.size} shared items · ${receipts.length} receipts`);
+  const feed = document.getElementById("exchange-feed");
+  const rows = Array.from(findings.values()).reverse().slice(0, 30);
+  feed.innerHTML = rows.length ? rows.map((item) => {
+    const observers = [...new Set(receipts.filter((r) => r.finding_id === item.id).map((r) => r.target))];
+    return `<article class="exchange-record"><div class="exchange-record-meta"><strong>${esc(item.lab_id)}</strong>` +
+      `<span>${esc(item.kind)} → ${esc(homeJournal(item))}</span></div>` +
+      (item.kind === "hypothesis" ? `<details><summary>Experiment claim</summary><p>${esc(item.body)}</p></details>` : `<p>${esc(item.body)}</p>`) + `<div class="exchange-provenance">` +
+      `${item.run_id ? `Run ${esc(item.run_id)} · ` : ""}Record ${esc(item.id.slice(0, 12))}` +
+      `</div><div class="exchange-receipt">${observers.length ? `Received by ${observers.map(esc).join(", ")}` : "Awaiting a peer visit"}</div></article>`;
+  }).join("") : '<div class="empty-state">Opt in to exchange, then run an experiment. Real findings and delivery receipts appear here.</div>';
+  const goals = [...new Set(portfolioState.labs.map((lab) => lab.goal).filter(Boolean))];
+  document.getElementById("known-goals").innerHTML = goals.map((goal) => `<option value="${esc(goal)}"></option>`).join("");
+}
+
+function renderEventAdmin() {
+  const network = portfolioState.eventNetwork;
+  const panel = document.getElementById("event-admin-panel");
+  panel.hidden = !network?.configured;
+  if (!network?.configured) return;
+  const event = network.event || {};
+  text("event-admin-meta", network.available ? "live · sanitized summaries" : "registry unavailable");
+  text("event-id", event.event_id || "—");
+  text("event-spend", `$${Number(event.spent_usd || 0).toFixed(4)} / $${Number(event.total_cap_usd || 0).toFixed(2)}`);
+  text("event-token-count", String(event.token_count ?? network.tokens?.length ?? 0));
+  text("event-generated-at", formatTimestamp(network.generated_at, true));
+  const body = document.querySelector("#event-tokens tbody");
+  const tokens = Array.isArray(network.tokens) ? network.tokens : [];
+  body.innerHTML = tokens.length ? tokens.map((token) =>
+    `<tr><td>${esc(token.token_id)}</td><td>${esc(token.lab_id)}</td>` +
+    `<td>${esc(token.status)}</td><td>$${Number(token.spent_usd || 0).toFixed(4)} / $${Number(token.cap_usd || 0).toFixed(2)}</td>` +
+    `<td>${esc(token.requests || 0)}</td><td>${esc(formatTimestamp(token.last_sync_at, true))}</td></tr>`
+  ).join("") : '<tr><td colspan="6" class="empty-state">No event tokens issued</td></tr>';
 }
 
 function renderPortfolio(payload) {
   portfolioState = {
     labs: Array.isArray(payload?.labs) ? payload.labs : [],
     edges: Array.isArray(payload?.edges) ? payload.edges : [],
+    findings: Array.isArray(payload?.findings) ? payload.findings : [],
+    observations: Array.isArray(payload?.observations) ? payload.observations : [],
+    eventNetwork: payload?.event_network || null,
   };
   portfolioBudget = portfolioState.labs.reduce(
     (sum, lab) => ({
@@ -1164,6 +1231,54 @@ function initConnectForm() {
   });
 }
 
+function initOnboarding() {
+  const mode = document.getElementById("onboard-mode");
+  mode.addEventListener("change", () => { document.getElementById("onboard-goal-field").hidden = mode.value !== "shared"; });
+  const submit = async (run) => {
+    const buttons = [document.getElementById("onboard-run"), document.getElementById("onboard-create")];
+    buttons.forEach((button) => { button.disabled = true; });
+    showMessage("onboard-message", "Recording choices and creating your lab…");
+    try {
+      const goal = mode.value === "shared" ? (document.getElementById("onboard-goal").value.trim() || "Reduce congestion") : "";
+      const info = await postJSON("/api/onboard", {
+        confirmed: true, run, goal, idea: document.getElementById("onboard-idea").value,
+        starter: document.getElementById("onboard-starter").value,
+        approach: document.getElementById("onboard-approach").value,
+        exchange: document.getElementById("onboard-exchange").checked,
+      });
+      renderControl(info);
+      showMessage("onboard-message", `${info.lab_id} · ${info.decisions.starter} · choices saved in context/onboarding.json`, "success");
+      window.location.hash = "network";
+      pendingTrialLab = run ? info.lab_id : null;
+      text("network-action-state", run ? `${info.lab_id}: three experiments started` : `${info.lab_id}: ready to run`);
+      await refreshPortfolio();
+    } catch (error) { showMessage("onboard-message", error.message, "error"); }
+    finally { buttons.forEach((button) => { button.disabled = false; }); }
+  };
+  document.getElementById("onboard-form").addEventListener("submit", (event) => { event.preventDefault(); submit(true); });
+  document.getElementById("onboard-create").addEventListener("click", () => submit(false));
+  document.getElementById("network-observe").addEventListener("click", async (event) => {
+    event.target.disabled = true;
+    try {
+      const result = await postJSON("/api/network/observe", {});
+      pendingTrialLab = null;
+      text("network-action-state", `${result.received} new findings received`);
+      await refreshPortfolio();
+    } catch (error) { text("network-action-state", error.message); }
+    finally { event.target.disabled = false; }
+  });
+  document.getElementById("trial-lab").addEventListener("click", async (event) => {
+    event.target.disabled = true;
+    try {
+      await postJSON("/api/lab/trial", { runs: 3 });
+      pendingTrialLab = controlState.lab_id;
+      text("network-action-state", "Three real experiments started · no model calls");
+      window.location.hash = "network";
+    } catch (error) { text("network-action-state", error.message); }
+    finally { event.target.disabled = false; }
+  });
+}
+
 function initSteeringForm() {
   const form = document.getElementById("steer-form");
   const message = document.getElementById("steer-message");
@@ -1204,7 +1319,7 @@ function openRuntimeDialog(action) {
   text(
     "runtime-dialog-copy",
     starting
-      ? "Repository commands · local compute · configured LLM budget"
+      ? "Up to 3 agent iterations · local repository commands · configured LLM budget. Missing credit or credentials stops this run."
       : "Stop after current process · preserve written evidence",
   );
   text(
@@ -1263,6 +1378,7 @@ initRouting();
 initPanelToggles();
 initIntakeTabs();
 initConnectForm();
+initOnboarding();
 initSteeringForm();
 initRuntimeControls();
 refresh();

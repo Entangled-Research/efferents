@@ -27,6 +27,7 @@ if TYPE_CHECKING:
 _ACTIVITY_BODY_PREVIEW = 300
 _EVIDENCE_RUN_LIMIT = 120
 ARTIFACT_CONTENT_TYPES = {
+    ".svg": "image/svg+xml",
     ".gif": "image/gif",
     ".jpeg": "image/jpeg",
     ".jpg": "image/jpeg",
@@ -548,7 +549,8 @@ def _current_hypothesis(lab_root: Path, lab_id: str) -> dict:
     if hyp_md.exists():
         text = hyp_md.read_text()
         claim = _section(text, "Claim") or _section(text, "Operational restatement")
-        falsifier = _section(text, "Falsifier") or _section(text, "Falsifier(s)")
+        falsifier = (_section(text, "Falsifier") or _section(text, "Falsifier(s)")
+                     or _section(text, "Stop condition"))
     return {"question": question, "claim": claim,
             "falsifier": falsifier, "student": student}
 

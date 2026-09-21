@@ -4,6 +4,63 @@ name: efferents
 # existing loopback listener without exposing port 8800 on a public address.
 # Keep the Droplet firewall open only for SSH, HTTP, and HTTPS.
 services:
+  event-service:
+    build:
+      context: ../..
+      dockerfile: deploy/event_gateway/Dockerfile
+    image: efferents-event-service:local
+    init: true
+    restart: unless-stopped
+    network_mode: host
+    user: "10002:10002"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 128
+    environment:
+      EVENT_ID: "${EVENT_ID:?Set EVENT_ID in deploy/digitalocean/.env}"
+      EVENT_PUBLIC_URL: "https://${EFFERENTS_HOSTNAME:?Set EFFERENTS_HOSTNAME in deploy/digitalocean/.env}"
+      EVENT_ENROLLMENT_CODE: "${EVENT_ENROLLMENT_CODE:?Set EVENT_ENROLLMENT_CODE in deploy/digitalocean/.env}"
+      EVENT_ADMIN_KEY: "${EVENT_ADMIN_KEY:?Set EVENT_ADMIN_KEY in deploy/digitalocean/.env}"
+      EVENT_EXPIRES_AT: "${EVENT_EXPIRES_AT:?Set EVENT_EXPIRES_AT in deploy/digitalocean/.env}"
+      EVENT_TOKEN_CAP_USD: "${EVENT_TOKEN_CAP_USD:-3.0}"
+      EVENT_TOTAL_CAP_USD: "${EVENT_TOTAL_CAP_USD:-50.0}"
+      EVENT_REQUESTS_PER_MINUTE: "${EVENT_REQUESTS_PER_MINUTE:-30}"
+      EVENT_STALE_AFTER_SECONDS: "${EVENT_STALE_AFTER_SECONDS:-180}"
+      EVENT_MAX_OUTPUT_TOKENS: "${EVENT_MAX_OUTPUT_TOKENS:-16384}"
+      EVENT_AZURE_OPENAI_BASE: "${EVENT_AZURE_OPENAI_BASE:?Set EVENT_AZURE_OPENAI_BASE in deploy/digitalocean/.env}"
+      EVENT_AZURE_OPENAI_API_KEY: "${EVENT_AZURE_OPENAI_API_KEY:?Set EVENT_AZURE_OPENAI_API_KEY in deploy/digitalocean/.env}"
+      EVENT_AZURE_FAST_DEPLOYMENT: "${EVENT_AZURE_FAST_DEPLOYMENT:?Set EVENT_AZURE_FAST_DEPLOYMENT}"
+      EVENT_AZURE_FAST_INPUT_USD_PER_MTOK: "${EVENT_AZURE_FAST_INPUT_USD_PER_MTOK:?Set Azure fast input price}"
+      EVENT_AZURE_FAST_OUTPUT_USD_PER_MTOK: "${EVENT_AZURE_FAST_OUTPUT_USD_PER_MTOK:?Set Azure fast output price}"
+      EVENT_AZURE_STANDARD_DEPLOYMENT: "${EVENT_AZURE_STANDARD_DEPLOYMENT:?Set EVENT_AZURE_STANDARD_DEPLOYMENT}"
+      EVENT_AZURE_STANDARD_INPUT_USD_PER_MTOK: "${EVENT_AZURE_STANDARD_INPUT_USD_PER_MTOK:?Set Azure standard input price}"
+      EVENT_AZURE_STANDARD_OUTPUT_USD_PER_MTOK: "${EVENT_AZURE_STANDARD_OUTPUT_USD_PER_MTOK:?Set Azure standard output price}"
+      EVENT_AZURE_DEEP_DEPLOYMENT: "${EVENT_AZURE_DEEP_DEPLOYMENT:?Set EVENT_AZURE_DEEP_DEPLOYMENT}"
+      EVENT_AZURE_DEEP_INPUT_USD_PER_MTOK: "${EVENT_AZURE_DEEP_INPUT_USD_PER_MTOK:?Set Azure deep input price}"
+      EVENT_AZURE_DEEP_OUTPUT_USD_PER_MTOK: "${EVENT_AZURE_DEEP_OUTPUT_USD_PER_MTOK:?Set Azure deep output price}"
+    volumes:
+      - event_data:/data/event
+    tmpfs:
+      - /tmp:mode=1777,size=64m
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8801/healthz', timeout=3).read(1)"
+      interval: 20s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
   gateway:
     build:
       context: ../..
@@ -27,10 +84,10 @@ services:
     environment:
       EFFERENTS_HOME: /data/efferents
       POPPER_PROBE_REPO: /data/popper-probe
-      EFFERENTS_MODEL: zai/glm-5.3
-    # Provider/model credentials belong in each submission's .env, loaded by
-    # its lab daemon. The gateway does not receive provider keys through
-    # Compose, and the host shell's environment is not forwarded wholesale.
+      EFFERENTS_EVENT_NETWORK_URL: "http://127.0.0.1:8801/event/v1/network?event_id=${EVENT_ID}"
+      EFFERENTS_EVENT_ADMIN_KEY: "${EVENT_ADMIN_KEY}"
+    # The organizer gateway receives no provider or participant credentials.
+    # Only the separate event-service receives the upstream vendor key.
     volumes:
       - efferents_data:/data
     tmpfs:
@@ -58,6 +115,8 @@ services:
     depends_on:
       gateway:
         condition: service_healthy
+      event-service:
+        condition: service_healthy
     read_only: true
     cap_drop:
       - ALL
@@ -83,7 +142,8 @@ services:
 
 volumes:
   # Named volumes survive rebuilds/restarts and `docker compose down`.
-  # `docker compose down -v` deletes them, including lab evidence and TLS keys.
+  # `docker compose down -v` deletes event history and TLS keys.
   efferents_data:
+  event_data:
   caddy_data:
   caddy_config:

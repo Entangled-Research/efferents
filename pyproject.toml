@@ -31,6 +31,7 @@ build-backend = "flit_core.buildapi"
 name = "efferents"
 
 [tool.pytest.ini_options]
+testpaths = ["tests", "efferents/templates/starter-evacuation-lab/tests"]
 markers = [
     "slow: integration tests that exec real lab CLIs end-to-end",
     "integration: end-to-end tests that require ANTHROPIC_API_KEY and execute the daemon",

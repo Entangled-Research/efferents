@@ -1,0 +1,28 @@
+lab_id: documented-starter
+domain: mathematics
+approach: dsatur-vs-greedy
+hypothesis_validation: lightweight
+source:
+  dir: ./src
+  allowed_patterns: ["**/*.py"]
+executor:
+  run_command: "python3 run_experiment.py --config {config_path}"
+  config_template: ../configs/default.yaml
+  run_timeout_s: 25
+metrics:
+  headline: {column: improvement, direction: max}
+  panels:
+    - {column: baseline, label: Baseline, direction: min}
+    - {column: candidate, label: Candidate, direction: min}
+    - {column: reference, label: Reference, direction: min}
+    - {column: valid, label: Valid output, direction: max}
+falsifiers:
+  - id: no-improvement
+    description: Candidate is worse than baseline on the bounded comparison.
+    when: {column: improvement, agg: median, op: "<", value: 0, min_n: 1}
+  - id: invalid-output
+    description: Invalid output or collision fails the experiment.
+    when: {column: valid, agg: min, op: "<", value: 1, min_n: 1}
+budget: {daily_cap_usd: 1.0, total_cap_usd: 2.0}
+autonomy: {coder_enabled: true, coder_mode: review}
+conference: {enabled: false}

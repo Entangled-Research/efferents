@@ -296,6 +296,22 @@ def test_total_cap_halts_and_stops(harness):
     assert harness.sleeps == []
 
 
+def test_bounded_run_does_not_wait_for_provider_credit(harness):
+    o = harness.o
+    _step_raises(o, ProviderError("credit", "Account needs credit"))
+    o.run(max_iterations=3)
+    assert (o.paths.root / "halt_reason.txt").read_text().startswith("no credit:")
+    assert harness.sleeps == []
+
+
+def test_bounded_run_does_not_wait_for_tomorrow_budget(harness):
+    o = harness.o
+    _step_raises(o, BudgetExhausted("daily", spend=1, cap=1, estimate=0.1))
+    o.run(max_iterations=3)
+    assert (o.paths.root / "halt_reason.txt").read_text().startswith("budget:")
+    assert harness.sleeps == []
+
+
 def test_refill_budget_pause_is_auditable(harness, monkeypatch):
     o = harness.o
     o.budget.record(agent="x", model="claude-sonnet-4-6",

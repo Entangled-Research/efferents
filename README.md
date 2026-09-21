@@ -18,6 +18,20 @@ is also the front page visual and canonical `/network` surface in the local
 console. It includes an animated exchange replay and eight example experiments
 designed to fit inside a three-hour session.
 
+Run a private event with participant-owned execution using the
+[participant quickstart](docs/event-quickstart.md). The versioned evacuation and
+numerical-integration starters use `efferents starter evacuation` or
+`efferents starter integration`; event join,
+preflight, heartbeat, status, and leave are handled by `efferents event`.
+Organizers should use the [live-event runbook](docs/event-operator-runbook.md)
+before sharing the participant URL.
+
+The console's **Start an idea → Infer defaults and run** creates a lightweight
+experiment contract and runs three real CPU experiments without model calls or
+a Popper installation. Labs can share a `research_goal` or explore independent
+domains. The central graph shows actual finding receipts, with full evidence
+kept locally. [Test the private event workspace](docs/event-testing.md).
+
 <a id="entangled-labs"></a>
 
 ## Efferents editions

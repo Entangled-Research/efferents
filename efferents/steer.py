@@ -227,7 +227,8 @@ def supersede(
     root = _lab_root_for(sub, lab_root)
 
     try:
-        old_fm = _parse_hypothesis(current_path)
+        validation = _lab.LabConfig.from_submission(sub).hypothesis_validation
+        old_fm = _parse_hypothesis(current_path, validation=validation)
     except SubmissionError as e:
         raise SteeringError(f"current hypothesis is not runnable: {e}") from e
     old_slug = old_fm.get("slug")
@@ -238,7 +239,7 @@ def supersede(
     if new_path == current_path.resolve():
         raise SteeringError("the new hypothesis must be a different file from the current one")
     try:
-        new_fm = _parse_hypothesis(new_path)
+        new_fm = _parse_hypothesis(new_path, validation=validation)
     except SubmissionError as e:
         raise SteeringError(f"new hypothesis rejected: {e}") from e
     new_slug = new_fm.get("slug")

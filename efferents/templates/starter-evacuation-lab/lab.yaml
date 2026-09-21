@@ -1,0 +1,74 @@
+lab_id: evacuation-starter
+starter_version: 1
+domain: multi-agent-routing
+topic: congestion-aware-evacuation
+approach: local-occupancy-replanning
+
+source:
+  dir: ./src/
+  allowed_patterns:
+    - "**/*.py"
+
+executor:
+  run_command: "python3 run_experiment.py --config {config_path}"
+  smoke_command: "python3 run_experiment.py --config {config_path} --smoke"
+  config_template: ../configs/default.yaml
+  run_timeout_s: 30
+  smoke_timeout_s: 10
+
+metrics:
+  headline:
+    column: evacuation_improvement_pct
+    direction: max
+  panels:
+    - {column: baseline_median_steps, label: "Baseline median steps", direction: min}
+    - {column: candidate_median_steps, label: "Candidate median steps", direction: min}
+    - {column: baseline_p95_steps, label: "Baseline p95 steps", direction: min}
+    - {column: candidate_p95_steps, label: "Candidate p95 steps", direction: min}
+    - {column: baseline_completion_rate, label: "Baseline completion", direction: max, target: 0.95}
+    - {column: candidate_completion_rate, label: "Candidate completion", direction: max, target: 0.95}
+    - {column: baseline_congestion_waits, label: "Baseline congestion waits", direction: min}
+    - {column: candidate_congestion_waits, label: "Candidate congestion waits", direction: min}
+    - {column: candidate_reroute_count, label: "Candidate reroutes", direction: min}
+  constraints:
+    - {column: candidate_completion_rate, op: ">=", value: 0.95, label: "Candidate completes at least 95%"}
+  bucket_axes: []
+  flat_digest_epsilon: 0.01
+
+evidence:
+  comparison:
+    axis: policy
+    labels:
+      static: "Static shortest path"
+      congestion: "Congestion-aware"
+    order: [static, congestion]
+
+falsifiers:
+  - id: improvement-below-target
+    description: Median improvement is below 10 percent after 12 valid paired seeds.
+    when:
+      column: evacuation_improvement_pct
+      agg: median
+      op: "<"
+      value: 10
+      min_n: 12
+  - id: completion-below-target
+    description: Candidate completion falls below 95 percent after 12 paired seeds.
+    when:
+      column: candidate_completion_rate
+      agg: min
+      op: "<"
+      value: 0.95
+      min_n: 12
+
+budget:
+  daily_cap_usd: 1.0
+  total_cap_usd: 2.0
+  sonnet_default: true
+
+autonomy:
+  coder_enabled: true
+  coder_mode: review
+
+conference:
+  enabled: false

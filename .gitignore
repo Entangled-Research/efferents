@@ -26,11 +26,16 @@ uv.lock
 lab/
 data/
 popper-corpus/
+!efferents/templates/starter-evacuation-lab/popper-corpus/
+!efferents/templates/starter-evacuation-lab/popper-corpus/**
+!efferents/templates/starter-documented-lab/data/
+!efferents/templates/starter-documented-lab/data/**
 
 # Offline demo / run output (`efferents demo`, `efferents run`)
 efferents-demo/
 efferents-run/
 demo-output/
+/event-output/
 
 # Local manuscript sources and rendered workshop artifacts belong in
 # https://github.com/Entangled-Research/paper, not this framework repository.

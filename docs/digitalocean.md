@@ -1,18 +1,19 @@
 # Host the first Efferents workspace on DigitalOcean
 
-This deploys the existing research console at an HTTPS URL with an organizer
-login. You can connect a lab, run it on the server, inspect evidence, and steer
-or stop it. The image includes the animated event network used on the landing
-page and `/network` route. A domain purchase and model API key are not needed
-for the first smoke test.
+This deploys the private event control plane: an HTTPS organizer console, a
+read-only projected network of sanitized participant heartbeats, and a separate
+OpenAI-compatible model proxy. Participant labs execute on their own laptops;
+their source, raw data, prompts, evidence, artifacts, steering, and local budget
+ledger are not uploaded.
 
-**Scope:** one trusted organizer. Keep the login to yourself. The current
-workspace has a shared selected lab and no per-student permissions or execution
-isolation. Participants' laptop labs do not automatically register with this
-server. Network lines indicate shared domains; automatic exchange of findings,
-replication, and challenges across machines is a subsequent implementation step.
-Manual journal and evidence-bundle exchange already exists in
-`efferents.agents.federation`.
+**Scope:** one trusted organizer and revocable per-lab event tokens. Keep the
+organizer login and event admin key to yourself. Participants receive the
+enrollment code at the event and exchange it for individual opaque tokens.
+Bounded measurements and agent discussion can be shared with explicit
+`--share-findings` consent. The graph displays receipt records, not automatic
+corroborations. Reproduction requests and participant web accounts remain
+outside this deployment. Browser idea creation runs on the console's host;
+participants use their own local console or the participant CLI.
 
 ## 1. Create a small server
 
@@ -53,10 +54,11 @@ in your working tree; they do not need to be pushed to GitHub first.
 cd /Users/masha/Documents/efferents
 EVENT_IP=203.0.113.10
 tar --exclude=__pycache__ --exclude='*.pyc' --exclude=.env \
-  --exclude=.env.live --exclude=.git --exclude=lab --exclude=popper-corpus \
+  --exclude=.env.live --exclude=.git --exclude=lab \
   -czf /tmp/efferents-hosting.tgz \
   pyproject.toml README.md LICENSE NOTICE .dockerignore \
-  efferents deploy/digitalocean examples/smoke-lab
+  efferents deploy/digitalocean deploy/event_gateway \
+  docs/prototypes/event-network.html examples/smoke-lab
 ssh root@"$EVENT_IP" 'mkdir -p /opt/efferents'
 scp /tmp/efferents-hosting.tgz root@"$EVENT_IP":/tmp/
 ssh root@"$EVENT_IP"
@@ -102,7 +104,7 @@ installation, use [Docker's installation instructions](https://docs.docker.com/e
 The deployment uses **Linux host networking**, so it is intended for the
 Droplet, not Docker Desktop's default networking on a Mac.
 
-## 4. Set the URL and organizer password
+## 4. Set the URL, event limits, and secrets
 
 Generate a password hash interactively; the password will not be put in shell
 history:
@@ -115,18 +117,75 @@ chmod 600 .env
 nano .env
 ```
 
-Set these three values. Substitute your actual IP, using dashes, and paste the
-complete hash from the preceding command **inside single quotes**:
+Set the organizer login, event identity/expiry, generated enrollment/admin
+secrets, server-side caps, and Azure resource key. Substitute your actual IP, using
+dashes, and paste the complete Basic Auth hash **inside single quotes**:
 
 ```dotenv
 EFFERENTS_HOSTNAME=203-0-113-10.sslip.io
 EFFERENTS_AUTH_USER=organizer
 EFFERENTS_AUTH_HASH='$2a$...paste the complete generated hash here...'
+EVENT_ID=autoresearch-night-2026-09
+EVENT_ENROLLMENT_CODE=...random value shown only to participants...
+EVENT_ADMIN_KEY=...different random value kept by organizer...
+EVENT_EXPIRES_AT=2026-09-25T00:00:00+00:00
+EVENT_TOKEN_CAP_USD=3.0
+EVENT_TOTAL_CAP_USD=50.0
+EVENT_AZURE_OPENAI_BASE=https://YOUR-RESOURCE.openai.azure.com/openai/v1
+EVENT_AZURE_OPENAI_API_KEY=...Azure resource key...
+EVENT_AZURE_FAST_DEPLOYMENT=...name of your fast deployment...
+EVENT_AZURE_FAST_INPUT_USD_PER_MTOK=...actual price...
+EVENT_AZURE_FAST_OUTPUT_USD_PER_MTOK=...actual price...
+EVENT_AZURE_STANDARD_DEPLOYMENT=...name of your standard deployment...
+EVENT_AZURE_STANDARD_INPUT_USD_PER_MTOK=...actual price...
+EVENT_AZURE_STANDARD_OUTPUT_USD_PER_MTOK=...actual price...
+EVENT_AZURE_DEEP_DEPLOYMENT=...name of your deep deployment...
+EVENT_AZURE_DEEP_INPUT_USD_PER_MTOK=...actual price...
+EVENT_AZURE_DEEP_OUTPUT_USD_PER_MTOK=...actual price...
 ```
 
 The example address will not work; replace it. Do not include `https://` or a
 path in `EFFERENTS_HOSTNAME`. The single quotes preserve dollar signs in the
-hash when Compose reads `.env`.
+hash when Compose reads `.env`. Generate the two event secrets independently
+with `python -c 'import secrets; print(secrets.token_urlsafe(32))'`. The vendor
+key is passed only to `event-service`; it is not present in the organizer
+gateway or participant labs. The three aliases are configured to Azure
+deployment names server-side. Prices are set from your actual Azure rates and
+are shared with local labs for budget estimates. The server independently
+enforces the event token and total caps.
+
+### Connect Microsoft Azure
+
+1. Sign in to the Azure portal with the account that received the $5,000
+   credits. Confirm the correct **subscription**, credit balance, expiration,
+   and whether Azure OpenAI consumption is eligible for that offer. Microsoft
+   for Startups guidance covers models sold directly by Azure, not
+   partner/Marketplace-billed models. Check your own offer terms.
+2. In Microsoft Foundry, create or select an Azure OpenAI resource in a region
+   with capacity. Deploy three **pay-as-you-go** Chat Completions-compatible
+   models: GPT-4.1 nano (`fast`), GPT-5.6 Luna (`standard`), and
+   GPT-5.6 Sol (`deep`). Record the exact deployment names, not merely model IDs.
+   Check the GPT-5.6 quota for your subscription; access is not automatic.
+   Avoid Provisioned Throughput for this short event unless explicitly costed.
+3. From the resource's endpoint/key page, copy the resource HTTPS endpoint
+   and append `/openai/v1` to form `EVENT_AZURE_OPENAI_BASE`. Put the key only
+   in the private `deploy/digitalocean/.env` as `EVENT_AZURE_OPENAI_API_KEY`.
+   Never paste it into a participant lab or a support message.
+4. Fill all three deployment names and their **actual** per-million input and
+   output token prices in `.env`; verify the region, deployment type, and
+   billing meter. Keep `EVENT_TOKEN_CAP_USD=3.0` and
+   `EVENT_TOTAL_CAP_USD=50.0` for rehearsal. Azure cost budgets provide alerts,
+   not automatic shutdown.
+5. Start the services below. Join a throwaway local lab, run `efferents event
+   doctor`, then make one fast, standard, and deep request through its event
+   token, including a tool call. Confirm each hit its intended deployment and
+   appears in Azure usage/Cost Management. Revoke that token afterward. Do a
+   two-laptop venue rehearsal before distributing the live enrollment code.
+
+Azure references: [v1 endpoint and key](https://learn.microsoft.com/en-us/azure/foundry/openai/api-version-lifecycle),
+[model deployment](https://learn.microsoft.com/en-us/azure/foundry/foundry-models/how-to/deploy-foundry-models),
+[startup-credit coverage](https://learn.microsoft.com/en-us/startups/benefits/technical-benefits/azure-credits/foundry-model-sponsorship-coverage),
+[budget alerts](https://learn.microsoft.com/en-us/azure/cost-management-billing/costs/cost-mgt-alerts-monitor-usage-spending).
 
 [sslip.io](https://nip.io/) provides DNS for an IP embedded in a hostname, so no
 domain registration is necessary. Caddy obtains and renews the HTTPS certificate
@@ -139,170 +198,115 @@ server. [Caddy HTTPS documentation](https://caddyserver.com/docs/automatic-https
 docker compose config --quiet
 docker compose up -d --build
 docker compose ps
-docker compose logs --tail=50 caddy gateway
+docker compose logs --tail=50 caddy gateway event-service
+docker compose exec caddy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
 ```
 
 Open **`https://YOUR-DASHED-IP.sslip.io`** and log in as `organizer` with the
-password you chose. The first image build and certificate request can take a
-few minutes. This is the first hosted link; the new registry starts empty.
+password you chose. Open `#network` for the projector. The first image build and
+certificate request can take a few minutes; the event registry starts empty.
 
-## 5. Run one real experiment without spending tokens
+## 5. Verify the hosted event boundary
 
-Copy the bundled synthetic lab into persistent storage once, then run one
-bounded cycle using canned agent decisions and a real experiment command:
+The event service should be loopback-only and healthy. Its database lives in a
+separate named volume:
 
 ```bash
-docker compose exec gateway cp -R /opt/efferents/examples/smoke-lab /data/submissions/smoke-lab
-docker compose exec gateway efferents start \
-  --submission /data/submissions/smoke-lab --dry-run --max-iterations 1
-docker compose exec gateway efferents list
+curl http://127.0.0.1:8801/healthz
+docker compose exec event-service python /app/app.py admin tokens
+docker compose ps
 ```
-
-Do not repeat the copy over an existing submission. Reload the browser and
-select **smoke-coefficient** in Network. Its run ledger should contain one succeeded
-run with `synthetic_loss` approximately `0.3`, status stopped, and zero model
-spend. This proves the bounded executor, evidence persistence, registry, and
-hosted console work together. It is a synthetic plumbing test, not autonomous
-scientific discovery.
 
 Check public authentication from your laptop (substitute the real hostname):
 
 ```bash
 curl -s -o /dev/null -w '%{http_code}\n' https://YOUR-HOSTNAME/api/control
 curl --user organizer https://YOUR-HOSTNAME/api/labs
+curl -s -o /dev/null -w '%{http_code}\n' https://YOUR-HOSTNAME/v1/models
 ```
 
-The first request must return **401**. The second prompts for your password and
-should return the smoke lab. Never expose the site if the first request returns
-200. Access the workspace with HTTPS, including for command-line requests.
+The first request must return **401**. The second prompts for the organizer
+password and should return `event_network.configured: true`. The third must
+also return **401**, but from the bearer-token event API rather than a Basic
+Auth browser challenge. Never expose organizer routes if the first request
+returns 200. Use HTTPS for every public request.
 
-## 6. Connect and run your own lab
+## 6. Rehearse two participant laptops
 
-The hosted event profile uses `zai/glm-5.3` for every agent role. To use
-Anthropic credits first, set `EFFERENTS_MODEL=claude-sonnet-5,zai/glm-5.3`
-in the submission's `.env`. In that configuration, missing credentials or a provider failure
-(including exhausted credits) falls through to Z.ai's full GLM-5.3. This is
-reactive fallback, not a provider balance lookup. Each new call starts at the
-first candidate, so restored Anthropic credits are picked up automatically.
-The lab's own daily/lifetime cap still stops requests; it is never bypassed
-by fallback. Usage is recorded against the model that actually served it.
+Follow the [participant quickstart](event-quickstart.md) on two separate
+machines. Each lab joins with the same enrollment code but receives a different
+token. Run a bounded local cycle and `efferents event sync`; both labs should
+appear under `#network` without source or evidence details. Disconnect one
+laptop for longer than `EVENT_STALE_AFTER_SECONDS` and confirm only its node
+becomes `stale`.
 
-Put `ZAI_API_KEY` in the submission's `.env`, alongside `ANTHROPIC_API_KEY`
-when available. Use a Z.ai general API account, not a coding-plan endpoint.
-The general endpoint is `https://api.z.ai/api/paas/v4`. Restart the lab after
-changing its model configuration. Provider keys
-are not injected into the web server. See [Z.ai API docs](https://docs.z.ai/api-reference/introduction)
-and [pricing](https://docs.z.ai/guides/overview/pricing).
-
-GLM does not provide Anthropic's hosted web-search tool through this adapter;
-the existing librarian path synthesizes without that tool. A successful live
-research cycle must be verified after adding credentials.
-
-Use your coding agent and the existing [intake](../intake.md) to prepare a
-submission containing `README.md`, `lab.yaml`, and a Popper-passed
-`hypothesis.md`. For a trusted GitHub repository, paste its repository or README
-URL into **Connect → Submit a repo**. It is cloned into the server's persistent
-registry directory. A path submitted through the website refers to the server's
-filesystem, not your laptop.
-
-For a private local submission, transfer a reviewed source archive to the
-Droplet as `/tmp/my-lab.tgz`, excluding credentials and generated lab state.
-The archive should contain the submission's files at its root. Extract it as
-the gateway user so the lab can write its state and source:
+List token ids and aggregate spend without exposing token values:
 
 ```bash
-docker compose exec gateway mkdir -p /data/submissions/MY-LAB
-docker compose exec -T gateway tar --no-same-owner -xzf - \
-  -C /data/submissions/MY-LAB < /tmp/my-lab.tgz
+docker compose exec event-service python /app/app.py admin tokens
 ```
 
-Connect `/data/submissions/MY-LAB` in the browser. Do not transfer your existing
-`.env` automatically. Connection validates and initializes the lab; starting
-it is a separate action. Install any additional
-experiment dependencies in a derived image before running that lab; the base
-image contains Efferents and the smoke example only.
-
-Automatic Coder edits require a Git repository with an initial commit and a
-configured author. Configure the dedicated lab account once:
+Revoke one token and verify only that participant receives the clear revoked
+diagnostic while the other still syncs and uses the proxy:
 
 ```bash
-docker compose exec gateway git config --global user.name 'Efferents Lab'
-docker compose exec gateway git config --global user.email 'lab@localhost'
+docker compose exec event-service python /app/app.py admin revoke TOKEN_ID
 ```
 
-GitHub clones already have a history. For the copied smoke lab, initialize and
-commit only its input files before live execution (runtime state stays out):
-
-```bash
-docker compose exec -w /data/submissions/smoke-lab gateway git init
-docker compose exec -w /data/submissions/smoke-lab gateway python -c \
-  'from pathlib import Path; Path(".gitignore").write_text(".env\n.env.*\nlab/\npopper-corpus/\n__pycache__/\n*.pyc\n")'
-docker compose exec -w /data/submissions/smoke-lab gateway git add \
-  .gitignore README.md hypothesis.md lab.yaml src configs
-docker compose exec -w /data/submissions/smoke-lab gateway git commit -m 'Initialize synthetic lab inputs'
-```
-
-For your own copied submission, initialize its Git history with a reviewed
-input-file list appropriate to that lab.
-
-Before live research, clone the external Popper Probe dependency separately:
-
-```bash
-docker compose exec gateway git clone --depth 1 \
-  https://github.com/mashathepotato/popper-probe.git /data/popper-probe
-```
-
-`POPPER_PROBE_REPO` is already configured to that path. Record its commit with
-`docker compose exec gateway git -C /data/popper-probe rev-parse HEAD` when
-recording the environment for a real experiment.
-
-Store provider settings in that **submission's `.env`**, with mode 600. The
-start subprocess loads it for the daemon; the web server does not need provider
-keys in its environment. For example, to set an Anthropic key for the copied
-smoke lab, use this hidden prompt (it refuses to overwrite an existing file):
-
-```bash
-docker compose exec gateway python -c '
-import getpass, os
-from pathlib import Path
-key = getpass.getpass("Anthropic API key: ").strip()
-if not key or "\n" in key or "\r" in key:
-    raise SystemExit("A nonempty, single-line key is required")
-p = Path("/data/submissions/smoke-lab/.env")
-fd = os.open(p, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-with os.fdopen(fd, "w") as f:
-    f.write("ANTHROPIC_API_KEY=" + key + "\n")
-'
-```
-
-For another provider or lab, use the appropriate key and model settings from
-[the root environment example](../.env.example), at the connected submission's
-path. Do not paste credentials into the web hypothesis/steering fields, Git,
-image build arguments, or the Caddy configuration. Experiment commands receive
-the framework's filtered environment; this is not a sandbox for hostile code.
-
-Set both `budget.daily_cap_usd` and `budget.total_cap_usd` in `lab.yaml` before
-live execution. A small trial can use a $1 daily cap and a $2 lifetime cap.
-Framework caps are checked at scheduling boundaries, so allow for an in-flight
-call; set a provider-side spending limit as well if available. After inspecting
-the lab and its budget, start it through the console, then use Steer or Stop.
+Participant-side local `budget.daily_cap_usd` and `budget.total_cap_usd` remain
+the second spend boundary. The event service enforces its per-token cap and
+total ceiling before forwarding a request, logs token ids and usage only, and
+does not persist prompt bodies.
 
 ## Persistence, updates, and scaling
 
-- `/data` is a named Docker volume containing the registry, submissions,
-  experiment evidence, and external Popper checkout. Caddy certificates also
-  have persistent volumes. Keep the same Compose project name when updating.
-- The console and Caddy restart after a server reboot. Detached research daemons
-  are **not automatically resumed** after container recreation or reboot.
-  Inspect `efferents list` and explicitly restart the labs you intend to fund.
-- Before restarting/rebuilding the gateway, stop each running lab with
-  `docker compose exec gateway efferents stop --submission /data/submissions/MY-LAB`
-  (use the actual registered path), and wait for execution to stop. This keeps
-  shutdown and evidence state auditable.
-- To update after stopping labs, upload the revised files and run
-  `docker compose up -d --build`. To stop the console, use
-  `docker compose stop`. Do not add `--volumes` to `down`: it deletes evidence
-  and certificate storage.
+### Refresh the hosted web after a local implementation change
+
+The server-side `.env` and all named volumes are deliberately excluded from the
+upload. From the local checkout:
+
+```bash
+cd /Users/masha/Documents/efferents
+EVENT_IP=YOUR_DROPLET_IP
+tar --exclude=__pycache__ --exclude='*.pyc' --exclude=.env \
+  --exclude=.env.live --exclude=.git --exclude=lab \
+  -czf /tmp/efferents-hosting.tgz \
+  pyproject.toml README.md LICENSE NOTICE .dockerignore \
+  efferents deploy/digitalocean deploy/event_gateway docs/prototypes/event-network.html
+scp /tmp/efferents-hosting.tgz root@"$EVENT_IP":/tmp/
+ssh root@"$EVENT_IP"
+```
+
+On the Droplet, add any newly required keys from `.env.example` to the existing
+mode-600 `.env`, then rebuild in place:
+
+```bash
+tar -xzf /tmp/efferents-hosting.tgz -C /opt/efferents
+cd /opt/efferents/deploy/digitalocean
+docker compose config --quiet
+docker compose up -d --build --remove-orphans
+docker compose ps
+docker compose logs --tail=80 caddy gateway event-service
+docker compose exec caddy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+curl http://127.0.0.1:8800/api/labs
+curl http://127.0.0.1:8801/healthz
+```
+
+Do not run `docker compose down -v`. Reload
+`https://YOUR-HOSTNAME/#network`; use a hard refresh if the already-open tab has
+old CSS or JavaScript. The API responses carry `Cache-Control: no-store`, so a
+normal reload is normally sufficient.
+
+- `event_data` stores the event token hashes, quotas, request usage, and
+  append-only/current heartbeat records. `efferents_data` remains available for
+  organizer-local console state. Caddy certificates have separate persistent
+  volumes. Keep the same Compose project name when updating.
+- The console, event service, and Caddy restart after a server reboot.
+- Participant labs do not run in these containers, so a hosted refresh cannot
+  interrupt their local execution. To update, upload the revised files and run
+  `docker compose up -d --build`. To stop the control plane, use
+  `docker compose stop`. Do not add `--volumes` to `down`: it deletes the event
+  registry, quota history, and certificate storage.
 - Take a Droplet snapshot/backup after stopping labs and before resizing or
   replacing the server. A persistent volume survives container replacement,
   but does not substitute for a backup of the Droplet.
@@ -316,11 +320,34 @@ the lab and its budget, start it through the console, then use Steer or Stop.
   needed. Check separately billed backups/snapshots too.
   [DigitalOcean billing](https://docs.digitalocean.com/products/droplets/details/pricing/).
 
+### Event close and retention
+
+After participants stop locally and send their final stopped heartbeat, export
+the consented network summary, revoke every remaining credential, then delete
+credential hashes and detailed token accounting rows:
+
+```bash
+docker compose exec event-service python /app/app.py admin export > "$PWD/event-summary.json"
+docker compose exec event-service python /app/app.py admin close
+docker compose exec event-service python /app/app.py admin purge-tokens
+chmod 600 "$PWD/event-summary.json"
+```
+
+`close` durably disables enrollment and revokes active tokens; a container
+restart cannot reopen that event. `purge-tokens` requires closure and deletes
+credential hashes, per-token usage, and append-only heartbeat history, while
+leaving the consented current network summary and aggregate spend. Keep the
+exported summary and remaining event database only for the announced retention
+period. Participant repositories and evidence never depended on the event
+credential.
+
 ## If the link does not open
 
-Run `docker compose ps` and `docker compose logs --tail=100 caddy gateway` from
-`/opt/efferents/deploy/digitalocean`. A gateway container must be healthy; on the
-Droplet, `curl http://127.0.0.1:8800/api/labs` should return JSON.
+Run `docker compose ps` and
+`docker compose logs --tail=100 caddy gateway event-service` from
+`/opt/efferents/deploy/digitalocean`. All three containers must be healthy. On
+the Droplet, both `curl http://127.0.0.1:8800/api/labs` and
+`curl http://127.0.0.1:8801/healthz` should return JSON.
 
 If local JSON works but HTTPS does not, check the hostname's DNS, the attached
 firewall's ports 80/443, and Caddy's certificate logs. If sslip.io certificate
@@ -328,6 +355,8 @@ issuance is rate-limited, use a hostname under your own domain or try the
 equivalent nip.io hostname and recreate Caddy. Keep authentication enabled
 while resolving certificate or network issues.
 
-If the browser reports missing credentials, confirm the `.env` is in the
-selected submission directory, not its `lab/` directory. If a research run
-halts, inspect its recorded halt reason and budget before restarting it.
+If a participant reports missing credentials, have them run
+`efferents event status --submission .` and `efferents event doctor
+--submission .`. Distinct diagnostics identify invalid, expired, revoked,
+quota-exhausted, rate-limited, and temporarily unavailable proxy states. Their
+local evidence remains available throughout an event outage.

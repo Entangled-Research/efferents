@@ -376,10 +376,10 @@ class Orchestrator:
         notebook_append(self.paths.notebook, f"## {now_iso()} — resumed: {note}\n")
 
     def _interruptible_sleep(self, secs: float) -> None:
-        """Sleep in 60-second chunks so SIGTERM/SIGINT can interrupt."""
+        """Check stop requests every second, including during provider halts."""
         end = time.monotonic() + secs
         while not self._stop and time.monotonic() < end:
-            time.sleep(min(60, max(1.0, end - time.monotonic())))
+            time.sleep(min(1.0, max(0.0, end - time.monotonic())))
 
     def _probe_provider(self) -> None:
         """Cheapest possible request; raises exactly what a real call would."""
@@ -443,7 +443,7 @@ class Orchestrator:
         )
 
     def _handle_budget_exhausted(self, e: BudgetExhausted) -> None:
-        if e.scope == "total":
+        if e.scope == "total" or getattr(self, "_bounded_run", False):
             # A lifetime cap never frees on its own; stop cleanly and leave
             # halt_reason.txt for `efferents status` and the funder.
             self._halt("budget", str(e))
@@ -585,6 +585,8 @@ class Orchestrator:
             return {"event": "owner_paused", "added": 0}
         from efferents.agents.routing import refresh_students
         refresh_students(self.paths.root)
+        from efferents.event import exchange
+        exchange(self.context_dir.parent, lab_root=self.paths.root)
         from efferents.agents.conference import attend
         attendance = attend(cfg=_lab.get_config(), lab_root=self.paths.root)
         if attendance is not None:
@@ -644,7 +646,14 @@ class Orchestrator:
             f"(see lab/last_traceback.txt)\n",
         )
 
-    def run(self, *, max_iterations: int | None = None) -> None:
+    def run(
+        self,
+        *,
+        max_iterations: int | None = None,
+        on_step=None,
+    ) -> None:
+        on_step = on_step or getattr(self, "on_step_callback", None)
+        self._bounded_run = max_iterations is not None
         i = 0
         backoff = GENERIC_BACKOFF_START_S
         try:
@@ -652,18 +661,37 @@ class Orchestrator:
                 if max_iterations is not None and i >= max_iterations:
                     break
                 try:
-                    self.step()
+                    telemetry = self.step()
                     backoff = GENERIC_BACKOFF_START_S
                     self._check_stall()
+                    if on_step is not None:
+                        try:
+                            on_step(telemetry)
+                        except Exception as heartbeat_error:
+                            notebook_append(
+                                self.paths.notebook,
+                                f"## {now_iso()} — event heartbeat queued locally: "
+                                f"{type(heartbeat_error).__name__}: {heartbeat_error}\n",
+                            )
                 except BudgetExhausted as e:
                     self._handle_budget_exhausted(e)
                 except Exception as e:
                     self._record_step_failure(e)
                     kind, retry_after = classify_provider_error(e)
-                    if kind in {"credit", "auth"}:
+                    if kind in {"credit", "auth", "event_revoked", "event_expired", "event_quota"}:
                         # Retrying the researcher loop cannot fix a missing
                         # key or an empty balance; only the owner can.
-                        self._halt(kind if kind == "auth" else "no credit", str(e))
+                        halt_kind = {
+                            "credit": "no credit",
+                            "auth": "auth",
+                            "event_revoked": "event token revoked",
+                            "event_expired": "event token expired",
+                            "event_quota": "event quota exhausted",
+                        }[kind]
+                        self._halt(halt_kind, str(e))
+                        if self._bounded_run:
+                            i += 1
+                            break
                         if self._wait_for_provider(kind):
                             self._resume(f"provider probe succeeded after {kind} halt")
                     elif kind == "rate_limit":

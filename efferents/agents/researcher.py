@@ -1235,15 +1235,18 @@ def propose(
             corpus_root = paths.root.parent / "popper-corpus"
         else:
             corpus_root = paths.root.parent / "popper-corpus" / student_id
-        gate_result = _popper_gate.run_gate(
-            draft_claim=new_campaign.get("draft_hypothesis", ""),
-            slug=slug,
-            corpus_root=corpus_root,
-            client=client,
-            budget=budget,
-            charter_dir=Path(context_dir),
-            prompted_by=f"student:{student_id}",
-        )
+        if _lab.get_config().hypothesis_validation == "lightweight":
+            from efferents.agents.experiment_contract import write_contract
+            gate_result = write_contract(
+                claim=new_campaign.get("draft_hypothesis", ""), slug=slug,
+                root=corpus_root, cfg=_lab.get_config(),
+            )
+        else:
+            gate_result = _popper_gate.run_gate(
+                draft_claim=new_campaign.get("draft_hypothesis", ""),
+                slug=slug, corpus_root=corpus_root, client=client, budget=budget,
+                charter_dir=Path(context_dir), prompted_by=f"student:{student_id}",
+            )
         if gate_result.ok:
             campaign_id = "c-" + uuid.uuid4().hex[:10]
             _hm, _hd = _campaign_metric_from_proposal(new_campaign)
@@ -1274,7 +1277,7 @@ def propose(
         else:
             notebook_append(
                 paths.notebook,
-                f"## {now_iso()} — popper-gate REJECTED draft hypothesis: "
+                f"## {now_iso()} — experiment contract REJECTED draft hypothesis: "
                 f"{gate_result.reason}\n",
             )
 

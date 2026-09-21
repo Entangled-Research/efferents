@@ -26,6 +26,7 @@ from efferents.cli import _init_lab_root
 from efferents.dashboard import reader
 from efferents.lab import LabConfig, SubmissionError
 from efferents.registry import LabRecord, Registry
+from efferents.journals import journal_for_domain
 
 _GITHUB_PART_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
 _README_RE = re.compile(r"^readme(?:\.[A-Za-z0-9_-]+)?$", re.IGNORECASE)
@@ -201,7 +202,7 @@ def _locate_submission(readme: Path, search_root: Path) -> Path:
     if not candidates:
         raise ControlError(
             "No valid submission contract was found. The repository must contain "
-            "lab.yaml and a Popper-passed hypothesis.md in the same directory.",
+            "lab.yaml and an experiment hypothesis.md in the same directory.",
             status=422,
         )
     relative = ", ".join(str(path.relative_to(search_root)) for path in candidates[:6])
@@ -232,6 +233,12 @@ def _local_source(value: str) -> tuple[Path, Path] | None:
 
 
 def _dotenv_has_key(submission_dir: Path) -> bool:
+    from efferents.event import load_credentials, EventClientError
+    try:
+        if load_credentials(submission_dir):
+            return True
+    except EventClientError:
+        return False
     from efferents.agents.model_client import credentials_available
     if credentials_available():
         return True
@@ -364,12 +371,16 @@ class ControlContext:
             labs.append({
                 "lab_id": cfg.lab_id,
                 "domain": cfg.domain,
+                "journal": journal_for_domain(cfg.domain),
                 "subdomain": cfg.subdomain,
                 "pi_handle": cfg.pi_handle,
                 "repository": cfg.code_repo,
                 "submission_dir": str(submission),
                 "selected": selected is not None and cfg.lab_id == selected.cfg.lab_id,
                 "visibility": "private",
+                "goal": cfg.research_goal,
+                "approach": cfg.approach,
+                "exchange_enabled": cfg.conference.enabled,
                 **summary,
             })
             if self.paused_demo and selected is not None and cfg.lab_id == selected.cfg.lab_id:
@@ -386,9 +397,11 @@ class ControlContext:
                         "target": target["lab_id"],
                         "kind": "shared-domain",
                     })
+        from efferents.dashboard.exchange import network_evidence
         return {
             "labs": labs,
             "edges": edges,
+            **network_evidence(),
             "public_network": {
                 "connected": False,
                 "labs": 0,
@@ -427,6 +440,58 @@ class ControlContext:
         with self._lock:
             self._connected = connected
         return self.info()
+
+    def onboard(self, payload: dict) -> dict:
+        self._require_mutable()
+        from efferents.onboarding import create_lab
+        import secrets
+        if payload.get("confirmed") is not True:
+            raise ControlError("Choose Create lab or Infer defaults and run to accept the displayed scope.", 409)
+        destination = _efferents_home() / "labs" / ("lab-" + secrets.token_hex(6))
+        with self._lock:
+            decisions = create_lab(
+                destination, starter=payload.get("starter", "auto"), idea=payload.get("idea", ""),
+                goal=payload.get("goal", ""), approach=payload.get("approach", ""),
+                exchange=payload.get("exchange") is True,
+            )
+            info = self.connect(str(destination))
+            if payload.get("run") is True:
+                self.run_trial(3)
+            return {**info, "decisions": decisions}
+
+    def run_trial(self, runs: int = 3) -> dict:
+        self._require_mutable()
+        connected = self.snapshot()
+        if connected is None:
+            raise ControlError("Connect a lab first.", 409)
+        if type(runs) is not int or not 1 <= runs <= 12:
+            raise ControlError("Choose 1 to 12 trial runs.")
+        pid = daemon.read_pidfile(connected.lab_root / "daemon.pid")
+        if pid and daemon.is_pid_alive(pid):
+            raise ControlError("This lab is already running.", 409)
+        log_path = connected.lab_root / "trial.log"
+        env = os.environ.copy()
+        env["PATH"] = f"{Path(sys.executable).parent}{os.pathsep}{env.get('PATH', '')}"
+        with log_path.open("a") as log:
+            process = subprocess.Popen(
+                [sys.executable, "-m", "efferents", "trial", "--submission",
+                 str(connected.submission_dir), "--runs", str(runs)],
+                cwd=connected.submission_dir, env=env, stdout=log, stderr=log, start_new_session=True,
+            )
+        # Reap the child without holding a request open for experiment execution.
+        threading.Thread(target=process.wait, daemon=True).start()
+        return {"ok": True, "lab_id": connected.cfg.lab_id, "runs": runs}
+
+    def observe_peers(self) -> dict:
+        self._require_mutable()
+        from efferents.agents.conference import attend
+        received = 0
+        for record in Registry().list():
+            cfg = LabConfig.from_submission(record.submission_dir, check_paths=False)
+            result = attend(cfg=cfg, lab_root=Path(record.lab_root), force=True, include_cross=True)
+            if result:
+                received += len(result["received"])
+        return {"ok": True, "received": received}
 
     def connect(self, value: str) -> dict:
         self._require_mutable()
@@ -607,6 +672,8 @@ class ControlContext:
             "--lab-root",
             str(connected.lab_root),
             "--detach",
+            "--max-iterations",
+            "3",
         ]
         result = subprocess.run(
             command,

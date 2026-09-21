@@ -29,7 +29,6 @@ PROVIDER_KEY_ENV = {
     "deepseek": "DEEPSEEK_API_KEY",
     "xai": "XAI_API_KEY",
     "openrouter": "OPENROUTER_API_KEY",
-    "zai": "ZAI_API_KEY",
     "together_ai": "TOGETHERAI_API_KEY",
     "huggingface": "HUGGINGFACE_API_KEY",
 }
@@ -61,6 +60,8 @@ def resolve_chain(model: str | None = None) -> list[str]:
 
 
 def provider_for_model(model: str | None = None) -> str:
+    if os.environ.get("EFFERENTS_EVENT_PROXY_ACTIVE") == "1":
+        return "openai"
     explicit = os.environ.get("EFFERENTS_MODEL_PROVIDER", "").strip().lower()
     if explicit:
         return explicit
@@ -113,7 +114,10 @@ def make_client(budget: BudgetTracker | None = None) -> Any:
 
 # --- provider error classification -------------------------------------------
 
-PROVIDER_ERROR_KINDS = ("credit", "auth", "rate_limit", "transient")
+PROVIDER_ERROR_KINDS = (
+    "credit", "auth", "rate_limit", "event_revoked", "event_expired",
+    "event_quota", "transient",
+)
 
 _CREDIT_PHRASES = (
     "credit balance",
@@ -179,6 +183,14 @@ def classify_provider_error(exc: BaseException) -> tuple[str, float | None]:
         return exc.kind, exc.retry_after
     text = str(exc).lower()
     code = _status_code(exc)
+    if "event token revoked" in text or "event_token_revoked" in text:
+        return "event_revoked", None
+    if "event token expired" in text or "event_token_expired" in text:
+        return "event_expired", None
+    if "event token quota exhausted" in text or "event total quota exhausted" in text or "event_quota_exhausted" in text:
+        return "event_quota", None
+    if "event token rate limited" in text or "event_rate_limited" in text:
+        return "rate_limit", _retry_after_seconds(exc)
     if any(phrase in text for phrase in _CREDIT_PHRASES) and code in (None, 400, 402, 403):
         return "credit", None
     if code == 402:
@@ -388,12 +400,6 @@ class _Messages:
             call["tools"] = tools
         if os.environ.get("EFFERENTS_API_BASE"):
             call["api_base"] = os.environ["EFFERENTS_API_BASE"]
-        if provider_for_model(kwargs["model"]) == "zai":
-            # Z.ai's general API is OpenAI-compatible. Keep its endpoint and
-            # key scoped to this candidate so cross-provider chains work.
-            call["model"] = "openai/" + kwargs["model"].split("/", 1)[1]
-            call["api_base"] = "https://api.z.ai/api/paas/v4"
-            call["api_key"] = os.environ["ZAI_API_KEY"]
         response = completion(**call)
         choice = response.choices[0]
         message = choice.message
@@ -436,6 +442,10 @@ class _RoutingMessages:
         self._parent = parent
 
     def create(self, **kwargs: Any) -> Any:
+        if os.environ.get("EFFERENTS_EVENT_PROXY_ACTIVE") == "1":
+            allowed = {"openai/event-fast", "openai/event-model", "openai/event-deep"}
+            requested = kwargs.get("model")
+            kwargs = {**kwargs, "model": requested if requested in allowed else "openai/event-model"}
         chain = resolve_chain(kwargs.get("model"))
         failures: list[tuple[str, str]] = []
         last_exc: Exception | None = None

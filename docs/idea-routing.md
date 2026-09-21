@@ -52,7 +52,9 @@ Existing registered labs and prior experiments are not merged.
 
 Provider keys are loaded only in a separate routing process from the incoming
 submission's `.env`. The web server never loads them. Model selection uses
-`EFFERENTS_MODEL_ROUTER`, falling back to `EFFERENTS_MODEL` and then GLM-5.3.
+`EFFERENTS_MODEL_ROUTER`, falling back to `EFFERENTS_MODEL` and then the
+student-role model. A joined event routes every role through its capped Azure
+OpenAI proxy.
 The routing budget is separate from research: $1 per UTC day and $5 lifetime
 for the host, recorded in `$EFFERENTS_HOME/routing/costs.jsonl`. Connecting an
 opted-in submission therefore can spend routing tokens, but does not start

@@ -22,6 +22,12 @@ def test_dashboard_has_portfolio_rail_and_network_map():
     assert 'getJSON("/api/labs")' in javascript
     assert 'postJSON("/api/labs/select"' in javascript
     assert "renderNetwork();" in javascript
+    assert 'id="event-admin-panel"' in html
+    assert "lab.remote ? \"div\" : \"button\"" in javascript
+    assert "read only" in javascript
+    # The illustrative replay remains on the landing page only. Live network
+    # nodes must not be covered or mislabeled by a sample iframe.
+    assert html.count('src="/prototypes/event-network.html"') == 1
 
 
 def test_shared_visual_contract_is_minimal_paper_and_ink_research_ledger():

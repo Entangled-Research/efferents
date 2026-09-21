@@ -1,0 +1,10 @@
+.venv/
+.env
+.env.*
+.efferents-event.json
+.efferents-event-pending.json
+lab/
+artifacts/
+__pycache__/
+*.pyc
+.pytest_cache/

@@ -107,8 +107,8 @@ def test_roster_refresh_keeps_runtime_budget(intake, monkeypatch):
 
 def test_gateway_routes_without_loading_provider_keys(intake, monkeypatch):
     from efferents.dashboard.control import ControlContext
-    monkeypatch.setenv("EFFERENTS_MODEL", "zai/glm-5.3")
-    monkeypatch.delenv("ZAI_API_KEY", raising=False)
+    monkeypatch.setenv("EFFERENTS_MODEL", "openai/gpt-4.1-mini")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     target, incoming = intake
     context = ControlContext()
     result = context.connect(str(incoming))

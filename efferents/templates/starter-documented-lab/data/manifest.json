@@ -1,0 +1,51 @@
+{
+  "license": "CC BY 4.0",
+  "sources": [
+    {
+      "file": "banknote.csv",
+      "url": "https://archive.ics.uci.edu/ml/machine-learning-databases/00267/data_banknote_authentication.txt",
+      "sha256": "d0539aaed2139ba7a587b3e34fb345ce503ff7d5d33dbf9912d8e195ce425cb9",
+      "attribution": "Lohweg, V. (2012). Banknote Authentication. UCI. DOI:10.24432/C55P57",
+      "changes": "None; original bytes. Features: variance, skewness, curtosis, entropy; class."
+    },
+    {
+      "file": "acc-part1.csv",
+      "url": "https://jeodpp.jrc.ec.europa.eu/ftp/jrc-opendata/TransportExpData/JRCDBT0001/LATEST/JRC%20low%20speed/part1.csv",
+      "source_sha256": "c5acc869469b7a2a922de8102acd89fd42eab45e4380eede2c9495362657c04e",
+      "sha256": "3e9250a6282479d7303f0fe5804ed85c0cedaf2c6bf8eff3488f0bbdd3bce0d6",
+      "split": "train",
+      "attribution": "European Commission, Joint Research Centre (2026). Open ACC Database. DOI:10.2905/JRC.KMH3D00",
+      "changes": "First continuous valid 20 seconds; Time, Speed1, Speed2, IVS1 only; first follower.",
+      "excluded_before_episode": 440,
+      "start_time": 31608.69999999936,
+      "end_time": 31628.699999999062,
+      "caveat": "10Hz interpolated GNSS; raw/noisy measurements; ACC driver status unavailable for some parts. Same campaign, separate experiment parts."
+    },
+    {
+      "file": "acc-part4.csv",
+      "url": "https://jeodpp.jrc.ec.europa.eu/ftp/jrc-opendata/TransportExpData/JRCDBT0001/LATEST/JRC%20low%20speed/part4.csv",
+      "source_sha256": "9cbf3911cd5deed8ce9a4764862cac5dd5a5fe04f877ebc6aff05c488044aef9",
+      "sha256": "50b24fe708da356aa2a944f5d53a1d720fdd835985f6bcbad07a86b44a4c8a99",
+      "split": "held-out",
+      "attribution": "European Commission, Joint Research Centre (2026). Open ACC Database. DOI:10.2905/JRC.KMH3D00",
+      "changes": "First continuous valid 20 seconds; Time, Speed1, Speed2, IVS1 only; first follower.",
+      "excluded_before_episode": 0,
+      "start_time": 32865.0,
+      "end_time": 32884.99999999971,
+      "caveat": "10Hz interpolated GNSS; raw/noisy measurements; ACC driver status unavailable for some parts. Same campaign, separate experiment parts."
+    },
+    {
+      "file": "acc-part6.csv",
+      "url": "https://jeodpp.jrc.ec.europa.eu/ftp/jrc-opendata/TransportExpData/JRCDBT0001/LATEST/JRC%20low%20speed/part6.csv",
+      "source_sha256": "52ccb8015c2b7cd276fc651edf9f8f7a5c20b1f18e31bf330ddebdbdf1707ec1",
+      "sha256": "17409c2e541bfd4629f1cbf3882e9cb6faf327ef54fd0e27232ace803e20f864",
+      "split": "held-out",
+      "attribution": "European Commission, Joint Research Centre (2026). Open ACC Database. DOI:10.2905/JRC.KMH3D00",
+      "changes": "First continuous valid 20 seconds; Time, Speed1, Speed2, IVS1 only; first follower.",
+      "excluded_before_episode": 0,
+      "start_time": 33592.0,
+      "end_time": 33611.99999999971,
+      "caveat": "10Hz interpolated GNSS; raw/noisy measurements; ACC driver status unavailable for some parts. Same campaign, separate experiment parts."
+    }
+  ]
+}

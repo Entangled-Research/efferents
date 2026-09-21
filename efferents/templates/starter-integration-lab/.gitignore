@@ -1,0 +1,5 @@
+lab/
+artifacts/
+__pycache__/
+.env*
+.efferents-event*.json

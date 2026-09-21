@@ -160,6 +160,7 @@ def _run_and_capture(
     """Execute `cmd` in `cwd` with selected env vars passed through.
     Capture stdout, parse the last JSON object, return RunResult."""
     env = _subprocess_env(env_passthrough)
+    proc = None
     try:
         proc = subprocess.Popen(
             cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
@@ -183,6 +184,16 @@ def _run_and_capture(
             error=f"timeout after {timeout_s}s",
             return_code=proc.returncode,
         )
+
+    except BaseException:
+        # An interrupted trial must not orphan its experiment process group.
+        if proc is not None and proc.poll() is None:
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            proc.communicate()
+        raise
 
     last_json = _extract_trailing_json(stdout)
     if last_json is None:

@@ -39,6 +39,19 @@
 !deploy/
 !deploy/digitalocean/
 !deploy/digitalocean/Dockerfile
+!deploy/event_gateway/
+!deploy/event_gateway/Dockerfile
+!deploy/event_gateway/app.py
+
+# Versioned starter files are package data used by `efferents starter`.
+!efferents/templates/
+!efferents/templates/**/
+!efferents/templates/**/*.py
+!efferents/templates/**/*.md
+!efferents/templates/**/*.yaml
+!efferents/templates/**/.gitignore
+!efferents/templates/**/*.csv
+!efferents/templates/**/*.json
 
 # Reassert secret/runtime exclusions even if nested inside an allowed tree.
 **/.env*
@@ -50,3 +63,6 @@
 **/lab/**
 **/popper-corpus
 **/popper-corpus/**
+
+!efferents/templates/starter-evacuation-lab/popper-corpus/
+!efferents/templates/starter-evacuation-lab/popper-corpus/**

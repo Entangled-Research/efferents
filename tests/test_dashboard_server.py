@@ -142,3 +142,32 @@ def test_root_serves_dashboard_html(running_server):
         assert resp.headers["Content-Type"].startswith("text/html")
         html = resp.read().decode()
     assert "dashboard.js" in html
+
+
+def test_api_labs_carries_read_only_event_projection(
+    tmp_path, smoke_lab_config, monkeypatch
+):
+    monkeypatch.setattr("efferents.dashboard.server.read_remote_event", lambda: {
+        "available": True,
+        "event": {"event_id": "night-1", "token_count": 1},
+        "tokens": [{"token_id": "tok_1", "lab_id": "remote-lab", "status": "active"}],
+        "labs": [{
+            "lab_id": "remote-lab", "domain": "routing", "topic": "evacuation",
+            "approach": "local-cost", "runtime_status": "running",
+            "last_activity_at": "2026-09-15T10:00:00+00:00", "received_at": "2026-09-15T10:00:01+00:00",
+            "headline": {"name": "improvement", "direction": "max", "latest_value": 12.5},
+            "run_count": 3, "verdict_status": "undecided", "budget_state": "available",
+        }],
+    })
+    httpd = server.make_server(None, port=0)
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    try:
+        _, body = _get(httpd.server_address[1], "/api/labs")
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+    remote = body["event_network"]["labs"][0]
+    assert remote["lab_id"] == "remote-lab"
+    assert remote["remote"] is True and remote["read_only"] is True
+    assert "source" not in remote and "artifacts" not in remote
