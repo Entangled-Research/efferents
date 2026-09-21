@@ -2126,7 +2126,6 @@ td.status-insufficient_data {
 .onboard-options label { display: block; margin: 10px 0 5px; }
 .onboard-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
 .exchange-panel { min-width: 0; }
-.exchange-explanation { padding: 0 16px; font: 12px/1.5 var(--mono); color: var(--dim); }
 .exchange-feed { max-height: 580px; overflow-y: auto; }
 .exchange-record { padding: 14px 16px; border-top: 1px solid var(--line); overflow-wrap: anywhere; }
 .exchange-record p { white-space: pre-wrap; font: 12px/1.5 var(--mono); margin: 9px 0; }

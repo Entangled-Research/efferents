@@ -149,3 +149,15 @@ def test_ideas_are_named_and_carry_the_verdict_not_the_lab():
     assert "lab-verdict" not in js
     assert 'idea.verdict === "falsified"' in js
     assert '<h2 id="verdict-title">Idea verdict</h2>' in html
+
+
+def test_journal_panel_has_no_explanatory_copy_and_hides_when_empty():
+    static = Path(__file__).resolve().parents[1] / "efferents" / "dashboard" / "static"
+    html = (static / "dashboard.html").read_text()
+    js = (static / "dashboard.js").read_text()
+    for removed in ("Journal publications", "Labs communicate only", "exchange-count",
+                    "exchange-explanation"):
+        assert removed not in html and removed not in js
+    assert '<section id="exchange-panel" class="panel exchange-panel" ' \
+           'aria-label="Published journal papers" hidden>' in html
+    assert 'document.getElementById("exchange-panel").hidden = !rows.length;' in js

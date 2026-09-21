@@ -857,7 +857,6 @@ function initMapPanZoom() {
 function renderExchange() {
   const findings = new Map(publishedFindings().map(item => [item.id, item]));
   const receipts = [...portfolioState.observations, ...(portfolioState.eventNetwork?.observations || [])].filter(item => findings.has(item.finding_id));
-  text("exchange-count", `${findings.size} published papers · ${receipts.length} receipts`);
   const feed = document.getElementById("exchange-feed");
   const rows = Array.from(findings.values()).reverse().slice(0, 30);
   feed.innerHTML = rows.length ? rows.map((item) => {
@@ -867,7 +866,9 @@ function renderExchange() {
       (item.kind === "hypothesis" ? `<details><summary>Experiment claim</summary><p>${esc(item.body)}</p></details>` : `<p>${esc(item.body)}</p>`) + `<div class="exchange-provenance">` +
       `${item.run_id ? `Run ${esc(item.run_id)} · ` : ""}Record ${esc(item.id.slice(0, 12))}` +
       `</div><div class="exchange-receipt">${observers.length ? `Received by ${observers.map(id => esc(labDisplayName(id))).join(", ")}` : "Awaiting a peer visit"}</div></article>`;
-  }).join("") : '<div class="empty-state">No published papers yet. Papers must pass the three-reviewer board before other labs can subscribe.</div>';
+  }).join("") : "";
+  // The panel carries no copy of its own; it appears only once papers exist.
+  document.getElementById("exchange-panel").hidden = !rows.length;
   const goals = [...new Set(portfolioState.labs.map((lab) => lab.goal).filter(Boolean))];
   document.getElementById("known-goals").innerHTML = goals.map((goal) => `<option value="${esc(goal)}"></option>`).join("");
 }
