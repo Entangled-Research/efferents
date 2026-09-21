@@ -1865,18 +1865,18 @@ td.status-insufficient_data {
   background: #06162f;
   color: #e9f3ff;
 }
-.living-network .network-journal { border-color: #253a54; background: #0a1b35; color: #e9f3ff; }
+.living-network .network-journal { border-color: transparent; background: transparent; color: #e9f3ff; }
 .living-network .network-journal small { color: #acbed6; }
 .living-network .journal-labs { gap: 10px; }
-.living-network .lab-structure { border-color: #253a54; background: #081f45; }
-.living-network .lab-structure.selected { border-color: #38b8ff; box-shadow: inset 0 0 0 1px #38b8ff; }
+.living-network .lab-structure { border-color: transparent; background: transparent; }
+.living-network .lab-structure.selected { border-color: transparent; }
 .living-network .lab-identity { color: #e9f3ff; }
 .living-network .lab-identity small { color: #acbed6; }
-.living-network .lab-loop { border-color: #253a54; color: #acbed6; }
-.living-network .lab-loop span { border-color: #253a54; background: #0a1b35; }
-.living-network .lab-loop span.gate { border-color: #a8502b; color: #ffb394; }
+.living-network .lab-loop { border-color: transparent; color: #acbed6; }
+.living-network .lab-loop span { border-color: transparent; background: transparent; }
+.living-network .lab-loop span.gate { border-color: transparent; color: #ffb394; }
 .living-network .lab-loop i { color: #38b8ff; }
-.living-network .lab-ideas { border-color: #253a54; }
+.living-network .lab-ideas { border-color: transparent; }
 .living-network .lab-ideas small, .living-network .lab-ideas p { color: #acbed6; }
 .living-network .lab-flow-packet { color: #38b8ff; }
 .living-network #network-lines .journal-fiber { stroke: #269ce5; opacity: .7; }
@@ -1886,7 +1886,7 @@ td.status-insufficient_data {
 .living-network #network-lines .observation-edge { stroke: #ff9b78; }
 .living-network .network-packet { fill: #38b8ff; stroke: #06162f; }
 .living-network .network-packet.domain { fill: #a8842d; }
-.living-network .network-visit-note { border-color: #ff9b78; background: #0a1b35; color: #ffb394; }
+.living-network .network-visit-note { border-color: transparent; background: transparent; color: #ffb394; }
 .network-packet {
   fill: var(--terracotta);
   stroke: var(--panel);
@@ -1948,18 +1948,18 @@ td.status-insufficient_data {
   transform: translateX(-50%);
 }
 .journal-labs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 8px; }
-.lab-structure { position: relative; min-width: 0; padding: 7px; border: 1px solid var(--line); background: var(--panel); text-align: left; }
+.lab-structure { position: relative; min-width: 0; padding: 7px; border: 0; background: transparent; text-align: left; }
 .lab-structure.selected { border-color: var(--signal); }
 .lab-identity { display: grid; width: 100%; gap: 2px; padding: 0 0 5px; border: 0; background: transparent; color: var(--ink); text-align: left; cursor: pointer; }
 .lab-identity strong { font: 600 11px/1.4 var(--mono); }
 .lab-identity small { color: var(--dim); font: 9px/1.3 var(--mono); text-transform: uppercase; }
 .lab-loop { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 3px; padding: 5px 0; border-top: 1px solid var(--line-soft); color: var(--dim); font: 8px/1.2 var(--mono); }
-.lab-loop span { padding: 3px 4px; border: 1px solid var(--line-soft); background: var(--panel-raised); }
+.lab-loop span { padding: 3px 2px; border: 0; background: transparent; }
 .lab-loop span.gate { border-color: var(--terracotta); color: var(--terracotta); }
 .lab-loop i { color: var(--signal); font-style: normal; }
 .lab-flow-packet { position: absolute; left: 0; bottom: -5px; color: var(--terracotta); font-size: 8px; animation: lab-loop-flow 3.6s linear infinite; }
 @keyframes lab-loop-flow { from { transform: translateX(0); } to { transform: translateX(285px); } }
-.lab-ideas { margin-top: 5px; padding-top: 4px; border-top: 1px dashed var(--line-soft); }
+.lab-ideas { margin-top: 5px; padding-top: 4px; border-top: 0; }
 .lab-ideas small, .network-visit-note small { color: var(--dim); font: 8px/1.3 var(--mono); letter-spacing: .06em; text-transform: uppercase; }
 .lab-ideas p { margin: 2px 0 0; color: var(--muted); font: 9px/1.3 var(--mono); }
 .network-visit-note { position: absolute; z-index: 4; display: grid; gap: 2px; min-width: 170px; padding: 5px 9px; border: 1px dashed var(--terracotta); background: var(--panel); color: var(--terracotta); font: 10px var(--mono); text-align: center; transform: translate(-50%, -50%); }
