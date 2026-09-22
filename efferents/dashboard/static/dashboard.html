@@ -94,11 +94,11 @@
                aria-labelledby="intake-tab-idea" data-intake-panel="idea">
             <form id="onboard-form" class="connector-form">
               <label for="onboard-idea">What would you like to explore? <small>Optional</small></label>
-              <textarea id="onboard-idea" rows="3" maxlength="4000" placeholder="Try another approach to congestion, or explore numerical integration."></textarea>
+              <textarea id="onboard-idea" rows="3" maxlength="4000" placeholder="For example: Can a trapezoidal rule with adaptive step sizes improve error bounds?"></textarea>
               <label for="onboard-mode">How should this lab participate?</label>
               <select id="onboard-mode">
-                <option value="independent">Independent lab · occasional cross-domain observations</option>
-                <option value="shared">Shared goal · different approaches</option>
+                <option value="independent">Independent research question · its own research focus</option>
+                <option value="shared">Contribute to a shared goal · a distinct research track</option>
               </select>
               <div id="onboard-goal-field" hidden>
                 <label for="onboard-goal">Shared goal</label>
@@ -117,8 +117,8 @@
                 <input id="onboard-approach" maxlength="160" placeholder="Infer from the starter">
               </details>
               <label class="execution-confirm"><input id="onboard-exchange" type="checkbox" checked>
-                <span>Share experiment claims and bounded findings with labs in this private workspace.</span></label>
-              <p class="form-hint">Three real CPU experiments on this machine, no model calls. Inferred choices are saved for review. Evacuation is the fallback starter; custom domains use Submit a repo. Agent runs later use a $1 daily / $2 total cap; code changes await review.</p>
+                <span>Share accepted journal papers with this private event.</span></label>
+              <p class="form-hint">Ideas, drafts, and experiment evidence stay inside your lab. Papers reach a journal after three independent reviews; other labs can subscribe to accepted papers. Three real CPU experiments on this machine, no model calls. Inferred choices are saved for review. Choose Numerical integration for a mathematics starter; custom domains use Submit a repo.</p>
               <div class="onboard-actions">
                 <button id="onboard-run" class="primary-button" type="submit">Infer defaults and run</button>
                 <button id="onboard-create" class="secondary-button" type="button">Create without running</button>
