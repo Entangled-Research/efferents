@@ -132,14 +132,21 @@ def create_lab(destination: Path, *, starter: str = "auto", idea: str = "",
         shutil.copy2(destination / "hypothesis.md", corpus)
     context = destination / "context"
     context.mkdir(exist_ok=True)
+    hypothesis_text = (destination / "hypothesis.md").read_text()
+    claim_section = hypothesis_text.split("## Claim", 1)[-1].split("\n## ", 1)[0]
+    experiment_claim = " ".join(claim_section.split()).strip()
+    scope_notice = ("The selected starter runs this bounded claim; it does not establish "
+                    "the submitted idea.")
     (context / "research_log.md").write_text(
         f"# Owner direction\n\n{idea.strip() or 'Explore the starter experiment and its limitations.'}\n\n"
         f"Shared goal: {goal.strip() or 'Independent research'}\nApproach: {raw['approach']}\n\n"
+        f"## Current experiment scope\n\nClaim: {experiment_claim}\n\n{scope_notice}\n\n"
         "The initial executable experiment is the starter contract. Treat broader ideas as future work, "
         "not as results already supported by this experiment.\n"
     )
     decisions = {"lab_id": raw["lab_id"], "starter": starter, "idea": idea.strip(),
                  "goal": goal.strip(), "approach": raw["approach"], "validation": "lightweight",
+                 "experiment_claim": experiment_claim, "scope_notice": scope_notice,
                  "daily_cap_usd": 1, "total_cap_usd": 2, "coder_mode": "review",
                  "exchange": exchange, "trial_runs": 3, "submission": str(destination)}
     decisions["experiment_config"] = trial_config

@@ -78,6 +78,19 @@ def test_lightweight_contract_needs_measurement_and_stop_condition(tmp_path):
         LabConfig.from_submission(tmp_path / "lab")
 
 
+def test_specific_math_idea_keeps_starter_claim_explicitly_bounded(tmp_path):
+    idea = "Adaptive Simpson integration near a narrow boundary layer"
+    created = create_lab(tmp_path / "adaptive", idea=idea)
+
+    assert created["starter"] == "integration"
+    assert "20 intervals" in created["experiment_claim"]
+    assert "x cubed, sin(x), and exp(x)" in created["experiment_claim"]
+    assert "does not establish the submitted idea" in created["scope_notice"]
+    log = (tmp_path / "adaptive/context/research_log.md").read_text()
+    assert idea in log
+    assert created["experiment_claim"] in log
+
+
 def test_password_and_csrf_protect_onboarding(tmp_path, monkeypatch):
     monkeypatch.setenv("EFFERENTS_HOME", str(tmp_path / "registry"))
     monkeypatch.setenv("EFFERENTS_DASHBOARD_PASSWORD_HASH", hashlib.sha256(b"test-password").hexdigest())
