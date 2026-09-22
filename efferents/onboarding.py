@@ -107,7 +107,10 @@ def create_lab(destination: Path, *, starter: str = "auto", idea: str = "",
             trial_config["candidate"]["congestion_weight"] = 6.0
             if not approach.strip():
                 raw["approach"] = "higher-congestion-penalty"
-    elif "trapezoid" in direction:
+    # An explicit approach selects the candidate; a mention of the competing
+    # trapezoid baseline in the idea must not silently reverse the comparison.
+    integration_direction = (approach.strip() or idea).lower()
+    if starter == "integration" and "trapezoid" in integration_direction:
         trial_config["candidate"] = "trapezoid"
         if not approach.strip():
             raw["approach"] = "composite-trapezoid"

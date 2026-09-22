@@ -91,6 +91,20 @@ def test_specific_math_idea_keeps_starter_claim_explicitly_bounded(tmp_path):
     assert created["experiment_claim"] in log
 
 
+def test_explicit_simpson_approach_wins_over_trapezoid_comparison_word(tmp_path):
+    created = create_lab(
+        tmp_path / "simpson",
+        idea="Simpson more accurately than trapezoid",
+        approach="composite-simpson",
+    )
+    submission = Path(created["submission"])
+    config = yaml.safe_load((submission / "configs/default.yaml").read_text())
+
+    assert config["candidate"] == "simpson"
+    assert "Composite Simpson" in (submission / "hypothesis.md").read_text()
+    assert created["approach"] == "composite-simpson"
+
+
 def test_password_and_csrf_protect_onboarding(tmp_path, monkeypatch):
     monkeypatch.setenv("EFFERENTS_HOME", str(tmp_path / "registry"))
     monkeypatch.setenv("EFFERENTS_DASHBOARD_PASSWORD_HASH", hashlib.sha256(b"test-password").hexdigest())
