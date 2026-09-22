@@ -1,8 +1,10 @@
 # Event participant quickstart
 
 Your lab runs on your laptop. Source, configs, raw data, evidence and owner
-controls stay there. Joining a private event shares a small status heartbeat;
-finding exchange is a separate opt-in. Joining is not public publication.
+controls stay there. A private event can receive a small status heartbeat and,
+with your separate consent, accepted journal papers. Ideas, drafts, run
+measurements, reviews and direct messages stay inside their originating lab.
+Joining is not public publication.
 
 ## Fastest local start
 
@@ -14,15 +16,19 @@ uv run efferents serve
 ```
 
 Open the console link printed by the command. Choose **Start with an idea**.
-You can submit a different approach toward a shared goal, or an independent lab
-in another domain. Leave optional choices blank and choose **Infer defaults and
-run** to create a lightweight contract and run three real CPU experiments.
-No API key or Popper Probe is required.
+Describe the question you want to pursue. Efferents routes related questions to
+a suitable lab as separate research tracks, and unrelated or incompatible work
+to a separate lab. Choose **Numerical integration** for a mathematics starter;
+the example experiments are bounded executable baselines, not arbitrary tests
+of the submitted question. Review the displayed experiment claim and limitation
+before starting its three real CPU runs. No API key or Popper Probe is required.
 
-The two executable starters are evacuation routing and numerical integration.
-Inference chooses a starter and records its settings; it does not magically
-implement arbitrary research domains. Use **Connect a repository** for your own
-executor. Review the visible finding-sharing consent before launch.
+Executable starters cover several bounded domains, including mathematics,
+evacuation routing and numerical integration. Inference selects a starter and
+records its scope; it does not implement arbitrary research questions. Use
+**Connect a repository** for your own executor. Accepted papers are eligible for
+the private event journal only after the local three-reviewer board accepts
+them. Public release needs separate human authorization.
 
 Equivalent terminal flow:
 
@@ -32,9 +38,11 @@ uv run efferents trial --submission ../my-event-lab --runs 3
 uv run efferents serve --lab-root ../my-event-lab/lab
 ```
 
-Use `--idea "Numerical integration"` and omit `--goal` for an independent
-second domain. Repeat trials use new seeds. Three evacuation runs are preliminary,
-not enough to establish its twelve-seed claim.
+Use `--idea "Graph coloring"` or `--idea "Numerical integration"` for a
+mathematics lab. Inspect `hypothesis.md` and the recorded `context/onboarding.json`
+to see the actual claim, measurement, stop condition and starter settings before
+relying on the trial. Repeat trials use new seeds. Three evacuation runs are
+preliminary, not enough to establish its twelve-seed claim.
 
 ## Coding-agent lane
 
@@ -54,7 +62,7 @@ the lightweight event starters.
 
 Obtain the HTTPS origin, event ID and enrollment code from the organizer.
 The code is entered at a hidden prompt. Add `--share-findings` only if you
-consent to exchanging accepted journal publications with event participants.
+consent to submitting accepted journal publications to the private event venue.
 
 ```bash
 uv run efferents validate --submission ../my-event-lab
@@ -71,16 +79,19 @@ agent iterations; an iteration can make several calls within the configured budg
 
 ## Network and evidence
 
-The central graph groups labs by shared goal or domain. Related labs sample
-each other's findings; every third exchange adds a cross-domain sample.
-**Read journal papers** requests an immediate local visit. Directed arrows
-record receipt, not agreement, understanding or independent reproduction.
-Inspect the findings list for run IDs, provenance and recipients.
+The network groups labs under their journal communities. Each lab contains its
+own research loop and submits papers to its three-reviewer board. Only accepted
+papers enter a journal. Dotted journal-to-lab paths represent subscriptions;
+cross-domain subscriptions are occasional. A moving receipt appears only after
+the lab records that it received a paper. There are no direct lab-to-lab
+messages, idea transfers or run-measurement exchanges. A receipt records access,
+not agreement or independent reproduction; reproduce a paper before using it as
+a premise.
 
 A heartbeat contains identity/domain, optional goal/topic/approach, runtime and
 activity, headline metric, run count, verdict and coarse budget state. It excludes
 source, config bodies, prompts, credentials, raw data, artifacts and steering.
-Opt-in remote exchange adds accepted journal papers, reviewer scores and provenance.
+Opt-in remote publication shares accepted journal papers, reviewer scores and provenance.
 Network failures preserve local evidence and queue later synchronization.
 
 ## Steer, stop and leave

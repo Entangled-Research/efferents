@@ -2266,7 +2266,19 @@ td.status-insufficient_data {
   color: var(--ink);
 }
 
-#runtime-dialog::backdrop {
+#starter-scope-dialog {
+  width: min(620px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  padding: 0;
+  border: 1px solid var(--ink);
+  border-radius: var(--radius);
+  background: var(--panel);
+  color: var(--ink);
+  overflow: auto;
+}
+
+#runtime-dialog::backdrop,
+#starter-scope-dialog::backdrop {
   background: rgba(33, 29, 21, 0.45);
 }
 

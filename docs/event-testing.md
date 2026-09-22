@@ -13,35 +13,37 @@ it preserves the password and evidence. This is not an Internet-accessible link.
 
 ## Five-minute test
 
-1. Inspect the two evacuation approaches under **Reduce congestion**, and the
-   independent numerical-integration lab. Their measurements are real CPU runs.
-2. Switch the graph between **Shared goal** and **Research domain**. Dotted
-   relationships indicate affinity; directed observation edges mean a finding
-   was delivered, not validated or reproduced.
-3. Choose **Add an idea or lab**. Enter “Frequent rerouting” under the shared goal
-   “Reduce congestion”, or leave the idea blank. **Infer defaults and run** records
-   the defaults and executes three model-free experiments. Advanced choices are
-   optional; sharing consent remains visible.
-4. Add “Numerical integration with a trapezoid baseline” as an independent lab.
-   This deliberately weaker approach should fail the starter's error target.
-   A negative result is evidence, not a broken run.
-5. Choose **Observe peer findings**, inspect the receipts and arrows, then open
-   a lab to inspect metrics, verdict and SVG evidence. Three evacuation seeds
-   are preliminary; its claim requires twelve distinct seeds.
+1. Inspect the evacuation and mathematics labs. Read each lab's current
+   hypothesis and evidence; measurements come from real bounded CPU runs.
+2. Follow the network from each lab boundary to its review board and journal.
+   Dotted journal-to-lab paths show subscriptions. A moving receipt appears
+   only for a persisted paper delivery; it does not mean the recipient agrees
+   or has reproduced the result.
+3. Choose **Start an idea** and enter a mathematics question, such as adaptive
+   Simpson integration near a narrow boundary layer. Review the displayed
+   starter claim and scope notice before running. The starter's fixed
+   integration experiment does not test arbitrary submitted mathematics; use
+   **Connect a repository** for an executable custom experiment.
+4. Run the bounded CPU trial and inspect the actual claim, config, metrics,
+   verdict and provenance. A negative result is evidence, not a broken run.
+5. Confirm the board has critical, neutral and optimistic assessments before
+   treating a paper as accepted. Three evacuation seeds are preliminary; its
+   claim requires twelve distinct seeds.
 
 ## What is implemented
 
-Both shared-goal and independent cross-domain participation use the same console,
-lab registry, experiment ledger and graph. Related findings are sampled on normal
-research cycles; every third exchange includes a cross-domain finding. The manual
-observation action brings a bounded cross-domain sample into the current visit.
-Receipt arrows record exposure, not scientific agreement. Peer material is marked
-untrusted in researcher context and must be reproduced before reliance.
+Ideas route to a suitable lab and research track, or to a separate lab when the
+question is unrelated or incompatible. Raw ideas, drafts, run measurements,
+rejected papers and replies remain inside their originating lab. Reviewed,
+accepted papers and persisted subscription receipts are the inter-lab record.
+Cross-domain journal subscriptions are occasional. Receipt arrows record access,
+not scientific agreement; reproduce a paper before relying on it.
 
 New starters use lightweight claim / measurement / stop-condition contracts;
 Popper Probe is not needed. Existing Popper-based labs remain supported. Inference
-chooses between two actual executable starter domains, not an invented experiment
-for every possible idea. Connect an existing repository for other domains.
+chooses among actual executable starters, not an invented experiment for every
+possible idea. The selected starter scope is shown before its trial. Connect an
+existing repository for other domains.
 
 ## Model and remote limitations
 

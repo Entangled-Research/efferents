@@ -1574,6 +1574,26 @@ function initConnectForm() {
 function initOnboarding() {
   const mode = document.getElementById("onboard-mode");
   mode.addEventListener("change", () => { document.getElementById("onboard-goal-field").hidden = mode.value !== "shared"; });
+  const scopeDialog = document.getElementById("starter-scope-dialog");
+  const inspectScope = () => {
+    scopeDialog.close();
+    window.location.hash = "network";
+  };
+  scopeDialog.addEventListener("cancel", (event) => { event.preventDefault(); inspectScope(); });
+  document.getElementById("starter-scope-inspect").addEventListener("click", inspectScope);
+  document.getElementById("starter-scope-run").addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    button.disabled = true;
+    showMessage("starter-scope-message", "Running three bounded CPU experiments…");
+    try {
+      await postJSON("/api/lab/trial", {runs: 3});
+      scopeDialog.close();
+      window.location.hash = "network";
+      await refreshPortfolio();
+    } catch (error) {
+      showMessage("starter-scope-message", error.message, "error");
+    } finally { button.disabled = false; }
+  });
   const submit = async (run) => {
     const buttons = [document.getElementById("onboard-run"), document.getElementById("onboard-create")];
     buttons.forEach((button) => { button.disabled = true; });
@@ -1581,7 +1601,7 @@ function initOnboarding() {
     try {
       const goal = mode.value === "shared" ? (document.getElementById("onboard-goal").value.trim() || "Reduce congestion") : "";
       const info = await postJSON("/api/onboard", {
-        confirmed: true, run, goal, idea: document.getElementById("onboard-idea").value,
+        confirmed: true, run: false, goal, idea: document.getElementById("onboard-idea").value,
         starter: document.getElementById("onboard-starter").value,
         approach: document.getElementById("onboard-approach").value,
         exchange: document.getElementById("onboard-exchange").checked,
@@ -1589,8 +1609,18 @@ function initOnboarding() {
       await refreshPortfolio();
       renderControl(info);
       showMessage("onboard-message", `${labDisplayName(info.lab_id)} · ${info.decisions.starter} · choices saved in context/onboarding.json`, "success");
-      window.location.hash = "network";
-      await refreshPortfolio();
+      if (run) {
+        const submittedIdea = String(info.decisions.idea || "").trim();
+        document.getElementById("starter-scope-idea-block").hidden = !submittedIdea;
+        text("starter-scope-idea", submittedIdea);
+        text("starter-scope-claim", info.decisions.experiment_claim || "Inspect the lab hypothesis for the executable claim.");
+        text("starter-scope-notice", info.decisions.scope_notice || "The selected starter defines the first experiment's scope.");
+        text("starter-scope-message", "");
+        scopeDialog.showModal();
+      } else {
+        window.location.hash = "network";
+        await refreshPortfolio();
+      }
     } catch (error) { showMessage("onboard-message", error.message, "error"); }
     finally { buttons.forEach((button) => { button.disabled = false; }); }
   };

@@ -118,9 +118,9 @@
               </details>
               <label class="execution-confirm"><input id="onboard-exchange" type="checkbox" checked>
                 <span>Share accepted journal papers with this private event.</span></label>
-              <p class="form-hint">Ideas, drafts, and experiment evidence stay inside your lab. Papers reach a journal after three independent reviews; other labs can subscribe to accepted papers. Three real CPU experiments on this machine, no model calls. Inferred choices are saved for review. Choose Numerical integration for a mathematics starter; custom domains use Submit a repo.</p>
+              <p class="form-hint">Your idea guides lab placement; the selected starter defines what the first trial tests. The starter may not test your exact question. You will review its claim and limits before any experiments run. Ideas, drafts, and experiment evidence stay inside your lab. Papers reach a journal after three independent reviews; other labs can subscribe to accepted papers. Trials use three real CPU experiments with no model calls. Choose Graph coloring or Numerical integration for a mathematics starter; custom domains use Submit a repo.</p>
               <div class="onboard-actions">
-                <button id="onboard-run" class="primary-button" type="submit">Infer defaults and run</button>
+                <button id="onboard-run" class="primary-button" type="submit">Infer defaults and review</button>
                 <button id="onboard-create" class="secondary-button" type="button">Create without running</button>
               </div>
               <div id="onboard-message" class="form-message" role="status" aria-live="polite"></div>
@@ -437,6 +437,26 @@
     </main>
   </div>
 
+  <dialog id="starter-scope-dialog" aria-labelledby="starter-scope-title">
+    <section class="runtime-dialog-card">
+      <div class="route-kicker">Before the first trial</div>
+      <h2 id="starter-scope-title">Review the executable claim</h2>
+      <div id="starter-scope-idea-block" class="thesis-block" hidden>
+        <div class="field-label">Submitted question</div>
+        <p id="starter-scope-idea" class="thesis-copy"></p>
+      </div>
+      <div class="thesis-block">
+        <div class="field-label">What the first experiment tests</div>
+        <p id="starter-scope-claim" class="thesis-copy"></p>
+      </div>
+      <p id="starter-scope-notice" class="form-hint"></p>
+      <p id="starter-scope-message" class="form-message" role="status" aria-live="polite"></p>
+      <div class="dialog-actions">
+        <button id="starter-scope-inspect" class="secondary-button" type="button">Inspect lab without running</button>
+        <button id="starter-scope-run" class="primary-button" type="button">Run 3 experiments</button>
+      </div>
+    </section>
+  </dialog>
   <dialog id="runtime-dialog">
     <form method="dialog" class="runtime-dialog-card">
       <div class="route-kicker" id="runtime-dialog-kicker">Local execution</div>

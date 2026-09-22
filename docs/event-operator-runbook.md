@@ -3,8 +3,10 @@
 This is the minimum live-event contract. The [participant quickstart](event-quickstart.md)
 and [DigitalOcean deployment guide](digitalocean.md) contain the commands.
 Participant labs execute locally. The hosted server brokers a bounded model
-API, displays status snapshots, and exchanges bounded findings for labs that
-explicitly join with `--share-findings`. The console also supports local idea
+API and displays status snapshots. Labs that explicitly join with
+`--share-findings` can submit accepted journal papers to the private venue.
+Ideas, drafts, measurements, reviews and direct replies stay inside the lab.
+The console also supports local idea
 onboarding on the machine hosting it; do not use that organizer control to
 upload or run participants' private repositories.
 The owner-provided credit and provider decision is recorded in
@@ -12,15 +14,16 @@ The owner-provided credit and provider decision is recorded in
 
 ## Decisions frozen for the first event
 
-- Scope: one private organizer console and one event. Labs may name a common
-  `research_goal` while pursuing distinct approaches, or work independently
-  across domains. The graph groups by goal/domain and shows real finding
-  receipts. A receipt means imported into a research inbox, not corroboration.
-  Remote participants opt in separately to measurements and agent discussion;
-  raw evidence remains on their laptops.
+- Scope: one private organizer console and one event. Related questions become
+  separate tracks inside a suitable lab; unrelated or incompatible questions
+  route to a separate lab. The graph shows each lab's containment boundary,
+  three-reviewer board and journal. Dotted journal-to-lab paths are
+  subscriptions; moving receipts appear only for persisted paper deliveries.
+  A receipt records access, not corroboration. Raw evidence remains local.
 - Lanes: local browser idea onboarding or coding-agent setup; ChatGPT web can
-  generate files for local execution. Infer-and-run accepts the displayed
-  bounded scope in one step. New starters use lightweight contracts with no
+  generate files for local execution. Idea onboarding creates the lab, then
+  shows the starter's executable claim and limitation before the user chooses
+  whether to run it. New starters use lightweight contracts with no
   Popper dependency; deeper Popper review remains optional. macOS is
   locally tested; Linux is conditional on a real-laptop rehearsal; Windows is
   out of scope for this first event.
@@ -117,10 +120,11 @@ and server/model spend.
    dashboard, artifact, explicit falsifier state, and owner budget. Run manual
    sync and verify both remote nodes show only allowed fields and are not
    clickable as local controls.
-   With finding exchange enabled, use the same goal on two labs and a different
-   domain on a third. Verify goal-related receipt delivery and a cross-domain
-   receipt on the third visit. Compare the graph receipt with each recipient's
-   durable `lab/conference/inbox.jsonl`; no arrow may imply reproduction.
+   With journal publication enabled, submit a paper and verify it remains private
+   until the local three-reviewer board accepts it. Verify that only the accepted
+   paper metadata and body enter the event journal. After a recipient subscribes,
+   compare the graph's moving receipt with its durable subscription receipt;
+   no arrow may imply agreement or reproduction.
 3. Disconnect laptop A for more than 180 seconds. Its node must become stale,
    while laptop B continues. Reconnect A and sync; its node must recover.
 4. Revoke A's token by token ID. Its next model request and heartbeat must fail
@@ -137,9 +141,10 @@ is necessary but not sufficient. Freeze features after a passing rehearsal.
 
 ## During the event
 
-- Show `#network` on the projector. Explain dotted goal/domain relationships
-  and solid directed finding receipts. The feed contains opted-in summaries;
-  accepted scientific evidence still requires local reproduction.
+- Show `#network` on the projector. Explain that each lab submits through its
+  own reviewer board to a journal, and dotted paths represent subscriptions.
+  Only accepted papers travel between labs; accepted scientific evidence still
+  requires local reproduction.
 - Watch `docker compose ps`, `docker compose logs --tail=80 caddy gateway
   event-service`, and `admin tokens`; never display `.env`, raw token values,
   participant prompts, or the organizer admin key.
