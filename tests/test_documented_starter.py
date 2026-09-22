@@ -12,6 +12,7 @@ import yaml
 from efferents.lab import LabConfig
 from efferents.onboarding import create_lab
 from efferents.starter_catalog import DOCUMENTED
+from efferents.journals import journal_for_domain
 
 
 TEMPLATE = Path(__file__).resolve().parents[1] / "efferents" / "templates" / "starter-documented-lab"
@@ -39,6 +40,9 @@ def test_each_documented_starter_is_real_fast_and_deterministic(tmp_path, starte
     assert decisions["starter"] == starter
     cfg = LabConfig.from_submission(submission)
     assert cfg.domain == DOCUMENTED[starter]["domain"]
+    assert cfg.peer_review_enabled
+    if starter == "coloring":
+        assert journal_for_domain(cfg.domain) == "Mathematics & Computation"
     assert yaml.safe_load((submission / "configs" / "default.yaml").read_text())["experiment"] == starter
 
     started = time.monotonic()
@@ -53,6 +57,17 @@ def test_each_documented_starter_is_real_fast_and_deterministic(tmp_path, starte
     artifacts = {item["kind"]: Path(item["path"]) for item in first["artifacts"]}
     assert artifacts["provenance"].is_file()
     assert artifacts[starter].suffix == ".svg"
+
+
+def test_math_idea_starts_in_math_lab_and_targets_math_journal(tmp_path):
+    submission = tmp_path / "math-idea"
+    create_lab(submission, idea="A graph coloring bound for sparse graphs")
+
+    cfg = LabConfig.from_submission(submission)
+    assert cfg.domain == "mathematics"
+    assert cfg.approach == DOCUMENTED["coloring"]["approach"]
+    assert cfg.peer_review_enabled
+    assert journal_for_domain(cfg.domain) == "Mathematics & Computation"
 
 
 def test_lab_ids_come_from_the_owners_words(tmp_path, monkeypatch):
