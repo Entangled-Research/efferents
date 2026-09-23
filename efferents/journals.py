@@ -2,6 +2,8 @@
 
 def journal_for_domain(domain: str) -> str:
     value = domain.casefold().replace("_", "-")
+    if value == "numerical-analysis":
+        return "Journal of Numerical Analysis"
     if any(tag in value for tag in ("machine-learning", "active-learning", "ml", "artificial-intelligence")):
         return "ML & Autonomous Systems"
     if any(tag in value for tag in ("vehicle", "traffic", "simulation", "routing", "transport")):
