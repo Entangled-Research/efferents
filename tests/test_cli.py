@@ -115,7 +115,7 @@ def test_start_seeds_campaign_from_popper_operational_restatement(
     assert question == "Treatment improves the score by at least 10%."
 
 
-def test_start_detach_writes_pidfile(tmp_path, monkeypatch):
+def test_start_detach_writes_pidfile(tmp_path, monkeypatch, capsys):
     """Detach path forks; we test the post-fork bookkeeping via a stubbed daemonize call."""
     monkeypatch.setenv("EFFERENTS_HOME", str(tmp_path / "home"))
     sub = tmp_path / "sub"
@@ -133,6 +133,9 @@ def test_start_detach_writes_pidfile(tmp_path, monkeypatch):
     rec = Registry().get("sample-conjecture")
     assert rec is not None
     assert rec.pid == fake_child_pid
+    lines = capsys.readouterr().out.splitlines()
+    assert len(lines) == 1
+    assert "pid=4242 " in lines[0]
 
 
 def test_status_running_lab(tmp_path, monkeypatch, capsys):

@@ -308,8 +308,6 @@ def _cmd_start(args: argparse.Namespace) -> int:
     # otherwise show it next to a live daemon.
     daemon.clear_pidfile(lab_root / "halt_reason.txt")
 
-    print(f"lab_id={cfg.lab_id} pid={os.getpid()} dashboard={lab_root}/progress.html")
-
     def loop() -> None:
         status = "stopped"
         try:
@@ -332,8 +330,10 @@ def _cmd_start(args: argparse.Namespace) -> int:
         # parent's bookkeeping cannot replace a terminal status with running.
         if not reg.update_pid(cfg.lab_id, rec.pid):
             reg.register(rec)  # recover if the registry disappeared during fork
+        print(f"lab_id={cfg.lab_id} pid={rec.pid} dashboard={lab_root}/progress.html", flush=True)
         return 0
 
+    print(f"lab_id={cfg.lab_id} pid={os.getpid()} dashboard={lab_root}/progress.html", flush=True)
     daemon.run_foreground(lab_root, loop)
     return 0
 
