@@ -11,7 +11,7 @@ from efferents.journals import journal_for_domain
 
 
 def network_evidence() -> dict:
-    findings, observations = {}, []
+    findings, observations, journal_uses = {}, [], []
     for record in Registry().list():
         submission = Path(record.submission_dir).resolve()
         root = Path(record.lab_root).resolve()
@@ -21,6 +21,12 @@ def network_evidence() -> dict:
             cfg = LabConfig.from_submission(submission, check_paths=False)
             if not exchange_enabled(root, cfg):
                 continue
+            from efferents.journal.provenance import received_publications
+            received = received_publications(root)
+            for use in _rows(root / "journal_uses.jsonl", submission):
+                if use.get("publication_id") in received and use.get("run_ids"):
+                    journal_uses.append({**use, "source": use["lab_id"], "target": cfg.lab_id,
+                                         "finding_id": use["publication_id"]})
             talks = _talks(cfg, submission, root)
             for talk in talks:
                 findings[talk["id"]] = {**talk, "body": talk["body"][:4000]}
@@ -37,4 +43,4 @@ def network_evidence() -> dict:
     routed = [{**row, "journal": journal_for_domain(row["domain"]),
                "routing_status": "accepted journal publication"}
               for row in list(findings.values())[-150:]]
-    return {"findings": routed, "observations": observations[-200:]}
+    return {"findings": routed, "observations": observations[-200:], "journal_uses": journal_uses[-200:]}

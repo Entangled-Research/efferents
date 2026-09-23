@@ -637,6 +637,8 @@ class Orchestrator:
         else:
             queue_ack(self.paths.queue)
         if outcome.get("ok"):
+            from efferents.journal.provenance import record_execution
+            record_execution(self.paths.root, proposal, outcome)
             state = load_state(self.paths.state)
             state["last_success_ts"] = now_iso()
             save_state(self.paths.state, state)

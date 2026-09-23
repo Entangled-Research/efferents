@@ -8,6 +8,8 @@ PERSONAS = ("critical", "neutral", "optimistic")
 
 def review_scores(markdown: str) -> dict[str, int]:
     """Support current board tables and historical journal score summaries."""
+    # Quoted manuscript text is scientific content, never the publication board.
+    markdown = markdown.split("### Accepted manuscript", 1)[0]
     scores = {}
     for persona, value in re.findall(
         r"(?:\|\s*|\b)(critical|neutral|optimistic|enthusiast)(?:\s*\|\s*|=)(\d{1,2})(?=\s|[,|)]|$)",
