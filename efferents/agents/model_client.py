@@ -369,6 +369,17 @@ def _anthropic_request(kwargs: dict[str, Any]) -> dict[str, Any]:
     return prepared
 
 
+def _content_block_dict(block: Any) -> dict[str, Any]:
+    """Normalize SDK and adapter response blocks reused in tool conversations."""
+    if isinstance(block, dict):
+        return block
+    if hasattr(block, "model_dump"):
+        return block.model_dump()
+    if hasattr(block, "__dict__"):
+        return vars(block)
+    raise TypeError(f"Unsupported content block: {type(block).__name__}")
+
+
 def _text_from_content(content: Any) -> str:
     if isinstance(content, str):
         return content
@@ -376,8 +387,10 @@ def _text_from_content(content: Any) -> str:
     for block in content or []:
         if isinstance(block, str):
             out.append(block)
-        elif block.get("type") == "text":
-            out.append(str(block.get("text", "")))
+        else:
+            block = _content_block_dict(block)
+            if block.get("type") == "text":
+                out.append(str(block.get("text", "")))
     return "".join(out)
 
 
@@ -415,6 +428,7 @@ def _convert_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
         tool_calls: list[dict[str, Any]] = []
         tool_results: list[dict[str, Any]] = []
         for block in content:
+            block = _content_block_dict(block)
             kind = block.get("type")
             if kind == "text":
                 text_parts.append(str(block.get("text", "")))
