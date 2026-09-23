@@ -188,7 +188,7 @@ def test_workspace_renders_verdict_and_bucket_panels(verdict_server):
     assert '<table id="buckets">' in html
     assert "<th scope=\"col\">Rule · detail</th>" in html
     # Renderer is wired to the route and paints ids, status, verdict line.
-    assert '["/api/verdict", renderVerdict]' in js
+    assert 'renderVerdict(data.verdict)' in js
     assert "${esc(f.id)}" in js and "status-${esc(f.status)}" in js
     assert 'data?.line || "verdict: undecided"' in js
     assert "No falsifiers declared in lab.yaml" in js

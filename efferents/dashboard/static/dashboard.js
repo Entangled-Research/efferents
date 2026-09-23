@@ -167,7 +167,7 @@ function formatRelativeTime(value) {
 
 function currentRoute() {
   const route = window.location.hash.replace(/^#/, "");
-  if (route === "steer" || /^observe\/[^/]+$/.test(route)) return "observe";
+  if (route === "steer" || /^observe\/[^/]+(?:\/idea\/[^/]+)?$/.test(route)) return "observe";
   return ["connect", "observe", "network"].includes(route) ? route : "connect";
 }
 
@@ -212,10 +212,12 @@ function renderRoute() {
   });
   applyLabRail(route);
   if (renderedRoute && renderedRoute !== window.location.hash) window.scrollTo(0, 0);
+  if (renderedRoute !== window.location.hash) loadedIdeaRoute = "";
   renderedRoute = window.location.hash;
   document.title = `efferents — ${route}`;
   renderLabTabs();
   renderBudget();
+  if (route === "observe" && portfolioHydrated) renderIdeaDirectory();
   if (route === "network" && networkWasHidden) renderNetwork();
 }
 
@@ -390,8 +392,90 @@ function labHref(labId) {
 function routeLabId() {
   try {
     return window.location.hash.startsWith("#observe/")
-      ? decodeURIComponent(window.location.hash.slice(9)) : null;
+      ? decodeURIComponent(window.location.hash.slice(9).split("/")[0]) : null;
   } catch (error) { return null; }
+}
+
+function ideaHref(labId, studentId) {
+  return `${labHref(labId)}/idea/${encodeURIComponent(studentId)}`;
+}
+function routeIdeaId() {
+  const parts = window.location.hash.split("/");
+  try { return parts[2] === "idea" && parts.length === 4 ? decodeURIComponent(parts[3]) : null; }
+  catch (error) { return null; }
+}
+let loadedIdeaRoute = "";
+let pendingIdeaRoute = "";
+
+function renderIdeaDirectory() {
+  const lab = portfolioState.labs.find(item => item.lab_id === routeLabId());
+  const selected = routeIdeaId();
+  document.getElementById("lab-ideas-directory").hidden = Boolean(selected);
+  document.getElementById("idea-evaluation").hidden = !selected;
+  if (!lab) return;
+  const ideas = labIdeas(lab);
+  if (selected && !ideas.some(idea => idea.id === selected)) {
+    history.replaceState(null, "", labHref(lab.lab_id));
+    renderRoute();
+    return;
+  }
+  const directory = document.getElementById("lab-ideas-list");
+  const markup = ideas.map(idea => `<article class="idea-directory-row">` +
+    `<h2><a href="${esc(ideaHref(lab.lab_id, idea.id))}">${esc(idea.name || ideaName(idea))}</a></h2>` +
+    `<p>${esc(idea.eval_suite?.rationale || idea.focus || "No hypothesis recorded.")}</p>` +
+    `<div class="idea-directory-meta"><span>${esc(idea.verdict || "undecided")}</span>` +
+    `<a href="${esc(ideaHref(lab.lab_id, idea.id))}">Open eval suite →</a></div></article>`).join("") ||
+    '<p class="empty-state">No shared ideas yet.</p>';
+  if (directory.innerHTML !== markup) directory.innerHTML = markup;
+  if (!selected) return;
+  const idea = ideas.find(item => item.id === selected);
+  document.getElementById("idea-breadcrumb").innerHTML = `<a href="${esc(labHref(lab.lab_id))}">${esc(labDisplayName(lab.lab_id))} · Ideas</a> / ${esc(idea.name || ideaName(idea))}`;
+  if (loadedIdeaRoute !== window.location.hash) {
+    document.getElementById("idea-results").hidden = true;
+    text("idea-suite-status", "Loading this idea’s eval suite…");
+    document.getElementById("idea-suite-plan").innerHTML = "";
+    if (pendingIdeaRoute !== window.location.hash) void refreshObserver();
+  }
+}
+
+function renderIdeaSuite(data) {
+  const suite = data.suite || {};
+  text("idea-suite-title", suite.title || "Eval suite");
+  text("idea-suite-status", suite.message || (data.runs?.history?.total ? "Measured results" : "No measured results yet"));
+  document.getElementById("idea-suite-plan").innerHTML = `<p>${esc(suite.rationale || "")}</p>` +
+    `<div class="idea-eval-graphs">${(suite.graphs || []).map(ideaEvalGraph).join("")}</div>`;
+  const available = !data.detail_unavailable;
+  document.getElementById("idea-results").hidden = !available;
+  if (!available) return;
+  const budget = selectedPortfolioLab()?.budget || labBudget;
+  renderState({hypothesis: data.hypothesis, status: controlState.status, budget});
+  if (typeof renderPublicationInline === "function") {
+    for (const [id, value] of [["question", data.hypothesis?.question], ["claim", data.hypothesis?.claim], ["falsifier", data.hypothesis?.falsifier]]) {
+      document.getElementById(id).innerHTML = renderPublicationInline(value || "Not recorded.");
+    }
+  }
+  renderRuns(data.runs);
+  renderEvidence(data.evidence);
+  renderVerdict(data.verdict);
+  // Shared notebook entries and paper lists cannot be attributed to this idea.
+  document.querySelector(".papers-panel").hidden = true;
+  document.querySelector(".activity-panel").hidden = true;
+}
+
+function ideaEvalGraph(graph) {
+  const series = graph.series || [];
+  const values = series.flatMap(s => (s.points || []).map(p => p.value)).filter(Number.isFinite);
+  if (!values.length) return `<article><h3>${esc(graph.title)}</h3><p>No measured values yet</p></article>`;
+  const min = Math.min(...values), max = Math.max(...values), span = max - min || 1;
+  const runs = graph.run_ids || [];
+  const colors = ["var(--signal)", "var(--terracotta)", "var(--muted)"];
+  const paths = series.map((s, i) => {
+    const points = (s.points || []).filter(p => Number.isFinite(p.value)).map(p =>
+      [45 + Math.max(0, runs.indexOf(p.run_id)) * 440 / Math.max(1, runs.length - 1), 130 - (p.value - min) * 110 / span, p]);
+    return `<polyline fill="none" stroke="${colors[i % colors.length]}" points="${points.map(p => p.slice(0,2).join(",")).join(" ")}"/>` +
+      points.map(p => `<circle cx="${p[0]}" cy="${p[1]}" r="3" fill="${colors[i % colors.length]}"><title>${esc(s.column)} · ${esc(p[2].run_id)} · ${esc(p[2].value)}</title></circle>`).join("");
+  }).join("");
+  return `<article><h3>${esc(graph.title)}</h3><svg viewBox="0 0 520 160" role="img" aria-label="${esc(graph.title)}"><path d="M40 15V135H495" fill="none" stroke="currentColor"/><text x="1" y="22" font-size="10">${esc(max.toPrecision(3))}</text><text x="1" y="133" font-size="10">${esc(min.toPrecision(3))}</text>${paths}</svg><p>${series.map(s => esc(s.column)).join(" · ")}</p></article>`;
 }
 
 // One ordered list for every workspace page. Migrate existing browser tabs once.
@@ -412,6 +496,9 @@ function rememberWorkspaceTab(href) {
 
 function workspaceTabItems() {
   return [
+    ...portfolioState.labs.flatMap(lab => labIdeas(lab).map(idea => ({
+      href: ideaHref(lab.lab_id, idea.id), label: `${labDisplayName(lab.lab_id)} · ${idea.name || ideaName(idea)}`
+    }))),
     ...portfolioState.labs.map(lab => ({href: labHref(lab.lab_id),
       label: labDisplayName(lab.lab_id), status: lab.status || "stopped"})),
     ...[]
@@ -757,9 +844,9 @@ function renderNetwork() {
         `<div class="lab-map-actions"><button type="button" data-lab-ideas>Ideas · ${ideas.length || (lab.remote ? "private" : "0")}</button><button type="button" data-lab-evals>Evals</button></div>` +
         `<div class="lab-idea-nodes" aria-label="Ideas in ${esc(labDisplayName(lab.lab_id))}"><span class="lab-idea-label">Ideas · ${ideas.length}</span>${ideas.map(ideaLineMarkup).join("") || `<small>${lab.remote ? "Idea roster stays on the participant’s host" : "No ideas yet"}</small>`}</div>` +
         `<div class="internal-research"><span>Hypothesis → Experiment → Evidence → Paper</span></div>`;
-      card.querySelector(".lab-identity").onclick = () => inspectLab(lab.lab_id, "ideas");
-      card.querySelector("[data-lab-ideas]").onclick = () => inspectLab(lab.lab_id, "ideas");
-      card.querySelector("[data-lab-evals]").onclick = () => inspectLab(lab.lab_id, "evals");
+      card.querySelector(".lab-identity").onclick = () => openLabTab(lab.lab_id);
+      card.querySelector("[data-lab-ideas]").onclick = () => openLabTab(lab.lab_id);
+      card.querySelector("[data-lab-evals]").onclick = () => openLabTab(lab.lab_id);
       nodes.appendChild(card);
       const owned = findings.filter(item => item.lab_id === lab.lab_id && homeJournal(item) === name);
       const latest = owned.at(-1);
@@ -1070,6 +1157,8 @@ async function selectPortfolioLab(labId, openObserver) {
   pendingLabId = labId;
   writeStored("efferents-selected-lab", labId);
   markSelected();
+  const budget = selectedPortfolioLab()?.budget || {};
+  labBudget = {spent: Number(budget.spent || 0), cap: Number(budget.cap || 0)};
   try {
     const info = await getJSON(labPath("control"));
     if (selectedLabId !== labId || routeLabId() !== labId) return;
@@ -1624,29 +1713,23 @@ function renderActivity(activities) {
 }
 
 async function refreshObserver() {
-  if (!controlState.connected) return;
-  if (document.hidden || currentRoute() !== "observe") return;
-  const observerLabId = selectedLabId;
-  const scoped = Boolean(observerLabId);
-  const requests = [
-    ["/api/state", renderState],
-    ["/api/runs", renderRuns],
-    ["/api/evidence", renderEvidence],
-    ["/api/verdict", renderVerdict],
-    ["/api/papers", renderPapers],
-    ["/api/activity", renderActivity],
-  ];
-  const results = await Promise.allSettled(
-    requests.map(async ([path, renderer]) => {
-      const url = scoped ? labPath(path.replace("/api/", "")) : path;
-      const payload = await getJSON(url);
-      if (selectedLabId === observerLabId && currentRoute() === "observe" &&
-          (!routeLabId() || routeLabId() === observerLabId)) return renderer(payload);
-    })
-  );
-  results
-    .filter((result) => result.status === "rejected")
-    .forEach((result) => console.error(result.reason));
+  if (document.hidden || currentRoute() !== "observe" || !routeIdeaId()) return;
+  const href = window.location.hash;
+  if (pendingIdeaRoute === href) return;
+  pendingIdeaRoute = href;
+  try {
+    const data = await getJSON(`/api/labs/${encodeURIComponent(routeLabId())}/ideas/${encodeURIComponent(routeIdeaId())}`);
+    if (window.location.hash !== href) return;
+    renderIdeaSuite(data);
+    loadedIdeaRoute = href;
+  } catch (error) {
+    if (window.location.hash === href) {
+      document.getElementById("idea-results").hidden = true;
+      text("idea-suite-status", `Could not load this idea’s eval suite: ${error.message}`);
+    }
+  } finally {
+    if (pendingIdeaRoute === href) pendingIdeaRoute = "";
+  }
 }
 
 async function refresh() {

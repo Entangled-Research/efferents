@@ -114,18 +114,20 @@ def test_slow_lab_response_cannot_take_over_a_journal_or_network(run_js):
 ''')
 
 
-def test_delayed_observer_data_cannot_overwrite_other_lab(run_js):
+def test_delayed_idea_response_cannot_overwrite_other_idea(run_js):
     run_js('''
 (async () => {
-  const responses = [];
-  getJSON = () => new Promise(done => responses.push(done));
+  let respond;
+  getJSON = () => new Promise(done => {respond = done;});
   let paints = 0;
-  renderState = renderRuns = renderEvidence = renderVerdict = renderPapers = renderActivity = () => {paints++;};
-  window.location.hash = '#observe/a';
+  renderIdeaSuite = () => {paints++;};
+  window.location.hash = '#observe/a/idea/primary';
   const pending = refreshObserver();
-  selectedLabId = 'b'; window.location.hash = '#observe/b';
-  responses.forEach(done => done({}));
+  window.location.hash = '#observe/a/idea/second';
+  respond({student_id:'primary'});
   await pending;
   assert.equal(paints, 0);
+  assert.equal(routeLabId(), 'a');
+  assert.equal(routeIdeaId(), 'second');
 })();
 ''')

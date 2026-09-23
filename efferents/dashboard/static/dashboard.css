@@ -2529,3 +2529,17 @@ td.status-insufficient_data {
 
 .living-network .network-nodes { pointer-events: none; }
 .living-network .network-lab-boundary, .living-network .network-review-board, .living-network .shared-journal-node { pointer-events: auto; }
+
+/* A lab contains ideas; each idea owns its evaluation surface. */
+.idea-directory-row { padding: 18px; border-top: 1px solid var(--line); }
+.idea-directory-row:first-child { border-top: 0; }
+.idea-directory-row h2 { font: 600 14px var(--mono); margin: 0 0 10px; }
+.idea-directory-row p { max-width: 100ch; white-space: pre-line; }
+.idea-directory-meta { display: flex; justify-content: space-between; gap: 16px; font: 12px var(--mono); }
+#idea-breadcrumb { margin: 0 0 16px; font: 12px var(--mono); }
+.idea-suite-panel { margin-bottom: 20px; }
+#idea-suite-status, #idea-suite-plan { padding: 0 16px; }
+.idea-eval-graphs { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); gap: 16px; }
+.idea-eval-graphs article { border-top: 1px solid var(--line); padding: 12px 0; }
+.idea-eval-graphs h3 { font: 12px var(--mono); }
+.idea-eval-graphs svg { width: 100%; }

@@ -59,7 +59,7 @@ def read_state(lab_root: Path, cfg: "LabConfig | None" = None) -> dict:
 
 
 def read_runs(
-    lab_root: Path, n: int = 30, cfg: "LabConfig | None" = None
+    lab_root: Path, n: int = 30, cfg: "LabConfig | None" = None, *, rows: list[dict] | None = None
 ) -> dict:
     lab_root = Path(lab_root)
     cfg = cfg or lab_mod.get_config()
@@ -69,7 +69,8 @@ def read_runs(
         return x if isinstance(x, (int, float)) and not isinstance(x, bool) and math.isfinite(x) else None
 
     db = lab_root / "runs.sqlite"
-    rows = state_mod.recent_runs(db, n) if db.exists() else []
+    scoped = rows is not None
+    rows = rows if scoped else (state_mod.recent_runs(db, n) if db.exists() else [])
     runs = []
     for row in rows:
         failures = metrics_view.constraint_failures(row, cfg=cfg)
@@ -89,9 +90,9 @@ def read_runs(
             and r["eligible"]
         )
     ]
-    best_row = metrics_view.best_run_from_db(db, cfg=cfg)
+    best_row = metrics_view.best_run(rows, cfg=cfg) if scoped else metrics_view.best_run_from_db(db, cfg=cfg)
     history = {
-        "total": state_mod.runs_count(db),
+        "total": len(rows) if scoped else state_mod.runs_count(db),
         "best": (
             metrics_view.finite(best_row.get(column))
             if best_row is not None
@@ -248,10 +249,11 @@ def _deployment_evidence(
 
 
 def _evidence_payload(
-    lab_root: Path, cfg: "LabConfig"
+    lab_root: Path, cfg: "LabConfig", *, rows: list[dict] | None = None
 ) -> tuple[dict, dict[str, Path]]:
     lab_root = Path(lab_root)
-    rows = _ledger_rows(lab_root)
+    scoped = rows is not None
+    rows = rows if scoped else _ledger_rows(lab_root)
     panels = _panel_specs(cfg)
     catalog: dict[str, Path] = {}
     records: list[dict] = []
@@ -322,7 +324,8 @@ def _evidence_payload(
         "value": constraint.value,
         "label": constraint.label or constraint.column,
     } for constraint in cfg.metrics.constraints]
-    records = _deployment_evidence(lab_root, cfg, panels, catalog) + records
+    if not scoped:
+        records = _deployment_evidence(lab_root, cfg, panels, catalog) + records
     return ({
         "panels": panels,
         "constraints": constraints,
@@ -439,11 +442,11 @@ def _bucket_entries(rows: list[dict], cfg: "LabConfig") -> tuple[list[dict], lis
     return buckets, paired
 
 
-def read_verdict(lab_root: Path, cfg: "LabConfig | None" = None) -> dict:
+def read_verdict(lab_root: Path, cfg: "LabConfig | None" = None, *, rows: list[dict] | None = None) -> dict:
     """Deterministic evidence over succeeded runs: per-bucket aggregates,
     seed-paired deltas, every declared falsifier, and the resulting verdict."""
     cfg = cfg or lab_mod.get_config()
-    rows = _ledger_rows(lab_root)
+    rows = rows if rows is not None else _ledger_rows(lab_root)
     status, falsifiers = _verdict(rows, cfg)
     buckets, paired = _bucket_entries(rows, cfg)
     return {
@@ -470,7 +473,16 @@ def resolve_artifact(
 ) -> Path | None:
     """Resolve an opaque artifact token from the selected lab's evidence set."""
     cfg = cfg or lab_mod.get_config()
-    return _evidence_payload(Path(lab_root), cfg)[1].get(token)
+    found = _evidence_payload(Path(lab_root), cfg)[1].get(token)
+    if found is not None:
+        return found
+    from efferents.dashboard.ideas import idea_rows
+    for student in cfg.students:
+        rows = idea_rows(Path(lab_root).resolve(), cfg, student['id'])
+        found = _evidence_payload(Path(lab_root), cfg, rows=rows)[1].get(token)
+        if found is not None:
+            return found
+    return None
 
 
 def paper_dirs(lab_root: Path) -> list[Path]:
@@ -566,6 +578,15 @@ def read_summary(lab_root: Path, cfg: "LabConfig") -> dict:
         else latest_run.get("started_at")
     )
     verdict, falsifiers = _verdict(_ledger_rows(lab_root), cfg)
+    from efferents.dashboard.ideas import read_idea
+    plans = {}
+    for student in cfg.students:
+        view = read_idea(lab_root, cfg, student['id'])
+        suite = view['suite']
+        plans[student['id']] = {k: suite[k] for k in ('status', 'title', 'rationale', 'message')}
+        plans[student['id']]['graphs'] = [
+            {'title': graph['title'], 'series': [{'column': series['column'], 'points': []}
+             for series in graph['series']]} for graph in suite['graphs']]
     return {
         "status": state["status"],
         "budget": state["budget"],
@@ -581,6 +602,7 @@ def read_summary(lab_root: Path, cfg: "LabConfig") -> dict:
         # falsifiers test the running claim, which the default idea owns.
         "ideas": [{"id": student["id"],
                    "name": _idea_name(student, cfg, state["hypothesis"].get("question") or ""),
+                   "eval_suite": plans[student["id"]],
                    "focus": student.get("focus") or
                    state["hypothesis"].get("question") or cfg.approach or cfg.domain,
                    "verdict": verdict if student["id"] == cfg.default_student_id
