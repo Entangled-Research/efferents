@@ -382,6 +382,13 @@ def write_phase_a_paper(
     can introspect what was composed), or None if the mechanical gate
     rejected the campaign before composition.
     """
+    existing = paths.paper / f"{campaign['id']}.md"
+    if existing.is_file():
+        artifact = existing.read_bytes().decode("utf-8")
+        if _lab.PEER_REVIEW_ENABLED:
+            return _review_draft(paths, campaign, artifact, client, budget)
+        return artifact
+
     import sqlite3 as _sqlite3
 
     db = paths.runs_db
@@ -632,120 +639,201 @@ def write_phase_a_paper(
     paper_dir = paths.paper
     paper_dir.mkdir(parents=True, exist_ok=True)
     out_path = paper_dir / f"{campaign_id}.md"
-    out_path.write_text(artifact)
+    artifact = _install_draft(out_path, artifact)
 
     # If peer review is disabled, we're done — legacy publish-on-gate path.
     if not _lab.PEER_REVIEW_ENABLED:
         return artifact
 
-    # ------------------------------------------------------------------
-    # Peer review pipeline: 3 reviewers (parallel) → rebuttal → decide
-    # ------------------------------------------------------------------
-    from concurrent.futures import ThreadPoolExecutor
+    return _review_draft(paths, campaign, artifact, client, budget)
 
+
+def _install_draft(destination: Path, artifact: str) -> str:
+    """Atomically publish a complete draft only if no other writer won first."""
+    import os
+    import tempfile
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", newline="",
+                                     prefix=".draft-", dir=destination.parent,
+                                     delete=False) as stream:
+        temporary = Path(stream.name)
+        try:
+            stream.write(artifact)
+            stream.flush()
+            os.fsync(stream.fileno())
+        except BaseException:
+            temporary.unlink(missing_ok=True)
+            raise
+    try:
+        try:
+            os.link(temporary, destination)
+        except FileExistsError:
+            pass
+        return destination.read_bytes().decode("utf-8")
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def _journal_has_campaign(path: Path, campaign_id: str) -> bool:
+    if not path.is_file():
+        return False
+    from efferents.agents.federation import parse_journal_entries
+    return any(entry.get("campaign_id") == campaign_id
+               for entry in parse_journal_entries(path.read_text()))
+
+
+def _review_state_path(paths: Any, campaign_id: str, digest: str) -> Path:
+    return paths.lab / "peer_review" / campaign_id / f"{digest}.json"
+
+
+def review_complete(paths: Any, campaign_id: str) -> bool:
+    """Whether this campaign has a final decision; a draft alone is incomplete."""
+    paper = paths.paper / f"{campaign_id}.md"
+    if not paper.is_file():
+        return False
+    if not _lab.PEER_REVIEW_ENABLED:
+        return True
+    digest = hashlib.sha256(paper.read_bytes()).hexdigest()
+    try:
+        state = json.loads(_review_state_path(paths, campaign_id, digest).read_text())
+    except (OSError, ValueError):
+        # Historical completed papers have no resumable state file.
+        return any(_journal_has_campaign(paths.paper / name, campaign_id)
+                   for name in ("journal.md", "rejected.md"))
+    # If append succeeded just before an interruption, re-enter finalization
+    # without repeating reviews or appending a duplicate journal entry.
+    return (state.get("manuscript_sha256") == digest and state.get("completed") is True)
+
+
+def _save_review_state(path: Path, state: dict) -> None:
+    import os
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(".tmp")
+    with temporary.open("w") as stream:
+        json.dump(state, stream, indent=2)
+        stream.write("\n")
+        stream.flush()
+        os.fsync(stream.fileno())
+    temporary.replace(path)
+
+
+def _review_draft(paths: Any, campaign: dict, artifact: str, client: Any, budget: Any) -> str:
+    import fcntl
+    paths.paper.mkdir(parents=True, exist_ok=True)
+    with (paths.paper / f".{campaign['id']}.review.lock").open("a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        return _review_draft_locked(paths, campaign, artifact, client, budget)
+
+
+def _review_draft_locked(paths: Any, campaign: dict, artifact: str, client: Any, budget: Any) -> str:
+    """Resume only missing work for this exact manuscript; never overwrite it."""
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    from dataclasses import asdict
     from efferents.agents import journal as _journal
     from efferents.agents import rebuttal as _rebuttal
     from efferents.agents import reviewer as _reviewer
-    from efferents.agents.state import (
-        campaign_close as _campaign_close,
-        notebook_append,
-        now_iso,
-    )
+    from efferents.agents.state import campaign_close, notebook_append, now_iso
 
+    campaign_id = campaign["id"]
+    out_path = paths.paper / f"{campaign_id}.md"
+    if out_path.read_bytes() != artifact.encode("utf-8"):
+        raise ValueError("Manuscript changed before review; retry the current draft explicitly")
+    metadata = PaperFrontmatter(**_yaml.safe_load(artifact.split("---", 2)[1]))
+    if metadata.campaign_id != campaign_id:
+        raise ValueError("Draft campaign does not match the requested review")
+    if review_complete(paths, campaign_id):
+        return artifact
+    digest = hashlib.sha256(out_path.read_bytes()).hexdigest()
+    state_path = _review_state_path(paths, campaign_id, digest)
+    try:
+        state = json.loads(state_path.read_text())
+    except (OSError, ValueError):
+        state = {"campaign_id": campaign_id, "manuscript_sha256": digest,
+                 "reviews": {}, "errors": {}, "completed": False}
+    if state.get("manuscript_sha256") != digest or state.get("campaign_id") != campaign_id:
+        raise ValueError("Cached review does not match this manuscript")
+    reviews_by_persona = {}
+    for persona, raw in state.get("reviews", {}).items():
+        try:
+            review = _reviewer.Review(**raw)
+            if review.valid and review.persona == persona and persona in _reviewer.PERSONAS:
+                reviews_by_persona[persona] = review
+        except (TypeError, ValueError):
+            pass
     if budget is None:
         from efferents.agents.budget import BudgetTracker
         budget = BudgetTracker(paths.budget, daily_cap_usd=10000.0)
-
-    delta_pct = (
-        100.0 * (baseline_value - candidate_value) / baseline_value
-        if direction == "min" and baseline_value != 0.0
-        else (100.0 * (candidate_value - baseline_value) / baseline_value
-              if baseline_value != 0.0 else 0.0)
-    )
-    headline = (
-        f"{novelty_claim} — {metric} {candidate_value:.3f} vs baseline "
-        f"{baseline_value:.3f} ({delta_pct:+.1f}%)"
-    )
-
-    try:
-        with ThreadPoolExecutor(max_workers=3) as ex:
-            futures = {
-                p: ex.submit(
-                    _reviewer.review,
-                    paper_path=out_path, persona=p,
-                    client=client, budget=budget,
-                )
-                for p in _reviewer.PERSONAS
-            }
-            reviews = [futures[p].result() for p in _reviewer.PERSONAS]
-    except Exception as e:
-        notebook_append(
-            paths.notebook,
-            f"## {now_iso()} — peer-review board FAILED for {campaign_id}: "
-            f"{type(e).__name__}: {e}. Campaign left open.\n",
-        )
+    missing = [persona for persona in _reviewer.PERSONAS if persona not in reviews_by_persona]
+    if missing:
+        with ThreadPoolExecutor(max_workers=len(missing)) as executor:
+            futures = {executor.submit(_reviewer.review, paper_path=out_path, persona=persona,
+                                       client=client, budget=budget): persona for persona in missing}
+            for future in as_completed(futures):
+                persona = futures[future]
+                try:
+                    review = future.result()
+                    if not review.valid or review.persona != persona:
+                        raise ValueError("Reviewer output was incomplete or invalid")
+                    reviews_by_persona[persona] = review
+                    state.setdefault("reviews", {})[persona] = asdict(review)
+                    state.setdefault("errors", {}).pop(persona, None)
+                except Exception as exc:
+                    state.setdefault("errors", {})[persona] = {"type": type(exc).__name__, "at": now_iso()}
+                _save_review_state(state_path, state)
+    if len(reviews_by_persona) != len(_reviewer.PERSONAS):
+        missing = [persona for persona in _reviewer.PERSONAS if persona not in reviews_by_persona]
+        notebook_append(paths.notebook, f"## {now_iso()} — peer-review board incomplete for {campaign_id}: "
+                        f"retry {', '.join(missing)} for manuscript {digest[:12]}; "
+                        "successful reviews saved, campaign left open.\n")
         return artifact
-
-    try:
-        rebuttal_text = _rebuttal.write_rebuttal(
-            paper_path=out_path, reviews=reviews,
-            client=client, budget=budget,
-        )
-    except Exception as e:
-        rebuttal_text = f"## Rebuttal\n\n(rebuttal failed: {type(e).__name__}: {e})\n"
-
-    decision = _reviewer.decide(reviews)
-
-    _journal.write_reviews_file(
-        paper_dir / f"{campaign_id}.reviews.md",
-        campaign_id=campaign_id, reviews=reviews, decision=decision,
-    )
-    _journal.write_rebuttal_file(
-        paper_dir / f"{campaign_id}.rebuttal.md",
-        campaign_id=campaign_id, rebuttal_text=rebuttal_text,
-    )
-
-    student_id = campaign.get("student_id") or "primary"
-
+    if hashlib.sha256(out_path.read_bytes()).hexdigest() != digest:
+        raise ValueError("Manuscript changed during review; cached reviews apply only to the original hash")
+    reviews = [reviews_by_persona[persona] for persona in _reviewer.PERSONAS]
+    if "rebuttal" not in state:
+        try:
+            state["rebuttal"] = _rebuttal.write_rebuttal(
+                paper_path=out_path, reviews=reviews, client=client, budget=budget)
+            state.setdefault("errors", {}).pop("rebuttal", None)
+        except Exception as exc:
+            state.setdefault("errors", {})["rebuttal"] = {"type": type(exc).__name__, "at": now_iso()}
+            _save_review_state(state_path, state)
+            notebook_append(paths.notebook, f"## {now_iso()} — rebuttal incomplete for {campaign_id}: "
+                            f"{type(exc).__name__}; reviews saved, retry without recomposition.\n")
+            return artifact
+        _save_review_state(state_path, state)
+    if hashlib.sha256(out_path.read_bytes()).hexdigest() != digest:
+        raise ValueError("Manuscript changed during rebuttal; review state retained for its original hash")
+    decision = state.get("decision") or _reviewer.decide(reviews)
+    state["decision"] = decision
+    _save_review_state(state_path, state)
+    _journal.write_reviews_file(paths.paper / f"{campaign_id}.reviews.md",
+                               campaign_id=campaign_id, reviews=reviews, decision=decision)
+    _journal.write_rebuttal_file(paths.paper / f"{campaign_id}.rebuttal.md",
+                                campaign_id=campaign_id, rebuttal_text=state["rebuttal"])
+    metric = metadata.metric_provenance[0]
+    headline = (f"{metadata.novelty_claim} — {metric.name} {metric.value:.6g}"
+                + (f" vs {metric.comparator_name or 'baseline'} {metric.comparator_value:.6g}"
+                   if metric.comparator_value is not None else ""))
+    append = _journal.append_journal if decision["accept"] else _journal.append_rejected
+    journal_path = paths.paper / ("journal.md" if decision["accept"] else "rejected.md")
+    if not _journal_has_campaign(journal_path, campaign_id):
+        append(journal_path, campaign_id=campaign_id, headline=headline, decision=decision,
+               student_id=campaign.get("student_id") or "primary")
     if decision["accept"]:
-        _journal.append_journal(
-            paper_dir / "journal.md",
-            campaign_id=campaign_id, headline=headline, decision=decision,
-            student_id=student_id,
-        )
         try:
-            sha = _journal.auto_commit_paper(
-                repo_root=paths.paper.parent,
-                campaign_id=campaign_id, headline=headline, decision=decision,
-            )
-            commit_msg = f"committed as {sha}" if sha else "commit failed"
-        except Exception as e:
-            commit_msg = f"commit raised: {type(e).__name__}: {e}"
-        try:
-            _campaign_close(paths.runs_db, campaign_id, reason="published")
-        except Exception:
-            pass  # already closed, or no campaigns table; non-fatal
-        notebook_append(
-            paths.notebook,
-            f"## {now_iso()} — Paper ACCEPTED: {campaign_id} "
-            f"(mean={decision['mean_score']:.1f}, min={decision['min_score']}); "
-            f"{commit_msg}.\n",
-        )
-    else:
-        _journal.append_rejected(
-            paper_dir / "rejected.md",
-            campaign_id=campaign_id, headline=headline, decision=decision,
-            student_id=student_id,
-        )
-        try:
-            _campaign_close(paths.runs_db, campaign_id, reason="rejected_by_review")
-        except Exception:
-            pass
-        notebook_append(
-            paths.notebook,
-            f"## {now_iso()} — Paper REJECTED: {campaign_id}; {decision['reason']}.\n",
-        )
-
+            _journal.auto_commit_paper(repo_root=paths.paper.parent, campaign_id=campaign_id,
+                                       headline=headline, decision=decision)
+        except Exception as exc:
+            notebook_append(paths.notebook, f"## {now_iso()} — paper commit failed: {type(exc).__name__}\n")
+    reason = "published" if decision["accept"] else "rejected_by_review"
+    try:
+        campaign_close(paths.runs_db, campaign_id, reason=reason)
+    except Exception:
+        pass
+    state.update(completed=True, decision=decision, completed_at=now_iso())
+    _save_review_state(state_path, state)
+    verdict = "ACCEPTED" if decision["accept"] else "REJECTED"
+    notebook_append(paths.notebook, f"## {now_iso()} — Paper {verdict}: {campaign_id}; {decision['reason']}.\n")
     return artifact
 
 
