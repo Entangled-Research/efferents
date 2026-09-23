@@ -2522,3 +2522,31 @@ td.status-insufficient_data {
 .rejected-arrow, .network-packet.rejected { fill: var(--danger); }
 .legend-line.accepted { border-color: var(--data); }
 .legend-line.rejected { border-color: var(--danger); }
+
+/* Conference → lab → idea hierarchy, with read-only evidence inspection. */
+.conference-branch { stroke: var(--signal); stroke-width: 1.5; }
+.lab-map-actions { display: flex; gap: 8px; margin: 6px 0; }
+.lab-map-actions button { padding: 4px 8px; font: 11px/1.4 var(--mono); }
+.network-lab-boundary .lab-idea-nodes { position: relative; border-top: 1px solid var(--signal); padding-top: 14px; margin-top: 15px; max-height: 92px; }
+.network-lab-boundary .lab-idea-nodes::before { content: ""; position: absolute; left: 50%; top: -15px; height: 15px; border-left: 1px solid var(--signal); }
+.network-lab-boundary .lab-idea-node { flex: 1 1 70px; text-align: center; border-top: 2px solid var(--signal); }
+.network-lab-boundary .lab-idea-label { position: absolute; left: 0; top: 0; font-size: 8px; }
+.network-lab-boundary .internal-research { padding-top: 5px; }
+.journal-route.subscribe { stroke-dasharray: none; }
+.journal-route.visit { stroke: var(--terracotta); stroke-dasharray: 2 6; }
+.visit-arrow, .network-packet.visit { fill: var(--terracotta); }
+.legend-line.subscribe { border-top-style: solid; }
+.legend-line.visit { border-color: var(--terracotta); border-top-style: dotted; }
+.network-inspector { width: min(760px, calc(100vw - 32px)); max-height: 85vh; padding: 0; border: 1px solid var(--signal); border-radius: 0; background: var(--panel); color: var(--ink); }
+.network-inspector::backdrop { background: rgb(0 0 0 / 25%); }
+.network-inspector .panel-header { padding: 16px; }
+.network-inspector-body { padding: 0 16px 16px; overflow-wrap: anywhere; }
+.inspector-ideas article, .journal-directory-record { border-top: 1px solid var(--line); padding: 12px 0; }
+.inspector-ideas h3, .journal-directory-record h3 { font: 600 14px/1.4 var(--mono); }
+.inspector-metrics { display: grid; grid-template-columns: minmax(100px, 1fr) minmax(100px, 2fr); gap: 8px; font: 12px/1.5 var(--mono); }
+.inspector-metrics dd { margin: 0; }
+.journal-directory-record pre { white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.6 var(--mono); }
+.network-inspector small { font: 11px/1.5 var(--mono); }
+
+.living-network .network-nodes { pointer-events: none; }
+.living-network .network-lab-boundary, .living-network .network-review-board, .living-network .shared-journal-node { pointer-events: auto; }

@@ -439,7 +439,8 @@ function ideaName(idea) {
 }
 
 function labIdeas(lab) {
-  if (lab.ideas?.length) return lab.ideas;
+  if (Array.isArray(lab.ideas)) return lab.ideas;
+  if (lab.remote) return [];
   const focus = lab.hypothesis?.question || lab.approach || "Initial research idea";
   return [{id: "primary", focus, verdict: lab.verdict?.status || "undecided"}];
 }
@@ -499,11 +500,12 @@ let networkSelection = null;
 function homeJournal(lab) {
   if (lab.journal) return lab.journal;
   const domain = (lab.domain || "").toLowerCase();
-  if (/machine.learning|active.learning|^ml$/.test(domain)) return "ML & Autonomous Systems";
+  if (domain === "numerical-analysis") return "Journal of Numerical Analysis";
+  if (/machine.learning|active.learning|artificial.intelligence|^ml$/.test(domain)) return "ML & Autonomous Systems";
   if (/vehicle|traffic|simulation|routing|transport/.test(domain)) return "Simulation & Autonomous Systems";
   if (/physics|orbit|mechanics/.test(domain)) return "Physics & Dynamics";
   if (/math|graph|numerical|algorithm|optimi/.test(domain)) return "Mathematics & Computation";
-  return lab.domain || "General Research";
+  return domain.replace(/[-_]/g, " ").replace(/\b\w/g, c => c.toUpperCase()) || "General Research";
 }
 function portfolioLabs() {
   const localIds = new Set(portfolioState.labs.map(lab => lab.lab_id));
@@ -545,8 +547,60 @@ function networkLabNames(labs) {
     [id, counts.get(base) > 1 ? `${base} ${count}` : base]));
 }
 function publishedFindings() {
-  return [...portfolioState.findings, ...(portfolioState.eventNetwork?.findings || [])]
-    .filter(item => item.kind === "publication" && item.publication_status === "accepted");
+  return [...new Map([...portfolioState.findings, ...(portfolioState.eventNetwork?.findings || [])]
+    .filter(item => item.kind === "publication" && item.publication_status === "accepted")
+    .map(item => [item.id, item])).values()];
+}
+
+function networkDialog(title, content) {
+  let dialog = document.getElementById("network-inspector");
+  if (!dialog) {
+    dialog = document.createElement("dialog");
+    dialog.id = "network-inspector";
+    dialog.className = "network-inspector";
+    dialog.setAttribute("aria-labelledby", "network-inspector-title");
+    document.body.appendChild(dialog);
+  }
+  dialog.innerHTML = `<header class="panel-header"><h2 id="network-inspector-title">${esc(title)}</h2><button type="button" data-close>Close</button></header><div class="network-inspector-body">${content}</div>`;
+  dialog.querySelector("[data-close]").onclick = () => dialog.close();
+  if (!dialog.open) dialog.showModal();
+  return dialog;
+}
+
+function inspectLab(labId, section = "ideas") {
+  const lab = portfolioLabs().find(item => item.lab_id === labId);
+  if (!lab) return;
+  networkSelection = labId;
+  const ideas = labIdeas(lab), headline = lab.headline || {};
+  const dialog = networkDialog(labDisplayName(labId),
+    `<p>${esc(homeJournal(lab))} · ${esc(lab.status || "stopped")}</p>` +
+    `<nav class="lab-map-actions" aria-label="Lab inspection"><button type="button" data-inspect="ideas" aria-pressed="${section === "ideas"}">Ideas · ${ideas.length || (lab.remote ? "private" : "0")}</button><button type="button" data-inspect="evals" aria-pressed="${section === "evals"}">Evals</button></nav>` +
+    (section === "ideas" ? `<div class="inspector-ideas">${ideas.map(idea => `<article><h3>${esc(ideaName(idea))}</h3><p>${esc(idea.focus || "No focus recorded")}</p><small>Track ${esc(idea.id)} · ${esc(idea.verdict || "undecided")}</small></article>`).join("") || `<p>${lab.remote ? "The idea roster is private to the participant’s local console." : "No ideas recorded."}</p>`}</div>` :
+      `<h3>Evaluation summary</h3><dl class="inspector-metrics"><dt>Metric</dt><dd>${esc(headline.column || "Not recorded")}</dd><dt>Direction</dt><dd>${esc(headline.direction || "—")}</dd><dt>Latest</dt><dd>${esc(headline.latest ?? "—")}</dd><dt>Best eligible</dt><dd>${esc(headline.best ?? "—")}</dd><dt>Runs</dt><dd>${esc(headline.observations ?? 0)}</dd></dl>` +
+      (lab.remote ? `<p>Shared heartbeat summary · ${esc(formatTimestamp(lab.received_at, true))}. Detailed evals remain on the participant’s host.</p>` : `<button type="button" data-open-evals>Open evals, runs and evidence</button>`)));
+  dialog.querySelectorAll("[data-inspect]").forEach(button => {
+    button.onclick = () => inspectLab(labId, button.dataset.inspect);
+  });
+  const evals = dialog.querySelector("[data-open-evals]");
+  if (evals) evals.onclick = async () => {
+    evals.disabled = true;
+    try {
+      await openLabTab(lab.lab_id);
+      dialog.close();
+      document.querySelector(".metric-panel").scrollIntoView({block: "start"});
+    } catch (error) {
+      evals.disabled = false;
+      evals.textContent = `Unable to open evals: ${error.message}. Retry`;
+    }
+  };
+}
+
+function inspectJournal(name) {
+  const papers = publishedFindings().filter(item => homeJournal(item) === name);
+  networkDialog(`${name} · Journal directory`,
+    `<p>${papers.length} accepted publications</p>` + (papers.map(item =>
+      `<article class="journal-directory-record"><h3>${esc(item.campaign_id || "Paper")}</h3><p>${esc(labDisplayName(item.lab_id))} · ${esc(item.publication_status)}</p><dl class="inspector-metrics">${["critical", "neutral", "optimistic"].map(persona => `<dt>${persona}</dt><dd>${esc(item.review_scores?.[persona] ?? "—")}/10</dd>`).join("")}</dl><details><summary>Read publication</summary><pre>${esc(item.body || "No text shared")}</pre></details><small>Record ${esc(item.id)}${item.source ? ` · ${esc(item.source)}` : ""}</small></article>`
+    ).join("") || "<p>No accepted publications yet.</p>"));
 }
 
 function reviewBoardMarkup(board = {}) {
@@ -589,7 +643,7 @@ function renderNetwork() {
   const rowHeight = MAP_CELL.row;
   lines.setAttribute("viewBox", `0 0 ${world.width} ${world.height}`);
   const defs = svgElement("defs", {});
-  for (const kind of ["publish", "subscribe", "accepted", "rejected"]) {
+  for (const kind of ["publish", "subscribe", "accepted", "rejected", "visit"]) {
     const marker = svgElement("marker", {id: `${kind}-arrow`, viewBox: "0 0 10 10",
       refX: 9, refY: 5, markerWidth: 9, markerHeight: 9, markerUnits: "userSpaceOnUse", orient: "auto"});
     marker.appendChild(svgElement("path", {d: "M0 0 L10 5 L0 10 Z", class: `${kind}-arrow`}));
@@ -611,65 +665,72 @@ function renderNetwork() {
   names.forEach((name, groupIndex) => {
     const members = groups.get(name);
     const {x: groupLeft, y: groupTop, width: groupWidth} = world.origins[groupIndex];
-    const groupRight = groupLeft + groupWidth;
-    const rows = Math.ceil(members.length / columns);
-    const journalY = groupTop + rows * rowHeight + 15;
+    const journalY = groupTop + 24;
+    const journalX = groupLeft + groupWidth / 2;
     const width = MAP_CELL.card, half = width / 2;
     members.forEach((lab, index) => {
       const x = groupLeft + MAP_CELL.pad + (index % columns + 0.5) * MAP_CELL.slot;
-      const y = groupTop + Math.floor(index / columns) * rowHeight + 24;
+      const y = groupTop + MAP_CELL.journal + Math.floor(index / columns) * rowHeight + 138;
       const card = document.createElement("article");
       card.className = "network-lab-boundary";
+      card.dataset.labId = lab.lab_id;
       Object.assign(card.style, {left: `${x}px`, top: `${y}px`, width: `${width}px`});
       const ideas = labIdeas(lab);
-      card.innerHTML = `<button type="button" class="lab-identity" aria-pressed="${lab.lab_id === networkSelection}"><strong>${esc(labDisplayName(lab.lab_id))}</strong><small>${esc(lab.status || "stopped")}${lab.remote ? " · read only" : ""}</small></button>` +
-        `<div class="lab-idea-nodes" aria-label="Ideas in ${esc(labDisplayName(lab.lab_id))}"><span class="lab-idea-label">Ideas · ${ideas.length}</span>${ideas.map(ideaLineMarkup).join("")}</div>` +
-        `<div class="internal-research"><span>Supervisor · Researcher · Librarian</span><b>Hypothesis → Experiment</b><b>Evidence → Paper</b><span>Executor · Coder · Analyst · Writer</span></div>`;
-      // Local labs open in their tab; remote read-only labs have no local evidence to show.
-      card.querySelector("button").onclick = () => {
-        networkSelection = lab.lab_id;
-        if (lab.remote) renderNetwork(); else openLabTab(lab.lab_id);
-      };
+      card.innerHTML = `<button type="button" class="lab-identity" aria-haspopup="dialog" aria-pressed="${lab.lab_id === networkSelection}"><strong>${esc(labDisplayName(lab.lab_id))}</strong><small>${esc(lab.status || "stopped")}${lab.remote ? " · read only" : ""}</small></button>` +
+        `<div class="lab-map-actions"><button type="button" data-lab-ideas>Ideas · ${ideas.length || (lab.remote ? "private" : "0")}</button><button type="button" data-lab-evals>Evals</button></div>` +
+        `<div class="lab-idea-nodes" aria-label="Ideas in ${esc(labDisplayName(lab.lab_id))}"><span class="lab-idea-label">Ideas · ${ideas.length}</span>${ideas.map(ideaLineMarkup).join("") || `<small>${lab.remote ? "Idea roster stays on the participant’s host" : "No ideas yet"}</small>`}</div>` +
+        `<div class="internal-research"><span>Hypothesis → Experiment → Evidence → Paper</span></div>`;
+      card.querySelector(".lab-identity").onclick = () => inspectLab(lab.lab_id, "ideas");
+      card.querySelector("[data-lab-ideas]").onclick = () => inspectLab(lab.lab_id, "ideas");
+      card.querySelector("[data-lab-evals]").onclick = () => inspectLab(lab.lab_id, "evals");
       nodes.appendChild(card);
-      const owned = findings.filter(item => item.lab_id === lab.lab_id);
+      const owned = findings.filter(item => item.lab_id === lab.lab_id && homeJournal(item) === name);
       const latest = owned.at(-1);
-      const board = lab.review_board || (latest ? {status: "accepted", scores: latest.review_scores} : {});
+      const board = lab.review_board?.status ? lab.review_board : (latest ? {status: "accepted", scores: latest.review_scores} : {});
+      const reviewY = y - 120;
       const review = document.createElement("div");
       review.className = "network-review-board";
-      Object.assign(review.style, {left: `${x}px`, top: `${y + 242}px`, width: `${width}px`});
+      Object.assign(review.style, {left: `${x}px`, top: `${reviewY}px`, width: `${width}px`});
       review.innerHTML = reviewBoardMarkup(board);
       nodes.appendChild(review);
-      route(`M${x},${y + 210} V${y + 237}`, "publish", false,
-        `${labDisplayName(lab.lab_id)} submits a paper to its three-reviewer board`);
+      // Solid parent branches express membership; packets express recorded outcomes.
+      const memberRow = Math.floor(index / columns);
+      const branchPath = memberRow === 0 ? `M${journalX},${journalY + 70} L${x},${reviewY}`
+        : `M${journalX - 200},${journalY + 35} H${groupLeft + 15} V${reviewY - 18} H${x} V${reviewY}`;
+      const branch = svgElement("path", {d: branchPath,
+        class: "conference-branch", fill: "none"});
+      lines.appendChild(branch);
+      route(`M${x},${y} V${reviewY + 95}`, "publish", false,
+        `${labDisplayName(lab.lab_id)} submits to its home journal review board`);
       if (board.status === "rejected") {
-        route(`M${x + half},${y + 300} H${x + half + 20} V${y + 110} H${x + half + 5}`,
+        route(`M${x + half},${reviewY + 45} H${x + half + 20} V${y + 25} H${x + half + 5}`,
           "rejected", true, `Rejected paper → ${labDisplayName(lab.lab_id)} for revision`);
       }
-      // Each lab publishes down the gutter on its right and subscribes up the
-      // gutter on its left, so paths stay out of other labs in larger journals.
-      const lane = x + half + 35;
       const accepted = board.status === "accepted" && owned.some(item =>
         !board.campaign_id || item.campaign_id === board.campaign_id);
-      if (board.status !== "rejected") {
-        const entry = lane > groupRight - 100 ? `V${journalY + 35} H${groupRight - 100}` : `V${journalY}`;
-        route(`M${x},${y + 332} V${y + 350} H${lane} ${entry}`,
-          accepted ? "accepted" : "publish", accepted, `${labDisplayName(lab.lab_id)} → ${name}: accepted papers only`);
+      if (accepted) {
+        route(memberRow === 0 ? `M${x},${reviewY} L${journalX},${journalY + 75}`
+          : `M${x},${reviewY} V${reviewY - 18} H${groupLeft + 15} V${journalY + 35} H${journalX - 205}`,
+          "accepted", true, `${labDisplayName(lab.lab_id)} → ${name}: accepted papers only`);
       }
-      labPorts.set(lab.lab_id, {x: x - half, y: y + 75, lane: x - half - 35});
+      labPorts.set(lab.lab_id, {x: x - half, y: y + 25, lane: x - half - 25});
     });
-    const published = findings.filter(item => (item.journal || homeJournal(item)) === name);
-    const journal = document.createElement("div");
+    const published = findings.filter(item => homeJournal(item) === name);
+    const journal = document.createElement("button");
+    journal.type = "button";
     journal.className = "shared-journal-node";
-    Object.assign(journal.style, {left: `${groupLeft + 100}px`, top: `${journalY}px`, width: `${groupWidth - 200}px`});
-    journal.innerHTML = `<small>SHARED JOURNAL · ACCEPTED PAPERS</small><strong>${esc(name)}</strong><small>${published.length} publications · append-only evidence</small>`;
+    journal.setAttribute("aria-haspopup", "dialog");
+    Object.assign(journal.style, {left: `${journalX - 200}px`, top: `${journalY}px`, width: "400px"});
+    journal.innerHTML = `<small>CONFERENCE · HOME JOURNAL</small><strong>${esc(name)}</strong><small>Inspect journal directory · ${published.length} publications</small>`;
+    journal.onclick = () => inspectJournal(name);
     journalsLayer.appendChild(journal);
-    journalPorts.set(name, {x: groupRight - 150, y: journalY + 70});
-    // Subscription capability is visible; animation requires a persisted receipt.
+    journalPorts.set(name, {x: journalX + 200, y: journalY + 35});
     members.forEach(lab => {
       const port = labPorts.get(lab.lab_id);
-      const active = observations.some(item => item.target === lab.lab_id && publicationById.get(item.finding_id)?.journal === name);
-      route(`M${groupLeft + 150},${journalY + 70} V${journalY + 94} H${port.lane} V${port.y} H${port.x - 7}`,
-        "subscribe", active, `${name} → ${labDisplayName(lab.lab_id)}: journal subscription`);
+      const active = observations.some(item => item.target === lab.lab_id && homeJournal(publicationById.get(item.finding_id)) === name);
+      // Home readership uses the solid tree. Only cross-conference visits are dotted.
+      if (active) route(`M${journalX - 200},${journalY + 35} H${groupLeft + 10} V${port.y - 15} H${port.x - 7} V${port.y}`,
+        "subscribe", true, `${name} → ${labDisplayName(lab.lab_id)}: recorded home-journal receipt`);
     });
   });
   const subscriptions = new Set();
@@ -682,10 +743,10 @@ function renderNetwork() {
     if (!journal || !port || !lab || homeJournal(lab) === name || subscriptions.has(key)) return;
     subscriptions.add(key);
     route(`M${journal.x},${journal.y} V${journal.y + 40} H${port.lane - 10} V${port.y - 16} H${port.x - 7} V${port.y}`,
-      "subscribe", true, `${name} → ${labDisplayName(lab.lab_id)}: cross-field journal subscription`);
+      "visit", true, `${name} → ${labDisplayName(lab.lab_id)}: occasional cross-conference visit`);
   });
   setMapWorld(world.width, world.height, change.view || (change.content && !mapView.moved));
-  text("network-node-count", `${labs.length} labs · ${groups.size} journals`);
+  text("network-node-count", `${groups.size} conferences · ${labs.length} labs`);
   renderEventAdmin(); renderExchange();
 }
 
@@ -695,7 +756,7 @@ function renderNetwork() {
 const mapView = {x: 0, y: 0, k: 1, width: 1000, height: 460, contentKey: "", viewKey: "", moved: false, layout: {cols: 2, groupCols: 1}};
 const MAP_ZOOM = {min: 0.25, max: 2.5, fitMin: 0.35, fitMax: 1, margin: 16, step: 1.3, pan: 60};
 // World geometry in px: a lab slot is a card plus its two routing gutters.
-const MAP_CELL = {slot: 460, card: 360, pad: 40, row: 410, journal: 150};
+const MAP_CELL = {slot: 460, card: 360, pad: 40, row: 390, journal: 150};
 const clamp = (value, low, high) => Math.min(high, Math.max(low, value));
 
 function applyMapView(animated = false) {
@@ -762,7 +823,7 @@ function layoutMapGroups(sizes, cols, groupCols) {
 function chooseMapLayout(sizes) {
   const map = document.getElementById("lab-map");
   let best = {cols: 1, groupCols: 1, scale: 0};
-  for (let cols = 1; cols <= Math.max(1, ...sizes); cols++) {
+  for (let cols = Math.min(2, Math.max(1, ...sizes)); cols <= Math.max(1, ...sizes); cols++) {
     for (let groupCols = 1; groupCols <= Math.max(1, sizes.length); groupCols++) {
       const world = layoutMapGroups(sizes, cols, groupCols);
       const scale = Math.min(map.clientWidth / world.width, map.clientHeight / world.height);

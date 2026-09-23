@@ -7,6 +7,8 @@ import urllib.error
 import urllib.request
 from typing import Any
 
+from efferents.journals import journal_for_domain
+
 
 def read_remote_event() -> dict[str, Any] | None:
     url = os.environ.get("EFFERENTS_EVENT_NETWORK_URL", "").strip()
@@ -42,6 +44,7 @@ def dashboard_payload(remote: dict[str, Any] | None) -> dict[str, Any]:
         labs.append({
             "lab_id": snapshot.get("lab_id"),
             "domain": snapshot.get("domain"),
+            "journal": journal_for_domain(snapshot.get("domain") or ""),
             "topic": snapshot.get("topic"),
             "approach": snapshot.get("approach"),
             "goal": snapshot.get("goal", ""),

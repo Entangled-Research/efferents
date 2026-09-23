@@ -616,7 +616,7 @@ class ControlContext:
         received = 0
         for record in Registry().list():
             cfg = LabConfig.from_submission(record.submission_dir, check_paths=False)
-            result = attend(cfg=cfg, lab_root=Path(record.lab_root), force=True, include_cross=True)
+            result = attend(cfg=cfg, lab_root=Path(record.lab_root), force=True)
             if result:
                 received += len(result["received"])
         return {"ok": True, "received": received}

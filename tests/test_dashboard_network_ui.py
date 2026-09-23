@@ -56,8 +56,10 @@ def test_network_map_is_a_pan_zoom_viewport():
     assert "setPointerCapture" in javascript
     assert "initMapPanZoom();" in javascript
     assert "translate(${mapView.x}px, ${mapView.y}px) scale(${mapView.k})" in javascript
-    # Clicking a local lab in the map opens it; remote labs only get selected.
-    assert "if (lab.remote) renderNetwork(); else openLabTab(lab.lab_id);" in javascript
+    # Both local and remote labs expose an inspector; local evals open the observer.
+    assert 'inspectLab(lab.lab_id, "ideas")' in javascript
+    assert 'inspectLab(lab.lab_id, "evals")' in javascript
+    assert "await openLabTab(lab.lab_id)" in javascript
     # Layout follows the viewport shape and the lab set, not the poll interval.
     assert "function chooseMapLayout(sizes)" in javascript
     assert "labs.map(lab => lab.lab_id).sort()" in javascript

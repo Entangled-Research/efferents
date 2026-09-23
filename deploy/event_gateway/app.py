@@ -27,6 +27,9 @@ from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 
+from efferents.journals import INTERDISCIPLINARY_EVERY, journal_for_domain, related_stem_domains
+
+
 PROTOCOL = "efferents-event/v1"
 CLIENT_MODEL = "openai/event-model"
 EVENT_MODELS = {
@@ -389,6 +392,8 @@ class Store:
                 for key in ("campaign_id", "journal"):
                     if len(item[key]) > 160:
                         raise ApiError(400, f"invalid publication {key}")
+                if item["journal"] != journal_for_domain(token["domain"]):
+                    raise ApiError(400, "publications must enter the lab own home journal")
                 talk = {**item, "lab_id": token["lab_id"], "domain": token["domain"],
                         "goal": token["goal"], "venue": event_id}
                 talk["id"] = digest(json.dumps(talk, sort_keys=True))
@@ -409,12 +414,14 @@ class Store:
             ).fetchall()
             same, cross = [], []
             for row in rows:
-                if not is_journal_publication(json.loads(row["payload_json"])):
+                publication = json.loads(row["payload_json"])
+                if (not is_journal_publication(publication)
+                        or publication["journal"] != journal_for_domain(row["domain"])):
                     continue
-                related = row["domain"].casefold() == token["domain"].casefold() or bool(
-                    token["goal"] and row["goal"].casefold() == token["goal"].casefold())
-                (same if related else cross).append(row)
-            selected = (same[:3] + (cross[:1] if visit % 3 == 0 else [])) if payload.get("receive", True) else []
+                related = journal_for_domain(row["domain"]) == journal_for_domain(token["domain"])
+                if related or related_stem_domains(row["domain"], token["domain"]):
+                    (same if related else cross).append(row)
+            selected = (same[:3] + (cross[:1] if visit % INTERDISCIPLINARY_EVERY == 0 else [])) if payload.get("receive", True) else []
             talks = []
             for row in selected:
                 conn.execute("INSERT OR IGNORE INTO deliveries VALUES(?,?,?,?,NULL)",
@@ -519,7 +526,9 @@ class Store:
                 "ORDER BY d.observed_at DESC LIMIT 200", (event_id,),
             ).fetchall()
         publications = [json.loads(row["payload_json"]) for row in findings
-                        if is_journal_publication(json.loads(row["payload_json"]))]
+                        if is_journal_publication(json.loads(row["payload_json"]))
+                        and json.loads(row["payload_json"])["journal"] == journal_for_domain(
+                            json.loads(row["payload_json"]).get("domain", ""))]
         publication_ids = {item["id"] for item in publications}
         labs = []
         for row in current:
