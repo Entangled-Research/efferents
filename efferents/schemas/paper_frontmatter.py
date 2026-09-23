@@ -29,7 +29,7 @@ class MetricProvenance(BaseModel):
     seeds: list[int] = Field(..., min_length=1)
     comparator_name: str | None = None
     comparator_value: float | None = None
-    aggregate: Literal["min", "max"] | None = None
+    aggregate: Literal["min", "max", "mean"] | None = None
 
 
 class PaperFrontmatter(BaseModel):
@@ -43,6 +43,7 @@ class PaperFrontmatter(BaseModel):
     code_repo: str | None = None
     code_sha: str | None = None
     metric_provenance: list[MetricProvenance] = Field(..., min_length=1)
+    finding_kind: Literal["improvement", "negative_result", "verification"] = "improvement"
     novelty_claim: str = Field(..., min_length=1)
     published_at: str = Field(..., min_length=1)
     status: Literal["preprint", "draft"]

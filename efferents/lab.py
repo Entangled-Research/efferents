@@ -109,7 +109,7 @@ class Headline:
     comparator_column: str | None = None
     # Aggregate both sides over the same eligible runs. None retains the
     # historical best-run gate.
-    aggregate: Literal["min", "max"] | None = None
+    aggregate: Literal["min", "max", "mean"] | None = None
 
 
 @dataclass(frozen=True)
@@ -559,8 +559,8 @@ def _build_labconfig(
     if comparator_col == headline_col:
         raise SubmissionError("metrics.headline.comparator_column must differ from column")
     headline_aggregate = headline_raw.get("aggregate")
-    if headline_aggregate is not None and headline_aggregate not in ("min", "max"):
-        raise SubmissionError("metrics.headline.aggregate must be min or max")
+    if headline_aggregate is not None and headline_aggregate not in ("min", "max", "mean"):
+        raise SubmissionError("metrics.headline.aggregate must be min, max or mean")
     if headline_aggregate is not None and comparator_col is None:
         raise SubmissionError("metrics.headline.aggregate requires comparator_column")
 
