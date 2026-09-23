@@ -41,6 +41,34 @@ def validate_suite(raw: dict, cfg) -> Suite:
     return suite
 
 
+def resolve_idea_config(submission: Path, cfg, student_id: str):
+    """Resolve an idea's scientific contract without changing runtime settings.
+
+    Only the original idea may use the legacy lab contract. A missing or invalid
+    sibling suite cannot borrow another idea's metric or falsification criteria.
+    """
+    from dataclasses import replace
+    import yaml
+    from efferents.lab import _build_labconfig
+
+    root = submission.resolve()
+    path = root / "ideas" / student_id / "eval-suite.json"
+    if not path.resolve().is_relative_to(root / "ideas"):
+        raise ValueError("Invalid idea identity")
+    if not path.is_file():
+        if student_id == cfg.default_student_id:
+            return cfg
+        raise ValueError(f"Idea {student_id!r} has no evaluation contract")
+    spec = json.loads(path.read_text())
+    if not isinstance(spec, dict) or spec.get("version") != 1:
+        raise ValueError("Expected a version 1 idea evaluation contract")
+    raw = yaml.safe_load((root / "lab.yaml").read_text())
+    for key in ("metrics", "falsifiers", "evidence"):
+        raw[key] = spec.get(key, [] if key == "falsifiers" else {})
+    scoped = _build_labconfig({"slug": student_id}, raw, root, check_paths=False)
+    return replace(cfg, metrics=scoped.metrics, falsifiers=scoped.falsifiers, evidence=scoped.evidence)
+
+
 def routed_idea_suite(submission: Path, cfg) -> dict:
     """Snapshot an incoming idea's contract, never the destination lab's results.
 

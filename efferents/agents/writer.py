@@ -295,6 +295,7 @@ def write_phase_a_paper(
     gain_threshold: float = 0.05,
     model: str | None = None,
     budget: Any = None,
+    publication_comparison: _lab.Headline | None = None,
 ) -> str | None:
     """Gate-check, compose, peer-review, and commit a paper for a campaign.
 
@@ -393,6 +394,15 @@ def write_phase_a_paper(
     _cfg = None
     try:
         _cfg = _lab_cfg.get_config()
+        from efferents.eval_suite import resolve_idea_config
+        try:
+            _cfg = resolve_idea_config(paths.context.parent, _cfg,
+                                      campaign.get("student_id") or _cfg.default_student_id)
+        except (OSError, ValueError, TypeError) as exc:
+            with paths.notebook.open("a") as stream:
+                stream.write(f"\n### Writer gate: skipped {campaign_id}\n\n"
+                             f"Idea evaluation contract unavailable: {exc}\n")
+            return None
         _default = (_cfg.metrics.headline.column, _cfg.metrics.headline.direction)
     except RuntimeError:
         # No active LabConfig (e.g. a bare unit test). Defer to whatever the
@@ -400,19 +410,37 @@ def write_phase_a_paper(
         _default = (campaign.get("headline_metric"), "min")
     metric, direction = _resolve_campaign_metric(campaign, default=_default)
     headline = _cfg.metrics.headline if _cfg is not None else None
+    if publication_comparison is not None:
+        declared = ({_cfg.metrics.headline.column, *[panel.column for panel in _cfg.metrics.panels]}
+                    if _cfg is not None else set())
+        if (_cfg is None or publication_comparison.column != metric
+                or publication_comparison.column not in declared
+                or publication_comparison.comparator_column not in declared
+                or publication_comparison.comparator_column == metric
+                or publication_comparison.aggregate not in {"min", "max", "mean"}
+                or publication_comparison.direction != direction):
+            raise ValueError("Publication comparison must use distinct declared idea metrics and the campaign direction")
+        headline = publication_comparison
+    if _cfg is not None:
+        from efferents.metrics_view import constraint_failures
+        campaign_runs = [run for run in campaign_runs if not constraint_failures(run, cfg=_cfg)]
     comparator_col = (
         headline.comparator_column if headline and metric == headline.column else None
     )
     aggregate = (headline.aggregate or direction) if comparator_col else None
     if comparator_col:
-        from efferents.metrics_view import constraint_failures
-        campaign_runs = [run for run in campaign_runs if not constraint_failures(run, cfg=_cfg)]
         candidate_value, baseline_value, evidence_runs = _paired_metrics(
             campaign_runs, metric, comparator_col, aggregate
         )
     else:
         candidate_value = _best_metric(campaign_runs, metric, direction)
-        baseline_value = _best_metric(_load_other_runs(campaign_id), metric, direction)
+        other_runs = _load_other_runs(campaign_id)
+        if _cfg is not None:
+            student_id = campaign.get("student_id") or _cfg.default_student_id
+            other_runs = [run for run in other_runs
+                          if (run.get("student_id") or _cfg.default_student_id) == student_id
+                          and not constraint_failures(run, cfg=_cfg)]
+        baseline_value = _best_metric(other_runs, metric, direction)
         evidence_runs = campaign_runs
 
     # If no campaign runs, nothing to publish.

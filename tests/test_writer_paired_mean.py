@@ -12,12 +12,13 @@ from efferents import lab
 from efferents.agents.writer import _paper_evidence, write_phase_a_paper, writer_paths
 
 
+@pytest.mark.parametrize("scoped", [False, True])
 @pytest.mark.parametrize("finding_kind,n_valid,expected", [
     ("negative_result", 3, True), ("improvement", 3, False),
     ("negative_result", 2, False),
 ])
 def test_paired_mean_reports_fired_falsifier_without_cross_campaign_cherry_pick(
-    tmp_path, monkeypatch, fake_anthropic_factory, finding_kind, n_valid, expected
+    tmp_path, monkeypatch, fake_anthropic_factory, finding_kind, n_valid, expected, scoped
 ):
     sub = tmp_path / "submission"
     shutil.copytree(Path(__file__).parent / "fixtures/sample_submission", sub)
@@ -29,6 +30,17 @@ def test_paired_mean_reports_fired_falsifier_without_cross_campaign_cherry_pick(
     }
     raw["falsifiers"] = [{"id": "gain-target", "description": "Must gain five points",
                           "when": {"column": "gain", "agg": "mean", "op": "<", "value": 5, "min_n": 3}}]
+    if scoped:
+        idea = sub / "ideas" / "sibling"
+        idea.mkdir(parents=True)
+        suite = {"version": 1, "metrics": {**raw["metrics"],
+                 "headline": {"column": "gain", "direction": "max"},
+                 "panels": [{"column": "candidate", "label": "candidate"}, {"column": "prior", "label": "prior"}]},
+                 "falsifiers": raw["falsifiers"]}
+        (idea / "eval-suite.json").write_text(json.dumps(suite))
+        raw["metrics"] = {"headline": {"column": "unrelated", "direction": "min"}}
+        raw["falsifiers"] = [{"id": "other-idea-rule", "description": "Different idea",
+                              "when": {"column": "unrelated", "agg": "min", "op": ">", "value": 1, "min_n": 999}}]
     (sub / "lab.yaml").write_text(yaml.safe_dump(raw))
     cfg = lab.LabConfig.from_submission(sub)
     monkeypatch.setattr(lab, "_active", cfg)
@@ -46,10 +58,11 @@ def test_paired_mean_reports_fired_falsifier_without_cross_campaign_cherry_pick(
     client = fake_anthropic_factory(["\n".join(f"## {s}\n\nBounded negative result.\n" for s in ("Motivation", "Methods", "Results", "Conclusion", "Next questions"))])
     result = write_phase_a_paper(paths, {
         "id": "v2", "question": "Bounded result below the target", "finding_kind": finding_kind,
+        "student_id": "sibling" if scoped else "primary",
         "hypothesis_path": "hypothesis.md", "hypothesis_hash": "sha256:"+hashlib.sha256(hypothesis.encode()).hexdigest(),
         "headline_metric": "candidate", "headline_direction": "max",
         "publication_context": "Retrospective gate; bounded sample; no mechanism ground truth.",
-    }, client)
+    }, client, publication_comparison=lab.Headline("candidate", "max", "prior", "mean") if scoped else None)
     if not expected:
         assert result is None and client.calls == []
         assert "Aggregate falsifier gain-target" in paths.notebook.read_text()
@@ -78,3 +91,15 @@ def test_writer_does_not_quote_hash_mismatched_hypothesis(tmp_path):
     record = _paper_evidence(paths, {"hypothesis_path": "hypothesis.md", "hypothesis_hash": "sha256:"+"0"*64}, [], [])
     assert record["hypothesis"]["status"] == "hash_mismatch"
     assert "text" not in record["hypothesis"]
+
+
+def test_missing_sibling_contract_never_borrows_the_default_idea(tmp_path):
+    from efferents.eval_suite import resolve_idea_config
+    sub = tmp_path / "submission"
+    shutil.copytree(Path(__file__).parent / "fixtures/sample_submission", sub)
+    cfg = lab.LabConfig.from_submission(sub)
+    assert resolve_idea_config(sub, cfg, cfg.default_student_id) is cfg
+    with pytest.raises(ValueError, match="no evaluation contract"):
+        resolve_idea_config(sub, cfg, "other")
+    with pytest.raises(ValueError, match="Invalid idea identity"):
+        resolve_idea_config(sub, cfg, "../../other")
