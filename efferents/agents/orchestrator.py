@@ -557,9 +557,10 @@ class Orchestrator:
         )
         for campaign in campaign_open_list(self.paths.runs_db, _lab.LAB_ID):
             cid = campaign["id"]
-            if (wpaths.paper / f"{cid}.md").exists():
-                continue  # one paper per campaign; no re-write / re-review
+            existing_draft = (wpaths.paper / f"{cid}.md").exists()
             try:
+                if existing_draft and writer.review_complete(wpaths, cid):
+                    continue  # Preserve final decisions; incomplete reviews can resume.
                 artifact = writer.write_phase_a_paper(
                     wpaths,
                     campaign,
@@ -568,13 +569,14 @@ class Orchestrator:
                     gain_threshold=_lab.PEER_REVIEW_GAIN_THRESHOLD,
                 )
                 if artifact is not None:
+                    action = "resumed paper review" if existing_draft else "composed a paper"
                     notify_all(
-                        title=f"{_lab_label()}: paper composed",
+                        title=f"{_lab_label()}: {action}",
                         message=f"campaign {cid}",
                     )
                     notebook_append(
                         self.paths.notebook,
-                        f"## {now_iso()} — Writer composed a paper for {cid}\n",
+                        f"## {now_iso()} — Writer {action} for {cid}\n",
                     )
             except Exception as e:
                 notebook_append(

@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import sqlite3
+import hashlib
+import json
 from pathlib import Path
 
+import pytest
 
 from efferents.agents import orchestrator as orch
 from efferents.agents.state import campaign_insert, now_iso, load_state, save_state
@@ -101,6 +104,52 @@ def test_skips_campaign_with_existing_paper(tmp_path, monkeypatch):
     )
     o._maybe_write()
     assert calls == []
+
+
+@pytest.mark.parametrize("first_attempt_raises", [False, True])
+def test_incomplete_draft_resumes_on_next_cadence_and_final_review_skips(
+    tmp_path, monkeypatch, first_attempt_raises
+):
+    o = _make_orch(tmp_path)
+    _seed_campaign(o)
+    _seed_runs(o.paths.runs_db, 25)
+    monkeypatch.setattr(_lab, "PEER_REVIEW_ENABLED", True)
+    monkeypatch.setattr(orch, "notify_all", lambda **kw: None)
+    paper = o.submission_dir / "paper/c1.md"
+    paper.parent.mkdir(parents=True, exist_ok=True)
+    draft = b"Existing manuscript remains byte-for-byte unchanged.\r\n"
+    paper.write_bytes(draft)
+    calls = []
+
+    def retry(paths, campaign, **kwargs):
+        assert paper.read_bytes() == draft
+        calls.append(campaign["id"])
+        if len(calls) == 1:
+            if first_attempt_raises:
+                raise RuntimeError("temporary review outage")
+            return draft.decode()  # Valid saved draft, still awaiting reviewers.
+        digest = hashlib.sha256(draft).hexdigest()
+        checkpoint = paths.lab / "peer_review/c1" / f"{digest}.json"
+        checkpoint.parent.mkdir(parents=True, exist_ok=True)
+        checkpoint.write_text(json.dumps({"manuscript_sha256": digest, "completed": True}))
+        return draft.decode()
+
+    monkeypatch.setattr(orch.writer, "write_phase_a_paper", retry)
+    o._maybe_write()
+    assert calls == ["c1"]
+    state = load_state(o.paths.state)
+    assert state["last_paper_runs"] == 25 and state["last_paper_ts"]
+    o._maybe_write()
+    assert calls == ["c1"]  # Partial or failed reviews never spin without cadence.
+    state["last_paper_ts"] = "2000-01-01T00:00:00+00:00"
+    save_state(o.paths.state, state)
+    o._maybe_write()
+    assert calls == ["c1", "c1"]
+    state = load_state(o.paths.state)
+    state["last_paper_ts"] = "2000-01-01T00:00:00+00:00"
+    save_state(o.paths.state, state)
+    o._maybe_write()
+    assert calls == ["c1", "c1"] and paper.read_bytes() == draft
 
 
 def test_budget_pause_short_circuits(tmp_path, monkeypatch):
