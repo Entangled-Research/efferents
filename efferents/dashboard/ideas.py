@@ -109,6 +109,22 @@ def read_idea(root: Path, cfg, student_id: str) -> dict:
         scoped_cfg = replace(cfg, metrics=lab_mod.Metrics(
             headline=lab_mod.Headline(latest.get('headline_metric') or 'unconfigured', latest.get('headline_direction') or 'max'),
             panels=()), falsifiers=(), evidence=lab_mod.Evidence())
+    # A generated presentation may change without changing the idea's metric
+    # contract. Resolve it afresh so regenerated plots appear on the next sync.
+    presentation_source = spec.get('presentation_source')
+    if presentation_source and status == 'configured':
+        try:
+            if not isinstance(presentation_source, str):
+                raise ValueError('Presentation source must be a relative path')
+            path = (root.parent / presentation_source).resolve()
+            if Path(presentation_source).is_absolute() or not path.is_relative_to(root.parent):
+                raise ValueError('Presentation source must remain inside the lab')
+            presentation = json.loads(path.read_text())
+            if not isinstance(presentation, dict) or presentation.get('version') != 1:
+                raise ValueError('Expected version 1 generated presentation')
+            spec = {**spec, **{key: presentation[key] for key in ('title', 'rationale', 'graphs', 'samples') if key in presentation}}
+        except (OSError, ValueError, TypeError) as exc:
+            status, message = 'invalid', f'Generated eval presentation needs correction: {exc}'
     rows = idea_rows(root, cfg, student_id) if status == 'configured' else []
     evidence, catalog = reader._evidence_payload(root, scoped_cfg, rows=rows)
     # Artifact tokens remain lab-scoped but the displayed records are strictly idea-scoped.

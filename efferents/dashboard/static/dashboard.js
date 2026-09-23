@@ -464,18 +464,19 @@ function renderIdeaSuite(data) {
 
 function ideaEvalGraph(graph) {
   const series = graph.series || [];
-  const values = series.flatMap(s => (s.points || []).map(p => p.value)).filter(Number.isFinite);
+  const values = series.flatMap(s => (s.points || []).filter(p => Number.isFinite(p.value)).map(p => p.value)).filter(Number.isFinite);
   if (!values.length) return `<article><h3>${esc(graph.title)}</h3><p>${esc(graph.emptyMessage || "No measured values yet")}</p></article>`;
-  const min = Math.min(...values), max = Math.max(...values), span = max - min || 1;
-  const runs = graph.run_ids || [];
-  const colors = ["var(--signal)", "var(--terracotta)", "var(--muted)"];
-  const paths = series.map((s, i) => {
-    const points = (s.points || []).filter(p => Number.isFinite(p.value)).map(p =>
-      [45 + Math.max(0, runs.indexOf(p.run_id)) * 440 / Math.max(1, runs.length - 1), 130 - (p.value - min) * 110 / span, p]);
-    return `<polyline fill="none" stroke="${colors[i % colors.length]}" points="${points.map(p => p.slice(0,2).join(",")).join(" ")}"/>` +
-      points.map(p => `<circle cx="${p[0]}" cy="${p[1]}" r="3" fill="${colors[i % colors.length]}"><title>${esc(s.column)} · ${esc(p[2].run_id)} · ${esc(p[2].value)}</title></circle>`).join("");
+  const min = Math.min(...values), max = Math.max(...values);
+  const span = max - min || Math.max(Math.abs(max) * .1, .01);
+  const colors = ["var(--signal)", "var(--terracotta)", "var(--muted)", "var(--ink)"];
+  const runIds = graph.run_ids || [...new Set(series.flatMap(s => (s.points || []).filter(p => Number.isFinite(p.value)).map(p => p.run_id)))];
+  const lines = series.map((s, i) => {
+    const points = (s.points || []).filter(p => Number.isFinite(p.value)).map(p => [70 + runIds.indexOf(p.run_id) * 470 / Math.max(1, runIds.length - 1),
+      150 - (p.value - min) / span * 125, p]);
+    return `<polyline fill="none" stroke="${colors[i % colors.length]}" stroke-width="2" points="${points.map(p => p.slice(0,2).join(",")).join(" ")}"/>` +
+      points.map(p => `<circle cx="${p[0]}" cy="${p[1]}" r="3" fill="${colors[i % colors.length]}"><title>${esc(s.column)} · ${esc(p[2].run_id)} · ${esc(formatMetric(p[2].value))}</title></circle>`).join("");
   }).join("");
-  return `<article><h3>${esc(graph.title)}</h3><svg viewBox="0 0 520 160" role="img" aria-label="${esc(graph.title)}"><path d="M40 15V135H495" fill="none" stroke="currentColor"/><text x="1" y="22" font-size="10">${esc(max.toPrecision(3))}</text><text x="1" y="133" font-size="10">${esc(min.toPrecision(3))}</text>${paths}</svg><p>${series.map(s => esc(s.column)).join(" · ")}</p></article>`;
+  return `<article class="panel eval-graph"><h3>${esc(graph.title)}</h3><svg viewBox="0 0 560 185" role="img" aria-label="${esc(graph.title)}"><path d="M70 20V150H545" fill="none" stroke="currentColor"/><text x="1" y="28" font-size="18">${esc(Number(max.toPrecision(3)))}</text><text x="1" y="150" font-size="18">${esc(Number(min.toPrecision(3)))}</text>${lines}<text x="70" y="180" font-size="18">Eligible runs · oldest → newest</text></svg><p>${series.map((s, i) => `<span style="color:${colors[i % colors.length]}">${esc(s.column)} (${s.points.length})</span>`).join(" · ")}</p></article>`;
 }
 
 // One ordered list for every workspace page. Migrate existing browser tabs once.

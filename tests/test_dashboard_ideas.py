@@ -84,3 +84,21 @@ def test_suite_is_separate_from_lab_contract(two_ideas):
     before = yaml.safe_load((root.parent/'lab.yaml').read_text())
     read_idea(root, cfg, 'second')
     assert yaml.safe_load((root.parent/'lab.yaml').read_text()) == before
+
+
+def test_regenerated_presentation_updates_without_cross_idea_metrics(two_ideas):
+    root, cfg = two_ideas
+    path = root.parent / 'ideas/primary/eval-suite.json'
+    path.parent.mkdir(parents=True)
+    raw = yaml.safe_load((root.parent / 'lab.yaml').read_text())
+    path.write_text(json.dumps({'version': 1, 'metrics': raw['metrics'],
+                                'presentation_source': 'eval-suite.json'}))
+    generated = root.parent / 'eval-suite.json'
+    generated.write_text(json.dumps({'version': 1, 'graphs': [{'title': 'Generated loss', 'columns': ['synthetic_loss']}]}))
+    assert read_idea(root, cfg, 'primary')['suite']['graphs'][0]['title'] == 'Generated loss'
+    generated.write_text(json.dumps({'version': 1, 'graphs': [{'title': 'Updated loss', 'columns': ['synthetic_loss']}]}))
+    view = read_idea(root, cfg, 'primary')
+    assert view['suite']['graphs'][0]['title'] == 'Updated loss'
+    assert view['suite']['graphs'][0]['series'][0]['points'] == [{'run_id': 'old', 'value': .1}]
+    generated.write_text(json.dumps({'version': 1, 'graphs': [{'title': 'Wrong idea', 'columns': ['second_score']}]}))
+    assert read_idea(root, cfg, 'primary')['suite']['status'] == 'invalid'
