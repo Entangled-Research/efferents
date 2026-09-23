@@ -99,6 +99,15 @@ class Registry:
             records[:] = [r for r in records if r.lab_id != lab_id]
             return len(records) != before
 
+    def update_pid(self, lab_id: str, pid: int) -> bool:
+        """Attach the detached PID without overwriting a child's terminal status."""
+        with self._locked(write=True) as records:
+            for rec in records:
+                if rec.lab_id == lab_id:
+                    rec.pid = pid
+                    return True
+            return False
+
     def update_status(self, lab_id: str, status: str) -> bool:
         """Set ``status`` on an existing record. Returns False (no-op) if absent."""
         with self._locked(write=True) as records:

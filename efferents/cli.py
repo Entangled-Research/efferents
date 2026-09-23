@@ -311,25 +311,30 @@ def _cmd_start(args: argparse.Namespace) -> int:
     print(f"lab_id={cfg.lab_id} pid={os.getpid()} dashboard={lab_root}/progress.html")
 
     def loop() -> None:
-        _orchestrator_loop(
-            lab_root=lab_root,
-            context_dir=sub / "context",
-            dry_run=args.dry_run,
-            max_iterations=args.max_iterations,
-            submission_dir=sub,
-        )
+        status = "stopped"
+        try:
+            _orchestrator_loop(
+                lab_root=lab_root,
+                context_dir=sub / "context",
+                dry_run=args.dry_run,
+                max_iterations=args.max_iterations,
+                submission_dir=sub,
+            )
+        except Exception:
+            status = "crashed"
+            raise
+        finally:
+            Registry().update_status(cfg.lab_id, status)
 
     if args.detach:
         rec.pid = daemon.daemonize_and_run(lab_root, loop)
-        # Re-register from the record we built, not from a fresh `get()`: if
-        # the record vanished meanwhile this restores it with the child pid.
-        reg.register(rec)
+        # The child can already have finished; update only its PID so the
+        # parent's bookkeeping cannot replace a terminal status with running.
+        if not reg.update_pid(cfg.lab_id, rec.pid):
+            reg.register(rec)  # recover if the registry disappeared during fork
         return 0
 
-    try:
-        daemon.run_foreground(lab_root, loop)
-    finally:
-        reg.update_status(cfg.lab_id, "stopped")
+    daemon.run_foreground(lab_root, loop)
     return 0
 
 

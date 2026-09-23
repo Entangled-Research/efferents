@@ -58,3 +58,31 @@ def test_final_terminal_heartbeat_preserves_evidence_and_exit_status(tmp_path, m
     assert legacy[-1] == payload["status"]
     if offline:
         assert "final hub heartbeat failed: OSError" in (root / "lab_notebook.md").read_text()
+
+
+@pytest.mark.parametrize("crash", [False, True])
+def test_fast_detached_child_keeps_terminal_registry_status(tmp_path, monkeypatch, crash):
+    from efferents.cli import main
+    from efferents.registry import Registry
+
+    monkeypatch.setenv("EFFERENTS_HOME", str(tmp_path / "registry"))
+    sub = tmp_path / "submission"
+    shutil.copytree(Path(__file__).parent / "fixtures" / "sample_submission", sub)
+
+    def bounded_loop(**kwargs):
+        if crash:
+            raise RuntimeError("bounded child crashed")
+
+    def child_finishes_before_parent(lab_root, loop):
+        try:
+            loop()
+        except RuntimeError:
+            pass  # daemon child records the exception and exits independently
+        return 4242
+
+    monkeypatch.setattr("efferents.cli._orchestrator_loop", bounded_loop)
+    monkeypatch.setattr("efferents.cli.daemon.daemonize_and_run", child_finishes_before_parent)
+    assert main(["start", "--submission", str(sub), "--detach", "--max-iterations", "0"]) == 0
+    record = Registry().get("sample-conjecture")
+    assert record.pid == 4242
+    assert record.status == ("crashed" if crash else "stopped")
