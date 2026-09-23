@@ -27,6 +27,9 @@ class MetricProvenance(BaseModel):
     delta_vs_baseline: float | None = None
     runs: list[str] = Field(..., min_length=1)
     seeds: list[int] = Field(..., min_length=1)
+    comparator_name: str | None = None
+    comparator_value: float | None = None
+    aggregate: Literal["min", "max"] | None = None
 
 
 class PaperFrontmatter(BaseModel):

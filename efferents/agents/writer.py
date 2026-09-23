@@ -16,6 +16,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import date as _date
+import math
+import operator
 from pathlib import Path
 from typing import Any
 
@@ -90,6 +92,9 @@ Methods must be detailed enough that another lab's Researcher can draft
 a recreation config WITHOUT consulting the source repo. Use inline code
 blocks where the canonical implementation is non-obvious.
 
+Describe the finding supported by the measurements. Do not claim a known
+method is novel when the campaign verifies a bounded result for that method.
+
 No frontmatter — the caller adds that. No code fences around the
 output. Begin with the literal line "## Motivation"."""
 
@@ -115,6 +120,40 @@ def _best_metric(runs: list[dict], col: str, direction: str) -> float | None:
     if not vals:
         return None
     return min(vals) if direction == "min" else max(vals)
+
+
+def _paired_metrics(
+    runs: list[dict], candidate_col: str, comparator_col: str, aggregate: str
+) -> tuple[float | None, float | None, list[dict]]:
+    """Aggregate actual same-run measurements from successful runs only."""
+    paired = [
+        run for run in runs
+        if run.get("status") == "succeeded"
+        and all(
+            isinstance(run.get(col), (int, float))
+            and not isinstance(run.get(col), bool)
+            and math.isfinite(run[col])
+            for col in (candidate_col, comparator_col)
+        )
+    ]
+    if not paired:
+        return None, None, []
+    fn = min if aggregate == "min" else max
+    return fn(run[candidate_col] for run in paired), fn(run[comparator_col] for run in paired), paired
+
+
+def _matching_aggregate_falsifiers(cfg: Any, metric: str, aggregate: str) -> list[Any]:
+    return [
+        rule for rule in cfg.falsifiers
+        if rule.kind == "aggregate" and rule.column == metric and rule.agg == aggregate
+    ]
+
+
+def _falsifier_blocks(value: float, rule: Any) -> bool:
+    return {
+        "<": operator.lt, "<=": operator.le, ">": operator.gt,
+        ">=": operator.ge, "==": operator.eq,
+    }[rule.op](value, rule.value)
 
 
 def _resolve_campaign_metric(
@@ -299,9 +338,9 @@ def write_phase_a_paper(
 
     campaign_id = campaign["id"]
     campaign_runs = _load_campaign_runs(campaign_id)
-    other_runs = _load_other_runs(campaign_id)
 
     from efferents import lab as _lab_cfg  # local import; cfg may be unset in unit tests
+    _cfg = None
     try:
         _cfg = _lab_cfg.get_config()
         _default = (_cfg.metrics.headline.column, _cfg.metrics.headline.direction)
@@ -310,9 +349,19 @@ def write_phase_a_paper(
         # campaign itself declares; a null metric makes the gate a safe no-op.
         _default = (campaign.get("headline_metric"), "min")
     metric, direction = _resolve_campaign_metric(campaign, default=_default)
-
-    candidate_value = _best_metric(campaign_runs, metric, direction)
-    baseline_value = _best_metric(other_runs, metric, direction)
+    headline = _cfg.metrics.headline if _cfg is not None else None
+    comparator_col = (
+        headline.comparator_column if headline and metric == headline.column else None
+    )
+    aggregate = (headline.aggregate or direction) if comparator_col else None
+    if comparator_col:
+        candidate_value, baseline_value, evidence_runs = _paired_metrics(
+            campaign_runs, metric, comparator_col, aggregate
+        )
+    else:
+        candidate_value = _best_metric(campaign_runs, metric, direction)
+        baseline_value = _best_metric(_load_other_runs(campaign_id), metric, direction)
+        evidence_runs = campaign_runs
 
     # If no campaign runs, nothing to publish.
     if candidate_value is None:
@@ -325,12 +374,25 @@ def write_phase_a_paper(
             with paths.notebook.open("a") as f:
                 f.write(
                     f"\n### Writer gate: skipped {campaign_id}\n\n"
-                    f"No successful baseline run exists for `{metric}`. "
-                    "Queue or identify a comparator before publication.\n"
+                    + (f"No successful paired comparator measurement exists for `{comparator_col}`. "
+                       if comparator_col else f"No successful baseline run exists for `{metric}`. ")
+                    + "Queue or identify a comparator before publication.\n"
                 )
         except Exception:
             pass
         return None
+
+    if comparator_col:
+        for rule in _matching_aggregate_falsifiers(_cfg, metric, aggregate):
+            if len(evidence_runs) < rule.min_n or _falsifier_blocks(candidate_value, rule):
+                with paths.notebook.open("a") as f:
+                    f.write(
+                        f"\n### Writer gate: skipped {campaign_id}\n\n"
+                        f"Aggregate falsifier {rule.id}: {aggregate}({metric})="
+                        f"{candidate_value:.6g} over {len(evidence_runs)} paired successful "
+                        f"runs (min_n={rule.min_n}); publication held.\n"
+                    )
+                return None
 
     existing_claims = _load_existing_claims()
     novelty_claim = campaign.get("question", "").strip() or campaign_id
@@ -365,22 +427,27 @@ def write_phase_a_paper(
     # Build metric_provenance from campaign runs.
     runs_by_seed: dict[int, list[float]] = {}
     run_ids: list[str] = []
-    for r in campaign_runs:
+    for r in evidence_runs:
         if r.get(metric) is None:
             continue
         seed = r.get("seed", 0) or 0
         runs_by_seed.setdefault(seed, []).append(r[metric])
         run_ids.append(r["run_id"])
 
-    metric_provenance = [
-        {
+    metric_record = {
             "name": metric,
             "value": candidate_value,
             "delta_vs_baseline": candidate_value - baseline_value,
             "runs": run_ids or [campaign_id],
             "seeds": list(runs_by_seed.keys()) or [0],
         }
-    ]
+    if comparator_col:
+        metric_record.update(
+            comparator_name=comparator_col,
+            comparator_value=baseline_value,
+            aggregate=aggregate,
+        )
+    metric_provenance = [metric_record]
 
     # Resolve real git SHA for paper metadata, or set both None if unavailable.
     sha = _resolve_code_sha() if _lab.CODE_REPO else None

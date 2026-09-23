@@ -1,6 +1,9 @@
 import sqlite3
 from pathlib import Path
 
+import pytest
+import yaml
+
 from efferents.agents.writer import (
     GateInputs,
     _best_metric,
@@ -22,6 +25,19 @@ def test_best_metric_max():
 def test_best_metric_absent_column_returns_none():
     rows = [{"other": 1.0}, {}]
     assert _best_metric(rows, "loss", "min") is None
+
+
+def test_paired_metrics_require_success_and_both_real_measurements():
+    from efferents.agents.writer import _paired_metrics
+    rows = [
+        {"run_id": "good", "status": "succeeded", "candidate": 0.2, "baseline": 0.4},
+        {"run_id": "failed", "status": "failed", "candidate": 0.9, "baseline": 1.0},
+        {"run_id": "missing", "status": "succeeded", "candidate": 0.1},
+        {"run_id": "invalid", "status": "succeeded", "candidate": float("nan"), "baseline": 0.5},
+    ]
+    candidate, baseline, eligible = _paired_metrics(rows, "candidate", "baseline", "max")
+    assert (candidate, baseline) == (0.2, 0.4)
+    assert [row["run_id"] for row in eligible] == ["good"]
 
 
 def test_resolve_campaign_metric_prefers_campaign():
@@ -150,3 +166,89 @@ def test_write_phase_a_paper_requires_measured_baseline(tmp_path):
 
     assert result is None
     assert "No successful baseline run" in paths.notebook.read_text()
+
+
+@pytest.mark.parametrize("measurements, expected", [
+    ([(0.00001, 0.01, "succeeded"), (0.00002, 0.02, "succeeded"),
+      (0.00003, 0.03, "succeeded")], "publish"),
+    ([(0.00001, 0.01, "succeeded"), (0.00002, 0.02, "succeeded"),
+      (0.0002, 0.03, "succeeded")], "falsifier"),
+    ([(0.00001, 0.01, "succeeded"), (0.00002, 0.02, "succeeded")], "falsifier"),
+    ([(0.00001, 0.01, "succeeded"), (0.00002, None, "succeeded"),
+      (0.00003, 0.03, "succeeded")], "falsifier"),
+    ([(0.00001, 0.01, "succeeded"), (0.00002, 0.02, "succeeded"),
+      (0.00003, 0.03, "failed")], "falsifier"),
+])
+def test_paired_writer_uses_successful_same_run_aggregate_and_falsifier(
+    tmp_path, fake_anthropic_factory, monkeypatch, measurements, expected
+):
+    from efferents import lab as lab_mod
+    from efferents.agents.writer import write_phase_a_paper, writer_paths
+    from efferents.lab import (
+        Budget, Executor, Falsifier, Headline, LabConfig, Metrics, Source,
+    )
+
+    source = tmp_path / "src"
+    source.mkdir()
+    config_file = source / "config.yaml"
+    config_file.write_text("x: 1\n")
+    cfg = LabConfig(
+        lab_id="paired-test", domain="test", pi_handle=None,
+        source=Source(dir=source),
+        executor=Executor("echo {config_path}", None, config_file),
+        metrics=Metrics(
+            headline=Headline("candidate_error", "min", "baseline_error", "max"),
+            panels=(),
+        ),
+        budget=Budget(),
+        falsifiers=(Falsifier(
+            id="error-target", description="Bound maximum error", kind="aggregate",
+            column="candidate_error", agg="max", op=">", value=0.0001, min_n=3,
+        ),),
+    )
+    monkeypatch.setattr(lab_mod, "_active", cfg)
+    monkeypatch.setattr(lab_mod, "PEER_REVIEW_ENABLED", False)
+    lab_dir = tmp_path / "lab"
+    lab_dir.mkdir()
+    db = lab_dir / "runs.sqlite"
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "CREATE TABLE runs (run_id TEXT, started_at TEXT, campaign_id TEXT, "
+        "status TEXT, seed INTEGER, candidate_error REAL, baseline_error REAL)"
+    )
+    for i, (candidate, baseline, status) in enumerate(measurements):
+        conn.execute(
+            "INSERT INTO runs VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (f"r{i}", f"2026-01-01T00:00:0{i}+00:00", "c1", status,
+             i, candidate, baseline),
+        )
+    conn.commit()
+    conn.close()
+    paths = writer_paths(
+        lab=lab_dir, paper=lab_dir / "paper", reports=lab_dir / "reports",
+        context=tmp_path / "context",
+    )
+    body = "\n".join(
+        f"## {section}\n\nMeasured comparison.\n"
+        for section in ("Motivation", "Methods", "Results", "Conclusion", "Next questions")
+    )
+    client = fake_anthropic_factory([body])
+    artifact = write_phase_a_paper(
+        paths,
+        {"id": "c1", "question": "Bounded quadrature verification",
+         "hypothesis_path": "popper-corpus/c1/hypothesis.md",
+         "hypothesis_hash": "sha256:" + "0" * 64,
+         "headline_metric": "candidate_error", "headline_direction": "min"},
+        client,
+    )
+    if expected == "publish":
+        assert artifact is not None
+        record = yaml.safe_load(artifact.split("---", 2)[1])["metric_provenance"][0]
+        assert record["value"] == 0.00003
+        assert record["comparator_name"] == "baseline_error"
+        assert record["comparator_value"] == 0.03
+        assert record["aggregate"] == "max"
+        assert record["runs"] == ["r0", "r1", "r2"]
+    else:
+        assert artifact is None
+        assert "Aggregate falsifier error-target" in paths.notebook.read_text()
