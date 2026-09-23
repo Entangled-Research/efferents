@@ -2522,3 +2522,12 @@ td.status-insufficient_data {
 .rejected-arrow, .network-packet.rejected { fill: var(--danger); }
 .legend-line.accepted { border-color: var(--data); }
 .legend-line.rejected { border-color: var(--danger); }
+
+/* Lab-owned eval views share the research-console typography and palette. */
+#eval-suite { padding: 14px 18px; }
+#eval-suite > h3, .eval-graph h3 { font: 700 12px/1.5 var(--mono); text-transform: uppercase; margin: 0 0 10px; }
+#eval-suite details, #eval-suite > p { font: 11px/1.6 var(--mono); }
+.eval-graphs { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr)); gap: 12px; padding: 12px 0; }
+.eval-graph { padding: 12px; min-width: 0; border-radius: 0; }
+.eval-graph svg { display: block; width: 100%; color: var(--muted); font-family: var(--mono); }
+.eval-graph p { font: 11px/1.5 var(--mono); overflow-wrap: anywhere; }

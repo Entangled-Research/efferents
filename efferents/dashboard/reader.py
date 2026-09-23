@@ -133,7 +133,8 @@ def _artifact_path(
     if not isinstance(value, str) or not value.strip():
         return None
     raw = Path(value).expanduser()
-    roots = (Path(lab_root).resolve(), Path(cfg.source.dir).resolve())
+    from efferents.exec import _artifact_roots
+    roots = _artifact_roots(lab_root, cfg)
     candidates = (raw,) if raw.is_absolute() else tuple(root / raw for root in roots)
     for candidate in candidates:
         resolved = candidate.resolve()
@@ -262,13 +263,14 @@ def _evidence_payload(
             item for item in _json_list(row.get("observations_json"))
             if isinstance(item, dict)
         ]
-        if not observations and _json_list(row.get("artifacts_json")):
-            observations = [{
+        # Run-level plots describe the whole run, not each arm independently.
+        if _json_list(row.get("artifacts_json")):
+            observations.append({
                 "name": run_id,
                 "dimensions": {},
                 "metrics": {},
                 "artifacts": _json_list(row.get("artifacts_json")),
-            }]
+            })
 
         failures = metrics_view.constraint_failures(row, cfg=cfg)
         for observation in observations:
@@ -284,8 +286,6 @@ def _evidence_payload(
             }
             artifacts = observation.get("artifacts")
             artifacts = artifacts if isinstance(artifacts, list) else []
-            if not artifacts:
-                artifacts = _json_list(row.get("artifacts_json"))
 
             visual_artifacts = []
             seen_paths: set[Path] = set()
@@ -323,7 +323,13 @@ def _evidence_payload(
         "label": constraint.label or constraint.column,
     } for constraint in cfg.metrics.constraints]
     records = _deployment_evidence(lab_root, cfg, panels, catalog) + records
+    from efferents.eval_suite import view as eval_view
+    suite = eval_view(lab_root, cfg, rows)
+    for sample in suite.get("samples", []):
+        sample["available"] = sum(1 for r in records for a in r["artifacts"]
+                                  if a.get("kind") == sample["kind"])
     return ({
+        "suite": suite,
         "panels": panels,
         "constraints": constraints,
         "comparison": {

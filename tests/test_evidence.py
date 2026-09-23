@@ -202,3 +202,34 @@ def test_verdict_rules(tmp_path):
     assert ev.verdict([{"status": "survived"}, {"status": "survived"}]) == "survives"
     assert ev.verdict([{"status": "survived"}, {"status": "insufficient_data"}]) == "undecided"
     assert ev.verdict([{"status": "survived"}, {"status": "fired"}]) == "falsified"
+
+
+def test_excluded_runs_cannot_fire_falsifiers_or_enter_buckets(tmp_path):
+    from dataclasses import replace
+    from efferents.lab import Constraint
+    rule = agg('quality', column='e_w1', agg='mean', op='>=', value=1.5, min_n=1)
+    cfg = make_cfg(tmp_path, falsifiers=[rule], bucket_axes=())
+    cfg = replace(cfg, metrics=replace(cfg.metrics, constraints=(Constraint(column='smoke', op='==', value=0),)))
+    rows = [{'e_w1': 1.0, 'smoke': 0}, {'e_w1': 99.0, 'smoke': 1}, {'e_w1': 99.0}]
+    assert ev.evaluate_falsifier(rule, rows, cfg)['status'] == 'survived'
+    assert ev.bucket_summary(rows, cfg)['all']['n'] == 1
+
+
+def test_ambiguous_observation_pairs_do_not_silently_pick_first_value():
+    rows = [{'seed': 4, 'observations_json': [
+        {'dimensions': {'arm': 'a'}, 'metrics': {'accuracy': .9}},
+        {'dimensions': {'arm': 'a'}, 'metrics': {'accuracy': .3}},
+        {'dimensions': {'arm': 'b'}, 'metrics': {'accuracy': .5}},
+    ]}]
+    assert ev.paired_deltas(rows, 'arm', 'a', 'b') == {}
+
+
+def test_researcher_reads_live_configured_template(tmp_path, monkeypatch):
+    from efferents.agents.researcher import _read_default_config
+    from efferents import lab
+    cfg = make_cfg(tmp_path)
+    monkeypatch.setattr(lab, 'get_config', lambda: cfg)
+    cfg.executor.config_template.write_text('vqc:\n  data_reuploading: false\n')
+    assert 'data_reuploading: false' in _read_default_config()
+    cfg.executor.config_template.write_text('vqc:\n  data_reuploading: true\n')
+    assert 'data_reuploading: true' in _read_default_config()

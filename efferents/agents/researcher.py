@@ -160,7 +160,7 @@ def _format_recent_runs(rows: list[dict[str, Any]], db_path) -> str:
 
 
 def _read_default_config() -> str:
-    p = Path("config/default.yaml")
+    p = Path(_lab.get_config().executor.config_template)
     return p.read_text() if p.exists() else "(missing)"
 
 
@@ -635,7 +635,7 @@ def _shared_static_block(*, vision: str, decisions: str, charter: str = "") -> s
         "## Vision\n\n" + vision
         + "\n\n## Decisions\n\n" + decisions
         + charter_block
-        + "\n\n## Default config (config/default.yaml)\n\n"
+        + "\n\n## Current executor config template\n\n"
         + "Use ONLY keys that appear in this YAML when emitting `config_overrides`. "
         + "Dotted paths must match this structure exactly (e.g., `eval.centering`, "
         + "not `data.centering`).\n\n```yaml\n"

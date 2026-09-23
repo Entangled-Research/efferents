@@ -73,6 +73,24 @@ def test_start_foreground_registers_and_runs(tmp_path, monkeypatch, capsys):
     assert "sample-conjecture research log" in context_log.read_text()
 
 
+def test_joined_event_generates_eval_suite_before_execution(tmp_path, monkeypatch):
+    monkeypatch.setenv("EFFERENTS_HOME", str(tmp_path / "home"))
+    sub = tmp_path / "sub"
+    shutil.copytree(SAMPLE, sub)
+    calls = []
+
+    def event_environment(submission):
+        monkeypatch.setenv("EFFERENTS_EVENT_PROXY_ACTIVE", "1")
+        return True
+
+    monkeypatch.setattr("efferents.event.configure_model_environment", event_environment)
+    monkeypatch.setattr("efferents.eval_suite.generate", lambda submission: calls.append("suite"))
+    monkeypatch.setattr("efferents.cli._orchestrator_loop", lambda **kwargs: calls.append("loop"))
+
+    assert main(["start", "--submission", str(sub)]) == 0
+    assert calls == ["suite", "loop"]
+
+
 def test_start_seeds_campaign_from_popper_operational_restatement(
     tmp_path, monkeypatch
 ):

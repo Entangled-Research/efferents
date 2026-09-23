@@ -1069,11 +1069,12 @@ function renderRuns(data) {
 
   if (!runs.length) {
     const row = document.createElement("tr");
-    row.innerHTML = '<td colspan="5"><div class="empty-state">No runs</div></td>';
+    row.innerHTML = `<td colspan="5"><div class="empty-state">${esc(data.access?.message || 'No runs')}</div></td>`;
     tbody.appendChild(row);
   }
 
   renderTrend(Array.isArray(data.series) ? data.series : [], direction, {
+    accessMessage: data.access?.message,
     metric: headline.column || "metric",
     eligible: eligibleRuns.length,
     excluded: excludedCount,
@@ -1097,7 +1098,7 @@ function renderTrend(series, direction, summary = {}) {
   );
 
   if (!finiteSeries.length) {
-    text("trend-caption", "No eligible metric observations");
+    text("trend-caption", summary.accessMessage || "No eligible metric observations");
     text("metric-range", "—");
     return;
   }
@@ -1255,7 +1256,7 @@ function renderEvidenceRecord(record, metricPanels, hiddenDimensions = new Set()
   const failures = Array.isArray(record.constraint_failures)
     ? record.constraint_failures
     : [];
-  const artifact = (record.artifacts || [])[0];
+  const artifacts = record.artifacts || [];
   const metricRows = metricPanels
     .filter((metric) => record.metrics?.[metric.column] != null)
     .map((metric) =>
@@ -1263,11 +1264,9 @@ function renderEvidenceRecord(record, metricPanels, hiddenDimensions = new Set()
       `<dd>${esc(formatMetric(record.metrics[metric.column]))}</dd></div>`
     ).join("");
   return `<article class="evidence-record ${record.eligible ? "is-eligible" : "is-excluded"}">` +
-    (artifact
-      ? `<a class="evidence-artifact" href="${esc(artifact.url)}" target="_blank" rel="noopener" ` +
+    artifacts.map(artifact => `<a class="evidence-artifact" href="${esc(artifact.url)}" target="_blank" rel="noopener" ` +
         `aria-label="Open ${esc(record.name)} image at full resolution">` +
-        `<img src="${esc(artifact.url)}" loading="lazy" alt="${esc(record.name)} visual result"></a>`
-      : "") +
+        `<img src="${esc(artifact.url)}" loading="lazy" alt="${esc(record.name)} visual result"></a>`).join("") +
     `<div class="evidence-record-body"><div class="evidence-record-head">` +
     `<strong title="${esc(record.run_id)}">${esc(record.name || compactRunId(record.run_id))}</strong>` +
     `<span class="evidence-validity">${record.eligible ? "eligible" : "excluded"}</span></div>` +
@@ -1315,6 +1314,23 @@ function renderEvidenceComparison(group, metricPanels, comparison) {
     }).join("") + `</div></section>`;
 }
 
+function evalGraph(graph) {
+  const series = graph.series || [];
+  const values = series.flatMap(s => s.points.map(p => p.value)).filter(Number.isFinite);
+  if (!values.length) return `<article><h3>${esc(graph.title)}</h3><p>No measured values yet</p></article>`;
+  const min = Math.min(...values), max = Math.max(...values);
+  const span = max - min || Math.max(Math.abs(max) * .1, .01);
+  const colors = ["var(--signal)", "var(--terracotta)", "var(--muted)", "var(--ink)"];
+  const runIds = graph.run_ids || [...new Set(series.flatMap(s => s.points.map(p => p.run_id)))];
+  const lines = series.map((s, i) => {
+    const points = s.points.map(p => [70 + runIds.indexOf(p.run_id) * 470 / Math.max(1, runIds.length - 1),
+      150 - (p.value - min) / span * 125, p]);
+    return `<polyline fill="none" stroke="${colors[i % colors.length]}" stroke-width="2" points="${points.map(p => p.slice(0,2).join(",")).join(" ")}"/>` +
+      points.map(p => `<circle cx="${p[0]}" cy="${p[1]}" r="3" fill="${colors[i % colors.length]}"><title>${esc(s.column)} · ${esc(p[2].run_id)} · ${esc(formatMetric(p[2].value))}</title></circle>`).join("");
+  }).join("");
+  return `<article class="panel eval-graph"><h3>${esc(graph.title)}</h3><svg viewBox="0 0 560 185" role="img" aria-label="${esc(graph.title)}"><path d="M70 20V150H545" fill="none" stroke="currentColor"/><text x="1" y="28" font-size="18">${esc(Number(max.toPrecision(3)))}</text><text x="1" y="150" font-size="18">${esc(Number(min.toPrecision(3)))}</text>${lines}<text x="70" y="180" font-size="18">Eligible runs · oldest → newest</text></svg><p>${series.map((s, i) => `<span style="color:${colors[i % colors.length]}">${esc(s.column)} (${s.points.length})</span>`).join(" · ")}</p></article>`;
+}
+
 function renderEvidence(data) {
   const panel = document.getElementById("evidence-panel");
   const records = Array.isArray(data?.records) ? data.records : [];
@@ -1324,12 +1340,28 @@ function renderEvidence(data) {
   const groups = groupEvidenceRecords(records, comparison);
   const matched = groups.filter((group) => group.kind === "comparison").length;
   const standalone = groups.length - matched;
-  panel.hidden = records.length === 0;
+  panel.hidden = false;
+  let suitePanel = document.getElementById("eval-suite");
+  if (!suitePanel) {
+    suitePanel = document.createElement("div");
+    suitePanel.id = "eval-suite";
+    panel.querySelector(".panel-header").after(suitePanel);
+  }
+  const suite = data?.suite || {};
+  suitePanel.innerHTML = suite.status === "configured"
+    ? `<h3>${esc(suite.title)}</h3><details><summary>Evaluation protocol</summary><p>${esc(suite.rationale)}</p></details><div class="eval-graphs">${(suite.graphs || []).map(evalGraph).join("")}</div><p>${(suite.samples || []).map(s => `${esc(s.kind)} (${Number(s.available || 0)} images): ${esc(s.description)}`).join(" · ")}</p>`
+    : `<p>${esc(suite.message || "Eval suite not configured")}</p>`;
   text(
     "evidence-count",
-    `${matched} matched / ${standalone} standalone / ${Number(data?.artifact_count || 0)} images`,
+    `${matched} matched / ${standalone} standalone / ${Number(data?.artifact_count || 0)} images${data?.synced_at ? " · synced " + data.synced_at : ""}`,
   );
-  if (!records.length) return;
+  if (["private", "not_synced"].includes(suite.status)) {
+    text("evidence-count", suite.status === "private" ? "Owner access required" : "Awaiting sync");
+    document.getElementById("evidence-gates").innerHTML = "";
+    document.getElementById("evidence-gallery").innerHTML = "";
+    return;
+  }
+  // Metrics and suite status remain visible even before the first sample.
 
   const gates = document.getElementById("evidence-gates");
   gates.innerHTML = constraints.length

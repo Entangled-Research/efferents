@@ -64,6 +64,7 @@ def test_visual_evidence_is_empty_without_declared_artifacts(
     tmp_path, smoke_lab_config
 ):
     assert reader.read_evidence(tmp_path, cfg=smoke_lab_config) == {
+        "suite": {"status": "missing", "message": "Eval suite not configured. Run efferents evals generate."},
         "panels": [{
             "column": "synthetic_loss",
             "label": "Loss",

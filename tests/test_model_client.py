@@ -243,3 +243,17 @@ def test_routing_exhausted_chain_raises_with_detail(monkeypatch):
         assert "kimi-k2-thinking" in str(exc) and "claude-sonnet-5" in str(exc)
     else:
         raise AssertionError("expected chain exhaustion to raise")
+
+
+def test_adapter_accepts_its_response_blocks_in_tool_followup():
+    from efferents.agents.model_client import _convert_messages, _text_from_content
+    blocks = [SimpleNamespace(type="text", text="Checking evidence"),
+              SimpleNamespace(type="tool_use", id="call-1", name="lookup", input={"q": "test"})]
+    converted = _convert_messages([
+        {"role": "assistant", "content": blocks},
+        {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "call-1", "content": "found"}]},
+    ])
+    assert converted[0]["tool_calls"][0]["function"]["arguments"] == '{"q": "test"}'
+    assert converted[1]["role"] == "tool"
+    assert converted[1]["tool_call_id"] == "call-1"
+    assert _text_from_content(blocks) == "Checking evidence"

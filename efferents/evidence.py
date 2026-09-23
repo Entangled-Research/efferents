@@ -119,6 +119,7 @@ def paired_deltas(
     out: dict[str, list[float]] = {}
     for r in rows:
         per_seed: dict[Any, dict[str, dict[str, float]]] = {}
+        ambiguous: set[tuple] = set()
         for obs in _observations(r):
             dims = obs.get("dimensions")
             metrics = obs.get("metrics")
@@ -132,11 +133,15 @@ def paired_deltas(
             for m, v in metrics.items():
                 fv = mv.finite(v)
                 if fv is not None:
+                    key = (seed, arm, str(m))
+                    if str(m) in slot:
+                        ambiguous.add(key)
                     slot.setdefault(str(m), fv)
-        for arms in per_seed.values():
+        for seed, arms in per_seed.items():
             a, b = arms.get(first, {}), arms.get(second, {})
             for m in a.keys() & b.keys():
-                out.setdefault(m, []).append(a[m] - b[m])
+                if (seed, first, m) not in ambiguous and (seed, second, m) not in ambiguous:
+                    out.setdefault(m, []).append(a[m] - b[m])
     return out
 
 
@@ -157,6 +162,7 @@ def bucket_summary(rows: list[dict], cfg) -> dict[str, dict[str, Any]]:
     axis = cfg.evidence.comparison_axis
     excluded = set(mv.META_COLUMNS) | set(axes) | {"seed"}
     out: dict[str, dict[str, Any]] = {}
+    rows = [r for r in rows if not mv.constraint_failures(r, cfg=cfg)]
     for key, group in _group_by_bucket(rows, axes).items():
         entry: dict[str, Any] = {
             "key": key,
@@ -251,6 +257,7 @@ def _bucket_matches(key: tuple, wanted: Any) -> bool:
 
 
 def evaluate_falsifier(rule, rows: list[dict], cfg) -> dict[str, Any]:
+    rows = [r for r in rows if not mv.constraint_failures(r, cfg=cfg)]
     axes = tuple(cfg.metrics.bucket_axes)
     groups = _group_by_bucket(rows, axes)
     if rule.bucket not in ("any", "all"):

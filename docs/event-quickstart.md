@@ -74,6 +74,8 @@ uv run efferents event sync --submission ../my-event-lab
 
 A model run requires a working funded proxy/provider. Missing credit, invalid
 credentials or event quota stops this bounded run with a recorded halt reason.
+For joined event labs, model-driven startup generates or validates the lab's
+evaluation suite through the event proxy before the research loop begins.
 Use `trial` for a real no-model fallback. The UI's **Start lab** also uses three
 agent iterations; an iteration can make several calls within the configured budget.
 

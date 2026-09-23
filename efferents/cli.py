@@ -35,6 +35,22 @@ from efferents.lab import LabConfig, SubmissionError
 from efferents.registry import LabRecord, Registry
 
 
+def _cmd_evals(args: argparse.Namespace) -> int:
+    from efferents.eval_suite import generate, validate_suite
+    sub = Path(args.submission).resolve()
+    try:
+        if args.action == "generate":
+            path = generate(sub, replace=args.replace)
+        else:
+            path = sub / "eval-suite.json"
+            validate_suite(json.loads(path.read_text()), LabConfig.from_submission(sub))
+        print(f"OK eval_suite={path}")
+        return 0
+    except Exception as exc:
+        print(f"eval suite failed: {type(exc).__name__}: {exc}", file=sys.stderr)
+        return 1
+
+
 def _cmd_validate(args: argparse.Namespace) -> int:
     sub = Path(args.submission).resolve()
     try:
@@ -211,7 +227,7 @@ def _cmd_start(args: argparse.Namespace) -> int:
     # allow-list continues to keep it out of experiment commands.
     from efferents import event as event_mod  # noqa: PLC0415
     try:
-        event_mod.configure_model_environment(sub)
+        event_joined = event_mod.configure_model_environment(sub)
     except event_mod.EventClientError as exc:
         print(f"event credential failed: {exc}", file=sys.stderr)
         return 1
@@ -231,6 +247,17 @@ def _cmd_start(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
         return 1
+
+    # Joined event labs get their evaluation view before the model-driven loop
+    # begins. Standalone labs retain the explicit opt-in setting.
+    if not args.dry_run and (event_joined
+                             or os.environ.get("EFFERENTS_GENERATE_EVAL_SUITE") == "1"):
+        from efferents.eval_suite import generate
+        try:
+            generate(sub)
+        except Exception as exc:
+            print(f"Eval suite setup failed: {type(exc).__name__}: {exc}", file=sys.stderr)
+            return 1
 
     started_at = datetime.now(timezone.utc).isoformat()
     reg = Registry()
@@ -1084,6 +1111,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_demo.add_argument("--out", default="efferents-demo",
                         help="Output directory for demo artifacts (default: ./efferents-demo)")
     p_demo.set_defaults(func=_cmd_demo)
+
+    p_evals = sub.add_parser("evals", help="Generate or validate a lab-specific evaluation suite")
+    p_evals.add_argument("action", choices=["generate", "validate"])
+    p_evals.add_argument("--submission", default=".")
+    p_evals.add_argument("--replace", action="store_true", help="Archive and regenerate an existing suite")
+    p_evals.set_defaults(func=_cmd_evals)
 
     p_route = sub.add_parser("route", help="Route an idea to a new student in a compatible registered lab")
     p_route.add_argument("submission")

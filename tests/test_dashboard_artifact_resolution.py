@@ -55,3 +55,34 @@ def test_evidence_falls_back_to_source_path_when_copy_is_absent(
     assert len(record["artifacts"]) == 1  # both records resolve to one file
     token = record["artifacts"][0]["token"]
     assert reader.resolve_artifact(tmp_path, token, cfg=smoke_lab_config) == original.resolve()
+
+
+def test_submission_artifacts_are_preserved_without_trusting_sibling_paths(tmp_path, monkeypatch):
+    from efferents.lab import LabConfig
+    from efferents import lab
+    from efferents.exec import _preserve_artifacts
+    from pathlib import Path
+    import shutil
+    sub = tmp_path / 'submission'
+    shutil.copytree(Path(__file__).parent / 'fixtures/sample_submission', sub)
+    cfg = LabConfig.from_submission(sub)
+    monkeypatch.setattr(lab, 'get_config', lambda: cfg)
+    root = sub / 'lab'
+    root.mkdir()
+    output = sub / 'artifacts'
+    output.mkdir()
+    image = output / 'samples.png'
+    image.write_bytes(b'\x89PNG\r\n\x1a\noriginal')
+    private = sub / 'private.png'
+    private.write_bytes(b'private')
+    outside = tmp_path / 'outside.png'
+    outside.write_bytes(b'outside')
+    (output / 'escape.png').symlink_to(outside)
+    assert reader._artifact_path(str(image), root, cfg) == image
+    assert reader._artifact_path(str(private), root, cfg) is None
+    assert reader._artifact_path(str(output / 'escape.png'), root, cfg) is None
+    records = _preserve_artifacts([{'kind': 'samples', 'path': str(image)}], 'real-run', root)
+    saved = Path(records[0]['path'])
+    image.write_bytes(b'overwritten')
+    assert saved.read_bytes().endswith(b'original')
+    assert root in saved.parents

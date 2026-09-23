@@ -251,12 +251,22 @@ def _execute_run(config_path: Path, *, smoke: bool = False) -> RunResult:
     )
 
 
-def _artifact_roots(lab_root: Path) -> tuple[Path, ...]:
+def _artifact_roots(lab_root: Path, cfg=None) -> tuple[Path, ...]:
     roots = [Path(lab_root).resolve()]
     try:
-        roots.append(Path(_lab.get_config().source.dir).resolve())
+        cfg = cfg or _lab.get_config()
+        roots.append(Path(cfg.source.dir).resolve())
     except RuntimeError:
-        pass
+        cfg = None
+    # The conventional submission/artifacts directory is an output boundary,
+    # not permission to serve the whole submission (which may contain .env).
+    submission = Path(lab_root).resolve().parent
+    output = submission / "artifacts"
+    resolved = output.resolve()
+    if (cfg is not None and (submission / "lab.yaml").is_file()
+            and submission in Path(cfg.source.dir).resolve().parents
+            and submission in resolved.parents):
+        roots.append(resolved)
     return tuple(roots)
 
 
