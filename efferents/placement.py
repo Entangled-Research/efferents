@@ -175,6 +175,7 @@ def hire(
     focus: str,
     direction: str,
     prompted_by: str,
+    handle: str | None = None,
 ) -> Path:
     """Hire a newcomer into an existing lab as a student.
 
@@ -198,7 +199,7 @@ def hire(
         raise ValueError(f"student id {student_id!r} already on the roster of {root.name}")
 
     block = yaml.safe_dump({"students": roster + [
-        {"id": student_id, "handle": None, "focus": focus, "prompt_overrides": {}}
+        {"id": student_id, "handle": handle, "focus": focus, "prompt_overrides": {}}
     ]}, sort_keys=False)
     if re.search(r"^students:", text, re.M):
         text = re.sub(r"^students:.*?(?=^[A-Za-z_][A-Za-z0-9_-]*:|\Z)",

@@ -41,6 +41,87 @@ def validate_suite(raw: dict, cfg) -> Suite:
     return suite
 
 
+def routed_idea_suite(submission: Path, cfg) -> dict:
+    """Snapshot an incoming idea's contract, never the destination lab's results.
+
+    Routing already checks executor compatibility. The idea's own metric and
+    falsifier choices must travel with its hypothesis; otherwise a successful
+    join leaves its dashboard deliberately unconfigured.
+    """
+    import yaml
+    from efferents.lab import _build_labconfig
+
+    submission = submission.resolve()
+    raw = yaml.safe_load((submission / "lab.yaml").read_text())
+    source = submission / "ideas" / cfg.default_student_id / "eval-suite.json"
+    if source.is_file():
+        declared = json.loads(source.read_text())
+        if not isinstance(declared, dict) or declared.get("version") != 1:
+            raise ValueError("Incoming idea has an invalid eval suite")
+        for key in ("metrics", "falsifiers", "evidence"):
+            raw[key] = declared.get(key, [] if key == "falsifiers" else {})
+        presentation_source = declared.get("presentation_source")
+        presentation = declared
+        presentation_path = source
+        if presentation_source:
+            if not isinstance(presentation_source, str):
+                raise ValueError("Incoming eval presentation path must be a string")
+            path = (submission / presentation_source).resolve()
+            if Path(presentation_source).is_absolute() or not path.is_relative_to(submission):
+                raise ValueError("Incoming eval presentation must remain inside its lab")
+            presentation = json.loads(path.read_text())
+            presentation_path = path
+    else:
+        source = submission / "eval-suite.json"
+        presentation_path = source
+        presentation = json.loads(source.read_text()) if source.is_file() else {}
+    scoped = _build_labconfig({"slug": cfg.default_student_id}, raw,
+                              submission, check_paths=False)
+    if not isinstance(presentation, dict):
+        raise ValueError("Incoming eval presentation must be an object")
+    if presentation and presentation.get("version") != 1:
+        raise ValueError("Incoming eval presentation must have version 1")
+    graphs = presentation.get("graphs") or [
+        {"title": p.label or p.column, "columns": [p.column]}
+        for p in scoped.metrics.panels
+    ] or [{"title": scoped.metrics.headline.column,
+           "columns": [scoped.metrics.headline.column]}]
+    allowed = {scoped.metrics.headline.column, *(p.column for p in scoped.metrics.panels)}
+    checked = [Graph.model_validate(graph).model_dump() for graph in graphs]
+    if len(checked) > 12:
+        raise ValueError("Incoming eval suite has too many graphs")
+    if any(set(graph["columns"]) - allowed for graph in checked):
+        raise ValueError("Incoming eval graphs reference undeclared metrics")
+    samples = [Sample.model_validate(sample).model_dump()
+               for sample in presentation.get("samples", [])]
+    return {"version": 1,
+            "title": presentation.get("title") or f"{cfg.lab_id} · eval suite",
+            "rationale": presentation.get("rationale", ""),
+            **{key: raw.get(key, [] if key == "falsifiers" else {})
+               for key in ("metrics", "falsifiers", "evidence")},
+            "graphs": checked, "samples": samples,
+            "implementation_note": "Incoming idea contract preserved at routing. Only this idea’s attributed runs are shown.",
+            "routing_provenance": {"source_lab_id": cfg.lab_id,
+                "source_student_id": cfg.default_student_id,
+                "source_suite_sha256": hashlib.sha256(source.read_bytes()).hexdigest()
+                    if source.is_file() else None,
+                "source_presentation_sha256": hashlib.sha256(presentation_path.read_bytes()).hexdigest()
+                    if presentation_path.is_file() else None}}
+
+
+def install_idea_suite(target: Path, student_id: str, suite: dict) -> Path:
+    """Install once; retries preserve any subsequent owner edits."""
+    destination = target / "ideas" / student_id / "eval-suite.json"
+    if not destination.resolve().is_relative_to((target / "ideas").resolve()):
+        raise ValueError("Invalid routed student id")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    if not destination.exists():
+        temporary = destination.with_suffix(".json.tmp")
+        temporary.write_text(json.dumps(suite, indent=2) + "\n")
+        temporary.replace(destination)
+    return destination
+
+
 def generate(submission: Path, *, replace: bool = False) -> Path:
     """One budgeted provider call using the lab daemon's configured credentials."""
     from efferents.lab import LabConfig

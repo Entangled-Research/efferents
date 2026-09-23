@@ -586,8 +586,10 @@ def read_summary(lab_root: Path, cfg: "LabConfig") -> dict:
     verdict, falsifiers = _verdict(_ledger_rows(lab_root), cfg)
     from efferents.dashboard.ideas import read_idea
     plans = {}
+    idea_views = {}
     for student in cfg.students:
         view = read_idea(lab_root, cfg, student['id'])
+        idea_views[student['id']] = view
         suite = view['suite']
         plans[student['id']] = {k: suite[k] for k in ('status', 'title', 'rationale', 'message')}
         plans[student['id']]['graphs'] = [
@@ -604,15 +606,14 @@ def read_summary(lab_root: Path, cfg: "LabConfig") -> dict:
         },
         "papers": len(papers),
         "review_board": read_review_board(lab_root),
-        # A verdict falsifies an idea, never the lab: the lab's declared
-        # falsifiers test the running claim, which the default idea owns.
+        # Each idea has its own contract and attributed evidence. Never borrow
+        # the aggregate verdict or discard a nonprimary idea's measured result.
         "ideas": [{"id": student["id"],
-                   "name": _idea_name(student, cfg, state["hypothesis"].get("question") or ""),
+                   "name": idea_views[student["id"]]["name"],
                    "eval_suite": plans[student["id"]],
                    "focus": student.get("focus") or
                    state["hypothesis"].get("question") or cfg.approach or cfg.domain,
-                   "verdict": verdict if student["id"] == cfg.default_student_id
-                   else "undecided"}
+                   "verdict": idea_views[student["id"]]["verdict"]["verdict"]}
                   for student in cfg.students],
         "last_activity": last_activity,
         "hypothesis": state["hypothesis"],

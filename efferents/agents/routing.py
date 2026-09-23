@@ -179,6 +179,12 @@ def route(submission: Path, *, apply: bool = False, student_id: str | None = Non
                 raise ValueError("Routing owner or pool has changed since placement.")
             if receipt["student_id"] not in {s["id"] for s in target.students}:
                 raise ValueError("Routed student is missing from the destination roster.")
+            suite_path = Path(receipt["target"]) / "ideas" / receipt["student_id"] / "eval-suite.json"
+            if apply and not suite_path.exists():
+                from efferents.eval_suite import install_idea_suite, routed_idea_suite
+                source_cfg = LabConfig.from_submission(submission)
+                install_idea_suite(Path(receipt["target"]), receipt["student_id"],
+                                   routed_idea_suite(submission, source_cfg))
             return receipt
         decision = decide(submission, registry=Registry(), use_model=use_model)
         decision.update(hypothesis_hash=content_hash, source=str(submission), applied=False,
@@ -191,6 +197,9 @@ def route(submission: Path, *, apply: bool = False, student_id: str | None = Non
                     or Registry().get(source_cfg.lab_id) is not None):
                 raise ValueError("Route fresh single-idea submissions, not existing multi-student labs or runs.")
             sid = student_id or f"participant-{identity[:10]}"
+            from efferents.eval_suite import install_idea_suite, routed_idea_suite
+            # Validate before changing the roster or persisting a campaign.
+            idea_suite = routed_idea_suite(submission, source_cfg)
             hypothesis = (submission / "hypothesis.md").read_text()
             snapshot = target / "lab" / "intake" / content_hash / "hypothesis.md"
             snapshot.parent.mkdir(parents=True, exist_ok=True)
@@ -201,10 +210,18 @@ def route(submission: Path, *, apply: bool = False, student_id: str | None = Non
             focus = f"{profile.topic}\nApproach: {profile.approach}\nSubmitted hypothesis:\n{hypothesis[:12000]}"
             existing = next((s for s in target_cfg.students if s["id"] == sid), None)
             if existing is None:
+                source_student = next(s for s in source_cfg.students
+                                      if s["id"] == source_cfg.default_student_id)
+                handle = source_student.get("handle")
+                if not handle:
+                    handle = (source_cfg.approach or source_cfg.hypothesis_slug
+                              or source_cfg.lab_id).replace("-", " ").replace("_", " ")
                 hire(target, student_id=sid, focus=focus,
-                     direction=hypothesis, prompted_by=f"router:{source_cfg.lab_id}")
+                     direction=hypothesis, prompted_by=f"router:{source_cfg.lab_id}",
+                     handle=str(handle))
             elif existing["focus"] != focus:
                 raise ValueError("Student id already belongs to a different idea")
+            install_idea_suite(target, sid, idea_suite)
             # The target's budget, executor, owner and existing students remain authoritative.
             check = LabConfig.from_submission(target)
             if check.budget != target_cfg.budget:
