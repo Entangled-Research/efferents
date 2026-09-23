@@ -103,3 +103,53 @@ def test_missing_sibling_contract_never_borrows_the_default_idea(tmp_path):
         resolve_idea_config(sub, cfg, "other")
     with pytest.raises(ValueError, match="Invalid idea identity"):
         resolve_idea_config(sub, cfg, "../../other")
+
+
+def test_large_campaign_bounds_prompt_and_paper_but_retains_exact_provenance(
+    tmp_path, monkeypatch, fake_anthropic_factory
+):
+    sub = tmp_path / 'submission'
+    shutil.copytree(Path(__file__).parent / 'fixtures/sample_submission', sub)
+    raw = yaml.safe_load((sub / 'lab.yaml').read_text())
+    raw['metrics'] = {'headline': {'column': 'candidate', 'direction': 'max',
+                                  'comparator_column': 'prior', 'aggregate': 'mean'}}
+    raw['falsifiers'] = []
+    (sub / 'lab.yaml').write_text(yaml.safe_dump(raw))
+    cfg = lab.LabConfig.from_submission(sub)
+    monkeypatch.setattr(lab, '_active', cfg)
+    monkeypatch.setattr(lab, 'PEER_REVIEW_ENABLED', False)
+    root = sub / 'lab'
+    root.mkdir(exist_ok=True)
+    paths = writer_paths(lab=root, paper=sub/'paper', reports=root/'reports', context=sub/'context')
+    configs = {}
+    with sqlite3.connect(paths.runs_db) as conn:
+        conn.execute('CREATE TABLE runs (run_id TEXT, campaign_id TEXT, started_at TEXT, status TEXT, seed INTEGER, candidate REAL, prior REAL, config_yaml TEXT, config_hash TEXT)')
+        for i in range(30):
+            config = f'seed: {i}\nnotes: '+('x'*12000)+'\n'
+            digest = hashlib.sha256(config.encode()).hexdigest()
+            configs[f'run-{i}'] = (config, digest)
+            conn.execute('INSERT INTO runs VALUES (?,?,?,?,?,?,?,?,?)',
+                         (f'run-{i}', 'large', f'{i:02d}', 'succeeded', i, .4, .5, config, digest))
+    hypothesis = (sub/'hypothesis.md').read_text()
+    client = fake_anthropic_factory(['\n'.join(f'## {s}\n\nBounded negative finding; full configuration excerpts require the archived evidence.\n'
+        for s in ('Motivation', 'Methods', 'Results', 'Conclusion', 'Next questions'))])
+    artifact = write_phase_a_paper(paths, {
+        'id': 'large', 'question': 'A bounded thirty-run negative finding', 'finding_kind': 'negative_result',
+        'hypothesis_path': 'hypothesis.md', 'hypothesis_hash': 'sha256:'+hashlib.sha256(hypothesis.encode()).hexdigest(),
+        'publication_context': {'split_provenance': 'Ω'*90000},
+    }, client)
+    assert len(artifact.encode('utf-8')) < 200000
+    assert len(json.dumps(client.calls[0], ensure_ascii=False).encode('utf-8')) < 200000
+    record = json.loads(artifact.split('## Recorded evidence', 1)[1].split('```json\n', 1)[1].split('\n```', 1)[0])
+    assert len(json.dumps(record, ensure_ascii=False, indent=2).encode('utf-8')) <= 64000
+    assert record['evidence_truncated'] is True
+    assert record['publication_context_truncated'] is True
+    assert len(record['runs']) == 30
+    assert all(run['config_truncated'] for run in record['runs'])
+    assert {run['run_id']: run['config_hash'] for run in record['runs']} == {key: value[1] for key, value in configs.items()}
+    assert {run['run_id']: run['config_sha256'] for run in record['runs']} == {key: value[1] for key, value in configs.items()}
+    full_path = Path(record['complete_evidence']['path'])
+    assert hashlib.sha256(full_path.read_bytes()).hexdigest() == record['complete_evidence']['sha256']
+    archived = json.loads(full_path.read_text())
+    assert {run['run_id']: run['config_yaml'] for run in archived['runs']} == {key: value[0] for key, value in configs.items()}
+    assert archived['publication_context']['split_provenance'] == 'Ω'*90000

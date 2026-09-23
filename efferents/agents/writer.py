@@ -155,6 +155,66 @@ def _paired_metrics(
     return fn(run[candidate_col] for run in paired), fn(run[comparator_col] for run in paired), paired
 
 
+_WRITER_EVIDENCE_BYTES = 64000
+
+
+def _evidence_json(record: dict) -> str:
+    return json.dumps(record, ensure_ascii=False, indent=2)
+
+
+def _excerpt(text: str, max_bytes: int) -> str:
+    return text.encode("utf-8")[:max_bytes].decode("utf-8", errors="ignore")
+
+
+def _bounded_evidence(paths: Any, record: dict) -> dict:
+    """Keep model/manuscript evidence bounded without losing its audit trail."""
+    full = _evidence_json(record)
+    if len(full.encode("utf-8")) <= _WRITER_EVIDENCE_BYTES:
+        return record
+    digest = hashlib.sha256(full.encode("utf-8")).hexdigest()
+    archive = paths.lab / "publication_evidence" / f"{digest}.json"
+    archive.parent.mkdir(parents=True, exist_ok=True)
+    archive.write_text(full)
+    # Work on a copy: the content-addressed archive retains every full value.
+    bounded = json.loads(full)
+    bounded["evidence_truncated"] = True
+    bounded["complete_evidence"] = {
+        "path": str(archive), "sha256": digest, "bytes": len(full.encode("utf-8")),
+        "availability": "Complete evidence remains in the originating lab at this path; the journal carries bounded excerpts. Request this hash-addressed file to reproduce omitted details.",
+    }
+    configs = {}
+    config_bytes = 12000
+    for run in bounded["runs"]:
+        config = run.pop("config_yaml")
+        key = run["config_sha256"]
+        if key not in configs:
+            text = _excerpt(config, min(2000, config_bytes))
+            config_bytes -= len(text.encode("utf-8"))
+            configs[key] = {"excerpt": text, "truncated": text != config}
+        run["config_ref"] = key
+        run["config_truncated"] = configs[key]["truncated"]
+    bounded["config_excerpts"] = configs
+    text = bounded["hypothesis"].get("text")
+    if text:
+        bounded["hypothesis"]["text"] = _excerpt(text, 12000)
+        bounded["hypothesis"]["truncated"] = text != bounded["hypothesis"]["text"]
+    context = bounded["publication_context"]
+    context_text = context if isinstance(context, str) else _evidence_json(context)
+    if len(context_text.encode("utf-8")) > 12000:
+        bounded["publication_context"] = _excerpt(context_text, 12000)
+        bounded["publication_context_truncated"] = True
+    if len(_evidence_json(bounded).encode("utf-8")) > _WRITER_EVIDENCE_BYTES:
+        # Exact run identities and both recorded and computed config hashes are
+        # mandatory. Large ancillary metric/artifact lists stay in the archive.
+        for run in bounded["runs"]:
+            run.pop("metrics", None)
+            run.pop("artifacts", None)
+            run["additional_evidence_in_archive"] = True
+    if len(_evidence_json(bounded).encode("utf-8")) > _WRITER_EVIDENCE_BYTES:
+        raise ValueError("Publication provenance exceeds the bounded evidence limit; split the report into smaller scoped campaigns")
+    return bounded
+
+
 def _paper_evidence(paths: Any, campaign: dict, runs: list[dict], falsifiers: list[dict]) -> dict:
     """Give the Writer persisted facts, never just paths it cannot inspect."""
     root = paths.context.parent.resolve()
@@ -169,8 +229,8 @@ def _paper_evidence(paths: Any, campaign: dict, runs: list[dict], falsifiers: li
             expected = str(campaign.get("hypothesis_hash") or "").removeprefix("sha256:")
             hypothesis.update(sha256=digest, status="verified" if digest == expected else "hash_mismatch")
             if digest == expected:
-                hypothesis["text"] = body[:30000]
-                hypothesis["truncated"] = len(body) > 30000
+                hypothesis["text"] = body
+                hypothesis["truncated"] = False
     except OSError:
         pass
     records = []
@@ -182,14 +242,16 @@ def _paper_evidence(paths: Any, campaign: dict, runs: list[dict], falsifiers: li
         records.append({
             "run_id": run["run_id"], "seed": run.get("seed"),
             "student_id": run.get("student_id"), "campaign_id": run.get("campaign_id"),
-            "metrics": metrics, "config_yaml": config[:12000],
-            "config_truncated": len(config) > 12000,
+            "metrics": metrics, "config_yaml": config,
+            "config_truncated": False,
+            "config_path": run.get("config_path"),
+            "config_sha256": hashlib.sha256(config.encode("utf-8")).hexdigest(),
             "config_hash": run.get("config_hash"), "code_commit": run.get("git_commit"),
             "artifacts": run.get("artifacts_json"),
         })
-    return {"hypothesis": hypothesis, "runs": records, "falsifiers": falsifiers,
+    return _bounded_evidence(paths, {"hypothesis": hypothesis, "runs": records, "falsifiers": falsifiers,
             "publication_context": campaign.get("publication_context") or "",
-            "scope": "Only these eligible campaign runs support this report. A falsifiability gate is not empirical support. Do not infer prospective preregistration or missing methods."}
+            "scope": "Only these eligible campaign runs support this report. A falsifiability gate is not empirical support. Do not infer prospective preregistration or missing methods."})
 
 
 def _resolve_campaign_metric(
