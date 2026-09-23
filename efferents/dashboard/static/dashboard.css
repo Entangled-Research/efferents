@@ -1108,62 +1108,41 @@ main#app {
 .lab-tab {
   display: flex;
   flex: 0 0 auto;
+  align-items: stretch;
+  border-right: 1px solid var(--line);
+  color: var(--muted);
+  font: 600 11px/1.2 var(--mono);
+}
+.lab-tab:last-child { border-right: 0; }
+.lab-tab:hover { color: var(--ink); }
+.lab-tab.active { background: var(--ink); color: var(--bg); }
+.tab-link {
+  display: flex;
   align-items: center;
   gap: 8px;
   padding: 9px 10px 9px 13px;
-  border: 0;
-  border-right: 1px solid var(--line);
-  background: transparent;
-  color: var(--muted);
-  cursor: pointer;
-  font: 600 11px/1.2 var(--mono);
-}
-
-.lab-tab:last-child {
-  border-right: 0;
-}
-
-.lab-tab:hover {
-  color: var(--ink);
-}
-
-.lab-tab.active {
-  background: var(--ink);
-  color: var(--bg);
-}
-
-.tab-led {
-  width: 5px;
-  height: 5px;
-  border: 1px solid currentColor;
-  border-radius: 1px;
-}
-
-.tab-led.running {
-  background: currentColor;
-}
-
-.lab-tab:not(.active) .tab-led.running {
-  border-color: var(--data);
-  background: var(--data);
-}
-
-.tab-close {
-  padding: 0 3px;
   color: inherit;
-  font-size: 13px;
-  line-height: 1;
-  opacity: 0.5;
+  text-decoration: none;
 }
-
-.tab-close:hover {
-  color: var(--terracotta);
-  opacity: 1;
+.tab-link:hover { color: inherit; }
+.tab-name { max-width: 32ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tab-led { width: 5px; height: 5px; border: 1px solid currentColor; border-radius: 1px; flex-shrink: 0; }
+.tab-led.running { background: currentColor; }
+.lab-tab:not(.active) .tab-led.running { border-color: var(--data); background: var(--data); }
+.tab-close {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  min-width: 28px;
+  padding: 0 7px;
+  font: 16px/1 var(--mono);
+  cursor: pointer;
 }
-
-.lab-tab.active .tab-close:hover {
-  color: var(--on-signal);
-}
+.tab-close:hover { background: var(--terracotta); color: var(--panel); }
+.tab-link:focus-visible, .tab-close:focus-visible { outline: 2px solid var(--signal); outline-offset: -3px; }
+.lab-loading > * { visibility: hidden; }
+.lab-loading::before { content: "Loading lab…"; display: block; padding: 18px; font: 12px var(--mono); }
 
 .detail-strip {
   display: flex;
