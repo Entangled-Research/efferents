@@ -180,7 +180,8 @@ def test_apply_repairs_old_missing_suite_but_preserves_owner_edits(intake):
     assert not path.exists()  # A read-only routing query never writes.
     assert routing.route(incoming, apply=True, use_model=False) == result
     assert path.read_text() == original
-    updated = json.loads(original); updated["title"] = "Owner revised title"
+    updated = json.loads(original)
+    updated["title"] = "Owner revised title"
     path.write_text(json.dumps(updated))
     routing.route(incoming, apply=True, use_model=False)
     assert json.loads(path.read_text())["title"] == "Owner revised title"

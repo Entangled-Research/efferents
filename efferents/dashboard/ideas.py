@@ -75,7 +75,9 @@ def read_idea(root: Path, cfg, student_id: str) -> dict:
     if not hypothesis:
         hypothesis = _safe_text(root.parent / 'popper-corpus' / student_id / 'hypothesis.md', root.parent)
     claim = reader._section(hypothesis, 'Operational restatement') or reader._section(hypothesis, 'Claim')
-    falsifier = reader._section(hypothesis, 'Falsifier(s)') or reader._section(hypothesis, 'Falsifier')
+    falsifier = (reader._section(hypothesis, 'Falsifier(s)')
+                 or reader._section(hypothesis, 'Falsifier')
+                 or reader._section(hypothesis, 'Stop condition'))
     name = reader._idea_name(student, cfg, latest.get('question', ''))
     suite_path = root.parent / 'ideas' / student_id / 'eval-suite.json'
     status, message, spec = 'configured', '', {}

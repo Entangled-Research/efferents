@@ -86,6 +86,17 @@ def test_suite_is_separate_from_lab_contract(two_ideas):
     assert yaml.safe_load((root.parent/'lab.yaml').read_text()) == before
 
 
+def test_lightweight_campaign_stop_condition_is_visible(two_ideas):
+    root, cfg = two_ideas
+    hypothesis = root.parent / 'incoming-hypothesis.md'
+    hypothesis.write_text('## Claim\n\nImprove recall.\n\n## Stop condition\n\nGain below5pp falsifies the claim.\n')
+    with sqlite3.connect(root/'runs.sqlite') as conn:
+        conn.execute('UPDATE campaigns SET hypothesis_path=? WHERE id=?', (str(hypothesis), 'c2'))
+    view = read_idea(root, cfg, 'second')
+    assert view['hypothesis']['claim'] == 'Improve recall.'
+    assert view['hypothesis']['falsifier'] == 'Gain below5pp falsifies the claim.'
+
+
 def test_regenerated_presentation_updates_without_cross_idea_metrics(two_ideas):
     root, cfg = two_ideas
     path = root.parent / 'ideas/primary/eval-suite.json'
