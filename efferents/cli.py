@@ -105,10 +105,31 @@ def _orchestrator_loop(
         )
 
     o.on_step_callback = event_heartbeat
+    final_status = "stopped"
+    failure_reason = None
     try:
         event_heartbeat()
         o.run(max_iterations=max_iterations)
+    except Exception as exc:
+        final_status = "crashed"
+        failure_reason = f"{type(exc).__name__}: {exc}"
+        raise
     finally:
+        # Terminal hub clients do not use event.sync. Bypass cadence so even a
+        # short bounded run sends its last evidence and a durable terminal state.
+        network = getattr(o, "network", None)
+        if network is not None:
+            try:
+                payload = o._network_heartbeat_payload()
+                payload["status"] = final_status
+                if failure_reason:
+                    payload["halt_reason"] = failure_reason
+                network.heartbeat(cfg.lab_id, payload)
+            except Exception as exc:
+                from efferents.agents.state import notebook_append, now_iso
+                notebook_append(o.paths.notebook,
+                                f"## {now_iso()} — final hub heartbeat failed: "
+                                f"{type(exc).__name__}\n")
         # Always leave a current static artifact, including bounded/offline
         # runs that stop before the Analyst cadence fires, and mark the event
         # node stopped without making local shutdown depend on the network.
@@ -116,7 +137,7 @@ def _orchestrator_loop(
         write_progress(o.paths, context_dir=context_dir)
         from efferents import event as event_mod  # noqa: PLC0415
         event_mod.sync(
-            submission_dir, lab_root=lab_root, runtime_status="stopped", quiet=True
+            submission_dir, lab_root=lab_root, runtime_status=final_status, quiet=True
         )
 
 
