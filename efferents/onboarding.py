@@ -159,10 +159,13 @@ def create_lab(destination: Path, *, starter: str = "auto", idea: str = "",
     return decisions
 
 
-def trial(submission: Path, *, runs: int = 3, student_id: str | None = None) -> dict:
+def trial(submission: Path, *, runs: int = 3, student_id: str | None = None,
+          seed_start: int | None = None) -> dict:
     """Run distinct seeds through the ordinary evidence pipeline, without an LLM."""
     if type(runs) is not int or not 1 <= runs <= 12:
         raise ValueError("runs must be between 1 and 12")
+    if seed_start is not None and (type(seed_start) is not int or seed_start < 0):
+        raise ValueError("seed_start must be a nonnegative integer")
     from efferents import daemon, lab as lab_mod
     from efferents.agents.executor import execute
     from efferents.agents.state import lab_paths, init_lab, campaign_open_list, notebook_append, now_iso
@@ -203,6 +206,8 @@ def trial(submission: Path, *, runs: int = 3, student_id: str | None = None) -> 
         outcomes = []
         with sqlite3.connect(root / "runs.sqlite") as conn:
             next_seed = int(conn.execute("SELECT COALESCE(MAX(seed),-1)+1 FROM runs").fetchone()[0])
+        if seed_start is not None:
+            next_seed = seed_start
         from efferents.event import sync, exchange
         def interrupt(signum, frame):
             raise InterruptedError("Trial stopped by owner")

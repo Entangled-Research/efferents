@@ -132,3 +132,20 @@ def test_password_and_csrf_protect_onboarding(tmp_path, monkeypatch):
     finally:
         httpd.shutdown()
         httpd.server_close()
+
+
+def test_explicit_trial_seed_preserves_paired_comparisons(tmp_path, monkeypatch):
+    from efferents.onboarding import trial
+    monkeypatch.setenv("EFFERENTS_HOME", str(tmp_path / "registry"))
+    monkeypatch.setenv("PATH", str(Path(sys.executable).parent) + os.pathsep + os.environ.get("PATH", ""))
+    submission = tmp_path / "paired"
+    create_lab(submission, starter="integration")
+    first = trial(submission, runs=1, seed_start=7)
+    second = trial(submission, runs=1, seed_start=7)
+    assert first["ok"] and second["ok"]
+    with sqlite3.connect(submission / "lab/runs.sqlite") as conn:
+        rows = conn.execute("SELECT seed, candidate_error FROM runs").fetchall()
+    assert len(rows) == 2 and rows[0] == rows[1]
+    assert rows[0][0] == 7
+    with pytest.raises(ValueError, match="nonnegative"):
+        trial(submission, seed_start=-1)

@@ -947,7 +947,9 @@ def _cmd_starter(args: argparse.Namespace) -> int:
 def _cmd_trial(args: argparse.Namespace) -> int:
     from efferents.onboarding import trial
     try:
-        result = trial(Path(args.submission).expanduser().resolve(), runs=args.runs, student_id=getattr(args, "student_id", None))
+        result = trial(Path(args.submission).expanduser().resolve(), runs=args.runs,
+                       student_id=getattr(args, "student_id", None),
+                       seed_start=getattr(args, "seed_start", None))
     except (OSError, ValueError) as exc:
         print(f"trial failed: {exc}", file=sys.stderr)
         return 1
@@ -1046,6 +1048,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_trial.add_argument("--submission", default=".")
     p_trial.add_argument("--runs", type=int, default=3)
     p_trial.add_argument("--student-id", help="Attribute the trial to an existing idea/student track")
+    p_trial.add_argument("--seed-start", type=int, default=None,
+                         help="First split seed; reuse it across ideas for paired evaluations")
     p_trial.set_defaults(func=_cmd_trial)
     p_migrate = sub.add_parser(
         "migrate-paper-dir",
