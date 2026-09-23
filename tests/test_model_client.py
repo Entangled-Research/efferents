@@ -257,3 +257,87 @@ def test_adapter_accepts_its_response_blocks_in_tool_followup():
     assert converted[1]["role"] == "tool"
     assert converted[1]["tool_call_id"] == "call-1"
     assert _text_from_content(blocks) == "Checking evidence"
+
+
+def test_empty_reviewer_output_retries_with_string_content(tmp_path, monkeypatch):
+    import json
+    from efferents.agents.budget import BudgetTracker
+    from efferents.agents.reviewer import review
+
+    paper = tmp_path / "paper.md"
+    paper.write_text("A bounded negative finding.")
+    calls = []
+    verdict = {"score": 4, "confidence": 4, "material_flaw": False,
+               "material_flaw_reason": "", "summary": "Bounded evidence",
+               "strengths": [], "weaknesses": [], "questions": []}
+
+    def strict_completion(**kwargs):
+        calls.append(kwargs)
+        assert all(isinstance(message["content"], str) for message in kwargs["messages"])
+        if len(calls) == 2:
+            assert kwargs["messages"][-2] == {"role": "assistant", "content": ""}
+            assert "failed JSON parsing" in kwargs["messages"][-1]["content"]
+        return SimpleNamespace(
+            choices=[SimpleNamespace(
+                finish_reason="length" if len(calls) == 1 else "stop",
+                message=SimpleNamespace(content=None if len(calls) == 1 else json.dumps(verdict),
+                                        tool_calls=[]),
+            )],
+            usage=SimpleNamespace(prompt_tokens=10, completion_tokens=5),
+        )
+
+    monkeypatch.setattr("litellm.completion", strict_completion)
+    result = review(paper_path=paper, persona="critical", client=LiteLLMMessagesClient(),
+                    budget=BudgetTracker(tmp_path / "budget.jsonl", daily_cap_usd=1),
+                    model="openai/gpt-5.6-sol")
+    assert result.valid and result.score == 4
+    assert len(calls) == 2
+    assert all(call.get("max_completion_tokens", call.get("max_tokens")) == 8192 for call in calls)
+
+
+def test_tool_only_and_null_assistant_content_remains_string():
+    from efferents.agents.model_client import _convert_messages
+
+    messages = _convert_messages([
+        {"role": "assistant", "content": None},
+        {"role": "assistant", "content": [
+            SimpleNamespace(type="tool_use", id="call-1", name="lookup", input={"q": "test"})
+        ]},
+        {"role": "user", "content": [
+            {"type": "tool_result", "tool_use_id": "call-1", "content": "found"}
+        ]},
+    ])
+    assert messages[0] == {"role": "assistant", "content": ""}
+    assert messages[1]["content"] == ""
+    assert messages[1]["tool_calls"][0]["id"] == messages[2]["tool_call_id"] == "call-1"
+
+
+def test_review_and_rebuttal_allow_reasoning_without_changing_explicit_limits(tmp_path):
+    import json
+    from efferents.agents import reviewer, rebuttal
+    from efferents.agents.model_client import default_text_output_tokens
+
+    paper = tmp_path / "paper.md"
+    paper.write_text("A bounded finding.")
+    calls = []
+    verdict = {"score": 4, "confidence": 4, "material_flaw": False,
+               "material_flaw_reason": "", "summary": "Bounded evidence"}
+
+    def create(**kwargs):
+        calls.append(kwargs)
+        return SimpleNamespace(
+            content=[SimpleNamespace(type="text", text=json.dumps(verdict))],
+            usage=SimpleNamespace(input_tokens=1, output_tokens=1),
+        )
+
+    client = SimpleNamespace(messages=SimpleNamespace(create=create))
+    budget = SimpleNamespace(record=lambda **kwargs: None)
+    for model, limit in (("openai/gpt-5.6-sol", 8192), ("openai/gpt-5.6-luna", 8192),
+                         ("openai/gpt-4.1-mini", 2048), ("claude-sonnet-4-6", 2048)):
+        for explicit in (None, 512):
+            reviewer.review(paper_path=paper, persona="critical", client=client,
+                            budget=budget, model=model, max_tokens=explicit)
+            rebuttal.write_rebuttal(paper_path=paper, reviews=[], client=client,
+                                    budget=budget, model=model, max_tokens=explicit)
+            assert all(call["max_tokens"] == (explicit or limit) for call in calls[-2:])
+    assert default_text_output_tokens("claude-sonnet-4-6,openai/gpt-5.6-sol") == 8192

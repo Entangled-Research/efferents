@@ -64,6 +64,13 @@ def resolve_chain(model: str | None = None) -> list[str]:
     return configured_chain()
 
 
+def default_text_output_tokens(model: str, *, ordinary: int = 2048) -> int:
+    """Leave room for text when OpenAI reasoning shares the output allowance."""
+    names = [candidate.rsplit("/", 1)[-1] for candidate in parse_chain(model)]
+    reasoning = any(name.startswith(("gpt-5", "o1", "o3", "o4")) for name in names)
+    return max(ordinary, 8192) if reasoning else ordinary
+
+
 def provider_for_model(model: str | None = None) -> str:
     if os.environ.get("EFFERENTS_EVENT_PROXY_ACTIVE") == "1":
         return "openai"
@@ -421,7 +428,7 @@ def _convert_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
     for message in messages:
         role, content = message["role"], message.get("content", "")
         if not isinstance(content, list):
-            converted.append({"role": role, "content": content})
+            converted.append({"role": role, "content": "" if content is None else content})
             continue
         text_parts: list[str] = []
         parts: list[dict[str, Any]] = []  # multimodal (OpenAI-style) content parts
@@ -458,7 +465,9 @@ def _convert_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
         has_images = any(p["type"] == "image_url" for p in parts)
         item: dict[str, Any] = {
             "role": role,
-            "content": parts if has_images else ("".join(text_parts) or None),
+            # Azure's Chat Completions rejects null content, including an
+            # empty parse-retry turn or an assistant turn containing only tools.
+            "content": parts if has_images else "".join(text_parts),
         }
         if tool_calls:
             item["tool_calls"] = tool_calls

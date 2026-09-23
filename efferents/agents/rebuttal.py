@@ -39,7 +39,7 @@ def write_rebuttal(
     client: anthropic.Anthropic,
     budget: BudgetTracker,
     model: str | None = None,
-    max_tokens: int = 2048,
+    max_tokens: int | None = None,
 ) -> str:
     """One-shot rebuttal composition. Returns the rebuttal markdown.
 
@@ -50,6 +50,9 @@ def write_rebuttal(
     chosen = model or model_for("rebuttal")
     if chosen is None:
         raise RuntimeError("No model configured for Rebuttal")
+    if max_tokens is None:
+        from efferents.agents.model_client import default_text_output_tokens
+        max_tokens = default_text_output_tokens(chosen)
 
     paper_md = paper_path.read_text()
     system = [{
