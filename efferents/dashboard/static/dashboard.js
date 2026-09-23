@@ -443,7 +443,7 @@ function renderIdeaSuite(data) {
   text("idea-suite-title", suite.title || "Eval suite");
   text("idea-suite-status", suite.message || (data.runs?.history?.total ? "Measured results" : "No measured results yet"));
   document.getElementById("idea-suite-plan").innerHTML = `<p>${esc(suite.rationale || "")}</p>` +
-    `<div class="idea-eval-graphs">${(suite.graphs || []).map(ideaEvalGraph).join("")}</div>`;
+    `<div class="idea-eval-graphs">${(suite.graphs || []).map(graph => ideaEvalGraph({...graph, emptyMessage: data.detail_unavailable ? "Results not shared with this viewer" : "No measured values yet"})).join("")}</div>`;
   const available = !data.detail_unavailable;
   document.getElementById("idea-results").hidden = !available;
   if (!available) return;
@@ -465,7 +465,7 @@ function renderIdeaSuite(data) {
 function ideaEvalGraph(graph) {
   const series = graph.series || [];
   const values = series.flatMap(s => (s.points || []).map(p => p.value)).filter(Number.isFinite);
-  if (!values.length) return `<article><h3>${esc(graph.title)}</h3><p>No measured values yet</p></article>`;
+  if (!values.length) return `<article><h3>${esc(graph.title)}</h3><p>${esc(graph.emptyMessage || "No measured values yet")}</p></article>`;
   const min = Math.min(...values), max = Math.max(...values), span = max - min || 1;
   const runs = graph.run_ids || [];
   const colors = ["var(--signal)", "var(--terracotta)", "var(--muted)"];
