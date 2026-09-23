@@ -153,11 +153,11 @@ def test_remote_exchange_consent_identity_provenance_and_cross_domain_cadence(st
     def enroll(name, domain="routing", goal=""):
         return store.join({**join_payload(name), "domain": domain, "goal": goal, "share_findings": True})
     author = enroll("author", goal="Shared objective")
-    collaborator = enroll("collaborator", domain="math", goal="Shared objective")
-    outsider = enroll("outsider", domain="biology")
+    collaborator = enroll("collaborator", domain="traffic", goal="Shared objective")
+    outsider = enroll("outsider", domain="math", goal="Shared objective")
     request = {"protocol": app.PROTOCOL, "publications": [], "observed": []}
     measurement = {"kind": "publication", "body": "Reviewed paper: error = 0.01", "campaign_id": "paper-1",
-                   "publication_status": "accepted", "journal": "Methods",
+                   "publication_status": "accepted", "journal": "Simulation & Autonomous Systems",
                    "review_scores": {"critical": 6, "neutral": 7, "optimistic": 8}}
     for kind in ("measurement", "hypothesis", "question", "discussion"):
         with pytest.raises(app.ApiError, match="direct messages"):
@@ -168,8 +168,8 @@ def test_remote_exchange_consent_identity_provenance_and_cross_domain_cadence(st
     assert not store.network("night-1")["observations"]  # Delivery alone is not an observation receipt.
     store.exchange(collaborator["token"], {**request, "observed": [incoming[0]["id"]]})
     assert store.network("night-1")["observations"][0]["target"] == "collaborator"
-    assert store.exchange(outsider["token"], request)["talks"] == []
-    assert store.exchange(outsider["token"], request)["talks"] == []
+    for _ in range(4):
+        assert store.exchange(outsider["token"], request)["talks"] == []
     cross = store.exchange(outsider["token"], request)["talks"]
     assert cross[0]["track"] == "interdisciplinary"
     with pytest.raises(app.ApiError, match="invalid bounded"):
@@ -400,3 +400,26 @@ def test_real_model_client_can_use_event_proxy(store, monkeypatch):
         upstream.shutdown()
         proxy.server_close()
         upstream.server_close()
+
+
+def test_publications_cannot_choose_another_journal_or_visit_unrelated_fields(store):
+    author = store.join({**join_payload("author"), "share_findings": True})
+    reader = store.join({**join_payload("reader"), "domain": "literature", "share_findings": True})
+    request = {"protocol": app.PROTOCOL, "publications": [], "observed": []}
+    paper = {"kind": "publication", "body": "Accepted research", "campaign_id": "paper-1",
+             "publication_status": "accepted", "journal": "Physics & Dynamics",
+             "review_scores": {"critical": 6, "neutral": 7, "optimistic": 8}}
+    with pytest.raises(app.ApiError, match="home journal"):
+        store.exchange(author["token"], {**request, "publications": [paper]})
+    paper["journal"] = "Simulation & Autonomous Systems"
+    store.exchange(author["token"], {**request, "publications": [paper]})
+    for _ in range(10):
+        assert not store.exchange(reader["token"], request)["talks"]
+
+
+def test_upload_only_does_not_advance_cross_conference_cadence(store):
+    joined = store.join({**join_payload(), "share_findings": True})
+    request = {"protocol": app.PROTOCOL, "publications": [], "observed": [], "receive": False}
+    for _ in range(6):
+        result = store.exchange(joined["token"], request)
+        assert result["visit"] == 0 and result["talks"] == []

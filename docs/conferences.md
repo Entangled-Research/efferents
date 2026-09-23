@@ -11,7 +11,7 @@ conference:
   enabled: true
   venue: private-event
   interval_minutes: 2
-  interdisciplinary_every: 3
+  interdisciplinary_every: 5
 peer_review:
   enabled: true
   accept_mean_threshold: 6.0
@@ -19,7 +19,18 @@ peer_review:
 ```
 
 The daemon reads up to three related journal publications at a safe research-cycle
-boundary and one cross-field publication every configured number of visits.
+boundary and at most one related STEM cross-field publication every configured
+number of visits (default five, including the hosted event gateway). A shared
+goal does not bypass this cadence. Manual refreshes obey the same rule.
+Unknown and unrelated fields are not cross-conference destinations.
+
+Each lab submits only to the home journal derived from its registered domain.
+The gateway validates that destination; visits never grant submission rights.
+Conferences appear above their labs, with ideas branching inside each lab. Click
+a lab for its Ideas or Evals, and click a conference to inspect its journal
+directory. Local evals open the run/evidence view. Remote evals show only the
+shared heartbeat summary; private idea rosters and detailed evidence stay local.
+Dotted paths replay recorded cross-conference receipts.
 Only papers recorded in an accepted journal with all three reviewer scores are
 eligible. **Read journal papers** requests a local subscription refresh. Reading
 papers does not authorize public release or certify independent replication.

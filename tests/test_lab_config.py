@@ -28,6 +28,36 @@ def test_from_submission_happy_path(tmp_path):
     assert cfg.budget.daily_cap_usd == 10.0
 
 
+def test_headline_paired_comparator_config(tmp_path):
+    src = Path(__file__).parent / "fixtures" / "sample_submission"
+    sub = tmp_path / "sub"
+    shutil.copytree(src, sub)
+    raw = yaml.safe_load((sub / "lab.yaml").read_text())
+    raw["metrics"]["headline"].update(
+        comparator_column="baseline_loss", aggregate="max"
+    )
+    (sub / "lab.yaml").write_text(yaml.safe_dump(raw))
+    headline = LabConfig.from_submission(sub).metrics.headline
+    assert (headline.comparator_column, headline.aggregate) == ("baseline_loss", "max")
+
+
+@pytest.mark.parametrize("updates, message", [
+    ({"comparator_column": "loss;drop"}, "comparator_column"),
+    ({"comparator_column": "synthetic_loss"}, "must differ"),
+    ({"aggregate": "max"}, "requires comparator_column"),
+    ({"comparator_column": "baseline_loss", "aggregate": "median"}, "aggregate"),
+])
+def test_invalid_headline_paired_comparator_config(tmp_path, updates, message):
+    src = Path(__file__).parent / "fixtures" / "sample_submission"
+    sub = tmp_path / "sub"
+    shutil.copytree(src, sub)
+    raw = yaml.safe_load((sub / "lab.yaml").read_text())
+    raw["metrics"]["headline"].update(updates)
+    (sub / "lab.yaml").write_text(yaml.safe_dump(raw))
+    with pytest.raises(SubmissionError, match=message):
+        LabConfig.from_submission(sub)
+
+
 def test_env_passthrough_rejects_daemon_credentials(tmp_path):
     src = Path(__file__).parent / "fixtures" / "sample_submission"
     sub = tmp_path / "sub"

@@ -56,8 +56,10 @@ def test_network_map_is_a_pan_zoom_viewport():
     assert "setPointerCapture" in javascript
     assert "initMapPanZoom();" in javascript
     assert "translate(${mapView.x}px, ${mapView.y}px) scale(${mapView.k})" in javascript
-    # Clicking a local lab in the map opens it; remote labs only get selected.
-    assert "if (lab.remote) renderNetwork(); else openLabTab(lab.lab_id);" in javascript
+    # Both local and remote labs expose an inspector; local evals open the observer.
+    assert '() => openLabTab(lab.lab_id)' in javascript
+    assert 'Open eval suite' in javascript
+    assert "await openLabTab(lab.lab_id)" in javascript
     # Layout follows the viewport shape and the lab set, not the poll interval.
     assert "function chooseMapLayout(sizes)" in javascript
     assert "labs.map(lab => lab.lab_id).sort()" in javascript
@@ -130,7 +132,7 @@ def test_observer_is_compact_validity_aware_and_supports_visual_evidence():
     assert ".evidence-gallery" in css
     assert ".evidence-comparison-grid" in css
     assert "run.eligible !== false" in javascript
-    assert '"/api/evidence"' in javascript
+    assert 'renderEvidence(data.evidence)' in javascript
     assert "groupEvidenceRecords" in javascript
     assert "Matched comparison" in javascript
     assert "Eligible-run summary statistics" in html

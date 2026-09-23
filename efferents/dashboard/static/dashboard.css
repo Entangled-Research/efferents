@@ -1108,62 +1108,41 @@ main#app {
 .lab-tab {
   display: flex;
   flex: 0 0 auto;
+  align-items: stretch;
+  border-right: 1px solid var(--line);
+  color: var(--muted);
+  font: 600 11px/1.2 var(--mono);
+}
+.lab-tab:last-child { border-right: 0; }
+.lab-tab:hover { color: var(--ink); }
+.lab-tab.active { background: var(--ink); color: var(--bg); }
+.tab-link {
+  display: flex;
   align-items: center;
   gap: 8px;
   padding: 9px 10px 9px 13px;
-  border: 0;
-  border-right: 1px solid var(--line);
-  background: transparent;
-  color: var(--muted);
-  cursor: pointer;
-  font: 600 11px/1.2 var(--mono);
-}
-
-.lab-tab:last-child {
-  border-right: 0;
-}
-
-.lab-tab:hover {
-  color: var(--ink);
-}
-
-.lab-tab.active {
-  background: var(--ink);
-  color: var(--bg);
-}
-
-.tab-led {
-  width: 5px;
-  height: 5px;
-  border: 1px solid currentColor;
-  border-radius: 1px;
-}
-
-.tab-led.running {
-  background: currentColor;
-}
-
-.lab-tab:not(.active) .tab-led.running {
-  border-color: var(--data);
-  background: var(--data);
-}
-
-.tab-close {
-  padding: 0 3px;
   color: inherit;
-  font-size: 13px;
-  line-height: 1;
-  opacity: 0.5;
+  text-decoration: none;
 }
-
-.tab-close:hover {
-  color: var(--terracotta);
-  opacity: 1;
+.tab-link:hover { color: inherit; }
+.tab-name { max-width: 32ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tab-led { width: 5px; height: 5px; border: 1px solid currentColor; border-radius: 1px; flex-shrink: 0; }
+.tab-led.running { background: currentColor; }
+.lab-tab:not(.active) .tab-led.running { border-color: var(--data); background: var(--data); }
+.tab-close {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  min-width: 28px;
+  padding: 0 7px;
+  font: 16px/1 var(--mono);
+  cursor: pointer;
 }
-
-.lab-tab.active .tab-close:hover {
-  color: var(--on-signal);
-}
+.tab-close:hover { background: var(--terracotta); color: var(--panel); }
+.tab-link:focus-visible, .tab-close:focus-visible { outline: 2px solid var(--signal); outline-offset: -3px; }
+.lab-loading > * { visibility: hidden; }
+.lab-loading::before { content: "Loading lab…"; display: block; padding: 18px; font: 12px var(--mono); }
 
 .detail-strip {
   display: flex;
@@ -2531,3 +2510,44 @@ td.status-insufficient_data {
 .eval-graph { padding: 12px; min-width: 0; border-radius: 0; }
 .eval-graph svg { display: block; width: 100%; color: var(--muted); font-family: var(--mono); }
 .eval-graph p { font: 11px/1.5 var(--mono); overflow-wrap: anywhere; }
+/* Conference → lab → idea hierarchy, with read-only evidence inspection. */
+.conference-branch { stroke: var(--signal); stroke-width: 1.5; }
+.lab-map-actions { display: flex; gap: 8px; margin: 6px 0; }
+.lab-map-actions button { padding: 4px 8px; font: 11px/1.4 var(--mono); }
+.network-lab-boundary .lab-idea-nodes { position: relative; border-top: 1px solid var(--signal); padding-top: 14px; margin-top: 15px; max-height: 92px; }
+.network-lab-boundary .lab-idea-nodes::before { content: ""; position: absolute; left: 50%; top: -15px; height: 15px; border-left: 1px solid var(--signal); }
+.network-lab-boundary .lab-idea-node { flex: 1 1 70px; text-align: center; border-top: 2px solid var(--signal); }
+.network-lab-boundary .lab-idea-label { position: absolute; left: 0; top: 0; font-size: 8px; }
+.network-lab-boundary .internal-research { padding-top: 5px; }
+.journal-route.subscribe { stroke-dasharray: none; }
+.journal-route.visit { stroke: var(--terracotta); stroke-dasharray: 2 6; }
+.visit-arrow, .network-packet.visit { fill: var(--terracotta); }
+.legend-line.subscribe { border-top-style: solid; }
+.legend-line.visit { border-color: var(--terracotta); border-top-style: dotted; }
+.network-inspector { width: min(760px, calc(100vw - 32px)); max-height: 85vh; padding: 0; border: 1px solid var(--signal); border-radius: 0; background: var(--panel); color: var(--ink); }
+.network-inspector::backdrop { background: rgb(0 0 0 / 25%); }
+.network-inspector .panel-header { padding: 16px; }
+.network-inspector-body { padding: 0 16px 16px; overflow-wrap: anywhere; }
+.inspector-ideas article, .journal-directory-record { border-top: 1px solid var(--line); padding: 12px 0; }
+.inspector-ideas h3, .journal-directory-record h3 { font: 600 14px/1.4 var(--mono); }
+.inspector-metrics { display: grid; grid-template-columns: minmax(100px, 1fr) minmax(100px, 2fr); gap: 8px; font: 12px/1.5 var(--mono); }
+.inspector-metrics dd { margin: 0; }
+.journal-directory-record pre { white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.6 var(--mono); }
+.network-inspector small { font: 11px/1.5 var(--mono); }
+
+.living-network .network-nodes { pointer-events: none; }
+.living-network .network-lab-boundary, .living-network .network-review-board, .living-network .shared-journal-node { pointer-events: auto; }
+
+/* A lab contains ideas; each idea owns its evaluation surface. */
+.idea-directory-row { padding: 18px; border-top: 1px solid var(--line); }
+.idea-directory-row:first-child { border-top: 0; }
+.idea-directory-row h2 { font: 600 14px var(--mono); margin: 0 0 10px; }
+.idea-directory-row p { max-width: 100ch; white-space: pre-line; }
+.idea-directory-meta { display: flex; justify-content: space-between; gap: 16px; font: 12px var(--mono); }
+#idea-breadcrumb { margin: 0 0 16px; font: 12px var(--mono); }
+.idea-suite-panel { margin-bottom: 20px; }
+#idea-suite-status, #idea-suite-plan { padding: 0 16px; }
+.idea-eval-graphs { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); gap: 16px; }
+.idea-eval-graphs article { border-top: 1px solid var(--line); padding: 12px 0; }
+.idea-eval-graphs h3 { font: 12px var(--mono); }
+.idea-eval-graphs svg { width: 100%; }

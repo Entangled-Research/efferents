@@ -105,6 +105,11 @@ from typing import Literal  # noqa: E402
 class Headline:
     column: str
     direction: Literal["max", "min"]
+    # Optional within-run comparator for first-campaign publication evidence.
+    comparator_column: str | None = None
+    # Aggregate both sides over the same eligible runs. None retains the
+    # historical best-run gate.
+    aggregate: Literal["min", "max"] | None = None
 
 
 @dataclass(frozen=True)
@@ -544,6 +549,20 @@ def _build_labconfig(
             f"metrics.headline.column {headline_col!r} must match [A-Za-z_][A-Za-z0-9_]* "
             f"(SQL identifier rules)"
         )
+    comparator_col = headline_raw.get("comparator_column")
+    if comparator_col is not None and (
+        not isinstance(comparator_col, str) or not _COL_NAME_RE.match(comparator_col)
+    ):
+        raise SubmissionError(
+            "metrics.headline.comparator_column must match [A-Za-z_][A-Za-z0-9_]*"
+        )
+    if comparator_col == headline_col:
+        raise SubmissionError("metrics.headline.comparator_column must differ from column")
+    headline_aggregate = headline_raw.get("aggregate")
+    if headline_aggregate is not None and headline_aggregate not in ("min", "max"):
+        raise SubmissionError("metrics.headline.aggregate must be min or max")
+    if headline_aggregate is not None and comparator_col is None:
+        raise SubmissionError("metrics.headline.aggregate requires comparator_column")
 
     panels_list = []
     for i, p in enumerate(metrics_raw.get("panels") or []):
@@ -785,7 +804,10 @@ def _build_labconfig(
             env_passthrough=env_passthrough,
         ),
         metrics=Metrics(
-            headline=Headline(column=headline_col, direction=headline_dir),
+            headline=Headline(
+                column=headline_col, direction=headline_dir,
+                comparator_column=comparator_col, aggregate=headline_aggregate,
+            ),
             panels=panels,
             constraints=constraints,
             flat_digest_epsilon=flat_digest_epsilon,

@@ -118,7 +118,7 @@ def create_lab(destination: Path, *, starter: str = "auto", idea: str = "",
         hypothesis.write_text(hypothesis.read_text().replace("Composite Simpson", "Composite trapezoid"))
     trial_config_path.write_text(yaml.safe_dump(trial_config, sort_keys=False))
     raw["conference"] = {"enabled": exchange, "venue": "private-event", "interval_minutes": 2,
-                         "interdisciplinary_every": 3}
+                         "interdisciplinary_every": 5}
     cfg_path.write_text(yaml.safe_dump(raw, sort_keys=False))
     if starter == "evacuation":
         (destination / "hypothesis.md").write_text(

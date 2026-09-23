@@ -6,6 +6,7 @@ RUN groupadd --gid 10002 event \
 
 WORKDIR /app
 COPY deploy/event_gateway/app.py /app/app.py
+COPY efferents/__init__.py efferents/journals.py /app/efferents/
 
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 EVENT_DB=/data/event/event.sqlite
 USER 10002:10002

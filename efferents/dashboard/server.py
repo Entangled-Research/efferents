@@ -155,6 +155,13 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 rest = match.group("rest")
                 if rest == "control":
                     return self._send_json(self.control.lab_info(lab))
+                if rest.startswith("ideas/"):
+                    from efferents.dashboard.ideas import read_idea
+                    student_id = rest.removeprefix("ideas/")
+                    try:
+                        return self._send_json(read_idea(lab.lab_root, lab.cfg, student_id))
+                    except KeyError:
+                        raise ControlError("Unknown idea.", status=404)
                 if rest.startswith("artifacts/"):
                     return self._send_artifact(lab, rest.removeprefix("artifacts/"))
                 if rest in _LAB_READS:

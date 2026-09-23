@@ -160,3 +160,26 @@ def test_unpublished_material_and_historical_messages_never_cross_labs(labs):
             "id": "historical", "kind": "measurement", "body": "UNREVIEWED", "lab_id": "sampling"})
     assert conference.prompt_context(root, cfg) == ""
     assert conference._rows(root / "conference/inbox.jsonl")[0]["body"] == "UNREVIEWED"
+
+
+def test_shared_goal_and_manual_refresh_do_not_bypass_cross_field_cadence(labs):
+    from dataclasses import replace
+    registry, pairs = labs
+    cfg, root = pairs["geometry"]
+    cfg = replace(cfg, research_goal="shared")
+    peer_yaml = pairs["biology"][1].parent / "lab.yaml"
+    peer_yaml.write_text(peer_yaml.read_text() + "\nresearch_goal: shared\n")
+    for visit in range(1, 6):
+        conference.attend(cfg=cfg, lab_root=root, registry=registry, now=visit, force=True)
+        inbox = conference._rows(root / "conference/inbox.jsonl")
+        assert any(row["lab_id"] == "biology" for row in inbox) == (visit == 5)
+
+
+def test_non_stem_is_not_an_occasional_destination(labs):
+    registry, pairs = labs
+    cfg, root = pairs["geometry"]
+    peer_yaml = pairs["biology"][1].parent / "lab.yaml"
+    peer_yaml.write_text(peer_yaml.read_text().replace("domain: biology", "domain: literature"))
+    for visit in range(1, 11):
+        conference.attend(cfg=cfg, lab_root=root, registry=registry, now=visit*600)
+    assert all(row["lab_id"] == "sampling" for row in conference._rows(root / "conference/inbox.jsonl"))

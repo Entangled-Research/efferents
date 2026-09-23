@@ -15,6 +15,11 @@ from efferents.starter_catalog import DOCUMENTED
 from efferents.journals import journal_for_domain
 
 
+def test_numerical_analysis_has_a_dedicated_journal():
+    assert journal_for_domain("numerical-analysis") == "Journal of Numerical Analysis"
+    assert journal_for_domain("mathematics") == "Mathematics & Computation"
+
+
 TEMPLATE = Path(__file__).resolve().parents[1] / "efferents" / "templates" / "starter-documented-lab"
 
 

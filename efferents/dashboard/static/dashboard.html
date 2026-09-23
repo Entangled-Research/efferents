@@ -68,7 +68,7 @@
     </aside>
 
     <main id="app">
-    <nav id="lab-tabs" class="lab-tabs" aria-label="Open labs" hidden></nav>
+    <nav id="lab-tabs" class="lab-tabs" aria-label="Workspace tabs" hidden></nav>
 
     <section id="connect-view" class="app-view" data-route-view="connect">
       <div class="entry-layout">
@@ -191,6 +191,18 @@
         <span id="observe-lab-meta">Waiting for local state</span>
       </header>
 
+      <section id="lab-ideas-directory" class="panel" aria-labelledby="lab-ideas-title">
+        <header class="panel-header"><h1 id="lab-ideas-title">Ideas</h1><span>Each idea has its own eval suite</span></header>
+        <div id="lab-ideas-list"></div>
+      </section>
+      <div id="idea-evaluation" hidden>
+        <nav id="idea-breadcrumb" aria-label="Idea navigation"></nav>
+        <section class="panel idea-suite-panel" aria-labelledby="idea-suite-title">
+          <header class="panel-header"><h1 id="idea-suite-title">Eval suite</h1></header>
+          <p id="idea-suite-status" role="status"></p>
+          <div id="idea-suite-plan"></div>
+        </section>
+        <div id="idea-results" hidden>
       <section class="overview-grid" aria-label="Current research state">
         <article class="panel hypothesis-panel">
           <header class="panel-header">
@@ -374,13 +386,15 @@
           </section>
         </aside>
       </section>
+      </div>
+      </div>
     </section>
 
-      <section id="network-view" class="app-view" data-route-view="network" hidden>
+    <section id="network-view" class="app-view" data-route-view="network" hidden>
         <div class="network-grid">
           <section class="panel network-map-panel" aria-labelledby="network-map-title">
             <header class="panel-header">
-              <h2 id="network-map-title">Journal research network</h2>
+              <h2 id="network-map-title">Conference research network</h2>
               <span id="network-node-count" class="header-meta">0 nodes</span>
             </header>
             <div id="lab-map" class="lab-map living-network" tabindex="0" aria-label="Living network of connected labs and journal communities. Scroll to zoom, drag to pan, plus and minus zoom, zero fits, arrow keys pan.">
@@ -405,7 +419,8 @@
             </div>
             <footer class="map-legend">
               <span><i class="legend-line publish"></i> paper → review → journal</span>
-              <span><i class="legend-line subscribe"></i> journal → lab subscription</span>
+              <span><i class="legend-line subscribe"></i> home-journal reading</span>
+              <span><i class="legend-line visit"></i> occasional cross-conference visit</span>
               <span><i class="legend-line accepted"></i> accepted → journal</span>
               <span><i class="legend-line rejected"></i> rejected → lab</span>
               <span>Moving dots: recorded publications / receipts</span>

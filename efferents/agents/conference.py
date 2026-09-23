@@ -120,11 +120,11 @@ def measurement_talks(cfg: LabConfig, lab_root: Path) -> list[dict]:
 
 
 def attend(*, cfg: LabConfig, lab_root: Path, registry: Registry | None = None,
-           now: float | None = None, force: bool = False, include_cross: bool = False) -> dict | None:
+           now: float | None = None, force: bool = False) -> dict | None:
     """Attend when due: three same-field talks, one cross-field every N visits.
 
     Called only at an unpaused daemon boundary. No additional model call:
-    responses are generated during the next ordinary, budgeted research turn.
+    papers inform the next ordinary, budgeted research turn.
     """
     if not cfg.conference.enabled:
         return None
@@ -148,9 +148,10 @@ def attend(*, cfg: LabConfig, lab_root: Path, registry: Registry | None = None,
                 if (peer.lab_id != record.lab_id or not peer.conference.enabled
                         or peer.conference.venue != cfg.conference.venue):
                     continue
-                from efferents.journals import journal_for_domain
-                related = (journal_for_domain(peer.domain) == journal_for_domain(cfg.domain)
-                           or bool(cfg.research_goal and cfg.research_goal.casefold() == peer.research_goal.casefold()))
+                from efferents.journals import journal_for_domain, related_stem_domains
+                related = journal_for_domain(peer.domain) == journal_for_domain(cfg.domain)
+                if not related and not related_stem_domains(peer.domain, cfg.domain):
+                    continue
                 target = same if related else cross
                 for talk in _talks(peer, submission, peer_root):
                     if talk["id"] not in seen:
@@ -161,7 +162,7 @@ def attend(*, cfg: LabConfig, lab_root: Path, registry: Registry | None = None,
         def order(talk):
             return (hashlib.sha256(f"{visit}:{talk['lab_id']}".encode()).hexdigest(), talk["id"])
         selected = sorted(same, key=order)[:3]
-        if include_cross or visit % cfg.conference.interdisciplinary_every == 0:
+        if visit % cfg.conference.interdisciplinary_every == 0:
             selected += sorted(cross, key=order)[:1]
         received = []
         for talk in selected:
