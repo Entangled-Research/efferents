@@ -1,14 +1,16 @@
 from pathlib import Path
 import re
 from playwright.sync_api import sync_playwright
-root=Path.cwd(); static=root/'efferents/dashboard/static'
+root=Path.cwd()
+static=root/'efferents/dashboard/static'
 html=re.sub(r'<script[\s\S]*?</script>', '', (static/'dashboard.html').read_text())
 html=re.sub(r'<link[^>]+>', '', html)
 js=(static/'dashboard.js').read_text().split('\ninitRouting();')[0]
 with sync_playwright() as p:
     browser=p.chromium.launch()
     page=browser.new_page(viewport={'width':1440,'height':1000})
-    errors=[]; page.on('pageerror',lambda e: errors.append(str(e)))
+    errors=[]
+    page.on('pageerror',lambda e: errors.append(str(e)))
     page.set_content(html)
     page.add_style_tag(content=(static/'dashboard.css').read_text())
     page.add_script_tag(content=js)
