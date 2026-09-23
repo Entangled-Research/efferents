@@ -182,7 +182,6 @@ def attend(*, cfg: LabConfig, lab_root: Path, registry: Registry | None = None,
 def prompt_context(lab_root: Path, cfg: LabConfig) -> str:
     if not exchange_enabled(lab_root, cfg):
         return ""
-    from efferents.journal.reviews import is_publication
     from efferents.journal.provenance import received_publications
     inbox = list(received_publications(lab_root).values())[-4:]
     if not inbox:

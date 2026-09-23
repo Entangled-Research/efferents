@@ -10,6 +10,13 @@ from efferents.agents.federation import parse_journal_entries, reproduction_stat
 from efferents.journal.reviews import is_publication, review_scores
 
 
+def publication_digest(body: str) -> str:
+    """Hash the source snapshot, excluding the receiver's import timestamp/path."""
+    canonical = "\n".join(line for line in body.rstrip().splitlines()
+                          if not line.startswith("**Imported**:")).rstrip()
+    return hashlib.sha256(canonical.encode()).hexdigest()
+
+
 def received_publications(lab_root: Path) -> dict[str, dict]:
     """Accepted papers durably received by this lab, including terminal subscriptions."""
     from efferents.agents.conference import _rows
@@ -88,7 +95,7 @@ def record_execution(lab_root: Path, proposal: dict, outcome: dict) -> int:
             row = {"id": identifier, "ts": datetime.now(timezone.utc).isoformat(),
                    "publication_id": source_id, "lab_id": source["lab_id"],
                    "campaign_id": source["campaign_id"], "journal": source["journal"],
-                   "domain": source.get("domain"), "source_sha256": hashlib.sha256(source["body"].encode()).hexdigest(),
+                   "domain": source.get("domain"), "source_sha256": publication_digest(source["body"]),
                    "local_campaign_id": proposal.get("campaign_id"),
                    "student_id": proposal.get("student_id", "primary"),
                    "proposal_name": proposal.get("name"), "run_ids": runs,
