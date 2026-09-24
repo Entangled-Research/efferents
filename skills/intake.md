@@ -16,3 +16,6 @@ submission-only flow that used to live here and adds:
   fail-closed `efferents public-check` release preflight.
 
 Do not combine the old flow with the canonical one.
+
+Do not ask the owner to choose a private or public lab. The old visibility
+branch is retired; continue the research intake using the canonical contract.

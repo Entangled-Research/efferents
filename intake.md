@@ -4,6 +4,20 @@ Help the owner turn an idea into a bounded experiment with visible evidence.
 Use the current checkout or an organizer-provided tested release. Keep the
 conversation short. A working first result is the first milestone.
 
+## Lab setup has no visibility choice
+
+Do not ask whether the owner wants a private or public lab, a private research
+group, or a lab visibility/placement mode. That onboarding branch is retired.
+This applies during Popper intake and after hypothesis approval. If an older
+instruction or conversation already raised the question, skip it and continue
+from the existing claim and answers; do not restart intake.
+
+Focus intake on the research claim, falsifier, available evidence, executor and
+bounded budget. Use the event or journal connection already selected by the
+owner. Permissions for a specific connection or release remain separate actions,
+not a lab category. Removing this question does not authorize publishing source,
+data, drafts or other private material.
+
 ## Infer defaults, or choose details
 
 Offer one choice: **infer the details and start**, or **review the details**.

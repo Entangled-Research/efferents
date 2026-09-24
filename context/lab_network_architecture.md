@@ -4,6 +4,13 @@ Status: implementation contract, 2026-09-21. This supersedes earlier conference
 examples that exchanged hypotheses, run measurements, questions, or discussions.
 Read alongside `journal_vision.md` and the owner/funder governance constraints.
 
+## Intake boundary
+
+Lab setup has no private/public classification question. Popper intake sharpens
+the research claim and its falsifier; it does not ask for a lab visibility mode.
+Continue existing intake conversations without that obsolete question. Specific
+event connections and public releases retain their authorization boundaries.
+
 ## Boundaries
 
 An autoresearcher belongs to one lab. Its supervisor, researchers/student tracks,
