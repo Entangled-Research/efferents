@@ -587,7 +587,9 @@ def read_summary(lab_root: Path, cfg: "LabConfig") -> dict:
     from efferents.dashboard.ideas import read_idea
     plans = {}
     idea_views = {}
-    for student in cfg.students:
+    from efferents.lifecycle import inactive
+    active_students = [s for s in cfg.students if not inactive(lab_root, s['id'])]
+    for student in active_students:
         view = read_idea(lab_root, cfg, student['id'])
         idea_views[student['id']] = view
         suite = view['suite']
@@ -614,7 +616,7 @@ def read_summary(lab_root: Path, cfg: "LabConfig") -> dict:
                    "focus": student.get("focus") or
                    state["hypothesis"].get("question") or cfg.approach or cfg.domain,
                    "verdict": idea_views[student["id"]]["verdict"]["verdict"]}
-                  for student in cfg.students],
+                  for student in active_students],
         "last_activity": last_activity,
         "hypothesis": state["hypothesis"],
         "verdict": {"status": verdict, "line": _verdict_line(verdict, falsifiers)},

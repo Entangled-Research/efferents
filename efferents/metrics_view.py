@@ -66,6 +66,12 @@ def constraint_failures(row: dict, *, cfg=None) -> list[str]:
     """Return human-readable failures for configured ranking constraints."""
     cfg = cfg or _lab.get_config()
     failures: list[str] = []
+    if row.get("status") not in (None, "succeeded"):
+        failures.append("Execution did not succeed")
+    if "exit_code" in row and finite(row["exit_code"]) != 0:
+        failures.append("Executor exit code is not zero")
+    if "evaluation_valid" in row and finite(row["evaluation_valid"]) != 1:
+        failures.append("Evaluation incomplete or invalid")
     operators = {
         "<": lambda actual, wanted: actual < wanted,
         "<=": lambda actual, wanted: actual <= wanted,

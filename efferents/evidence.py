@@ -257,6 +257,7 @@ def _bucket_matches(key: tuple, wanted: Any) -> bool:
 
 
 def evaluate_falsifier(rule, rows: list[dict], cfg) -> dict[str, Any]:
+    excluded = sum(bool(mv.constraint_failures(r, cfg=cfg)) for r in rows)
     rows = [r for r in rows if not mv.constraint_failures(r, cfg=cfg)]
     axes = tuple(cfg.metrics.bucket_axes)
     groups = _group_by_bucket(rows, axes)
@@ -268,7 +269,9 @@ def evaluate_falsifier(rule, rows: list[dict], cfg) -> dict[str, Any]:
         labels = {k: bucket_label(k, axes) for k in groups}
 
     judged = [_judge(rule, g, labels[k], cfg) for k, g in groups.items()]
-    detail = "; ".join(d for _, d in judged) or "no runs"
+    detail = "; ".join(d for _, d in judged) or "no eligible runs"
+    if excluded:
+        detail += f"; {excluded} incomplete, invalid or constraint-failing run(s) excluded"
     decided = [f for f, _ in judged if f is not None]
     if not decided:
         status = "insufficient_data"

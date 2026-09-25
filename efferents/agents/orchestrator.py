@@ -220,7 +220,8 @@ class Orchestrator:
         survives orchestrator restarts. With STUDENTS=[primary] (default),
         this always returns 'primary' and behavior matches single-student.
         """
-        ids = _lab.student_ids()
+        from efferents.lifecycle import inactive
+        ids = [sid for sid in _lab.student_ids() if not inactive(self.paths.root, sid)]
         if not ids:
             return _lab.DEFAULT_STUDENT_ID
         if len(ids) == 1:
@@ -482,7 +483,10 @@ class Orchestrator:
         # Walk students in declaration order looking for one whose Coder is
         # due and has a pending backlog. With one student, this collapses
         # to the legacy behavior.
+        from efferents.lifecycle import inactive
         for sid in _lab.student_ids():
+            if inactive(self.paths.root, sid):
+                continue
             sstate = StudentStateView(state, sid)
             last_runs = int(sstate.get("last_coder_runs", 0))
             last_ts = sstate.get("last_coder_ts")
@@ -600,6 +604,12 @@ class Orchestrator:
             return {"event": "owner_paused", "added": 0}
         from efferents.agents.routing import refresh_students
         refresh_students(self.paths.root)
+        from efferents.lifecycle import inactive
+        if inactive(self.paths.root) or not any(
+            not inactive(self.paths.root, sid) for sid in _lab.student_ids()
+        ):
+            self._interruptible_sleep(self.empty_queue_sleep_s)
+            return {"event": "deleted", "added": 0}
         from efferents.event import exchange
         exchange(self.context_dir.parent, lab_root=self.paths.root)
         from efferents.agents.conference import attend

@@ -233,3 +233,20 @@ def test_researcher_reads_live_configured_template(tmp_path, monkeypatch):
     assert 'data_reuploading: false' in _read_default_config()
     cfg.executor.config_template.write_text('vqc:\n  data_reuploading: true\n')
     assert 'data_reuploading: true' in _read_default_config()
+
+
+def test_failed_and_incomplete_experiments_do_not_falsify(tmp_path):
+    from dataclasses import replace
+    from efferents.lab import Constraint
+    cfg = make_cfg(tmp_path, bucket_axes=(), falsifiers=[
+        agg('accuracy', column='accuracy', agg='mean', op='<', value=.95, min_n=1)])
+    for invalid in ({'status': 'failed'}, {'exit_code': 1}, {'evaluation_valid': 0}):
+        result = ev.evaluate_falsifiers([{'accuracy': 0, **invalid}], cfg)
+        assert ev.verdict(result) == 'undecided'
+        assert 'excluded' in result[0]['detail']
+    cfg = replace(cfg, metrics=replace(cfg.metrics, constraints=(
+        Constraint('cases_completed', '>=', 100), Constraint('model_call_success_rate', '==', 1))))
+    assert ev.verdict(ev.evaluate_falsifiers([
+        {'accuracy': 0, 'cases_completed': 1, 'model_call_success_rate': 0}], cfg)) == 'undecided'
+    assert ev.verdict(ev.evaluate_falsifiers([
+        {'accuracy': .9, 'cases_completed': 100, 'model_call_success_rate': 1}], cfg)) == 'falsified'

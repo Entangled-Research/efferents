@@ -112,6 +112,11 @@ def execute(
 ) -> dict[str, Any]:
     """Run one proposal end-to-end. Returns {ok, name, rows | error}."""
     name = proposal.get("name", "unnamed")
+    from efferents.lifecycle import inactive
+    if inactive(paths.root, proposal.get("student_id") or _lab.DEFAULT_STUDENT_ID):
+        return {"ok": False, "blocked": True, "name": name,
+                "error": "Owner deleted this lab or idea; evidence retained", "duration_seconds": 0.0}
+
 
     # Verification is an execution precondition, not a prompt suggestion.
     # Check it before loading config, writing files, or invoking lab code.

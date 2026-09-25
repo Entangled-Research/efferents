@@ -58,7 +58,7 @@ _LAB_ROUTE = re.compile(
     rf"^/api/labs/(?P<lab_id>{LAB_ID_PATTERN})/(?P<rest>[A-Za-z0-9_./-]+)$"
 )
 _LAB_READS = ("state", "runs", "papers", "activity", "evidence", "verdict")
-_LAB_WRITES = ("steer", "pause", "resume", "start", "stop")
+_LAB_WRITES = ("steer", "pause", "resume", "start", "stop", "delete", "deleteidea")
 _CACHED_READS = frozenset(_LAB_READS)
 
 
@@ -313,6 +313,18 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
     def _lab_mutation(self, lab: ConnectedLab, verb: str, payload: dict) -> dict:
         actor = self._actor()
+        if verb in {"delete", "deleteidea"}:
+            if payload.get("confirmed") is not True:
+                raise ControlError("Confirm deletion first.")
+            from efferents.lifecycle import remove
+            sid = payload.get("idea_id") if verb == "deleteidea" else None
+            if verb == "deleteidea" and sid not in {s["id"] for s in lab.cfg.students}:
+                raise ControlError("Unknown idea.", status=404)
+            remove(lab.lab_root, by=actor, student_id=sid)
+            if sid is None:
+                self.control.pause_lab(lab, "Owner deleted lab; evidence retained", by=actor)
+            self.control._portfolio_cache.invalidate()
+            return {"ok": True, "deleted": verb, "evidence_retained": True}
         if verb == "steer":
             return self.control.steer_lab(
                 lab,

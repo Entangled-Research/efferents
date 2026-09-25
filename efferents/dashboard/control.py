@@ -463,6 +463,9 @@ class ControlContext:
             )
         labs: list[dict] = []
         for record in records.values():
+            from efferents.lifecycle import inactive
+            if inactive(Path(record.lab_root)):
+                continue
             try:
                 if selected is not None and record.lab_id == selected.cfg.lab_id:
                     lab = selected
