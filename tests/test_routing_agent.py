@@ -240,3 +240,12 @@ def test_deleted_lab_is_not_a_routing_destination(intake):
     remove(target / 'lab', by='owner')
     result = routing.route(incoming, use_model=False)
     assert result['action'] == 'create' and not result['candidates']
+
+
+def test_old_receipt_does_not_reactivate_deleted_idea(intake):
+    from efferents.lifecycle import remove
+    target, incoming = intake
+    routing.route(incoming, apply=True, student_id='bob', use_model=False)
+    remove(target / 'lab', by='owner', student_id='bob')
+    with pytest.raises(ValueError, match='deleted'):
+        routing.route(incoming, apply=True, student_id='bob', use_model=False)

@@ -175,6 +175,9 @@ def route(submission: Path, *, apply: bool = False, student_id: str | None = Non
             receipt = json.loads(receipt_path.read_text())
             if receipt["hypothesis_hash"] != content_hash:
                 raise ValueError("Previously routed hypothesis changed; submit a new idea directory.")
+            from efferents.lifecycle import inactive
+            if inactive(Path(receipt["target"]) / "lab", receipt["student_id"]):
+                raise ValueError("The routed lab or idea was deleted by its owner. Create a new idea directory.")
             target = LabConfig.from_submission(receipt["target"])
             source_policy = policy(submission)
             target_policy = policy(Path(receipt["target"]))
