@@ -204,6 +204,7 @@ def trial(submission: Path, *, runs: int = 3, student_id: str | None = None,
         campaigns = [campaign for campaign in campaign_open_list(root / "runs.sqlite", cfg.lab_id)
                      if campaign.get("student_id") == student_id]
         outcomes = []
+        evaluation_issues = []
         with sqlite3.connect(root / "runs.sqlite") as conn:
             next_seed = int(conn.execute("SELECT COALESCE(MAX(seed),-1)+1 FROM runs").fetchone()[0])
         if seed_start is not None:
@@ -227,6 +228,12 @@ def trial(submission: Path, *, runs: int = 3, student_id: str | None = None,
                 if not outcomes[-1].get("ok"):
                     (root / "halt_reason.txt").write_text(str(outcomes[-1].get("error") or "Experiment failed"))
                     break
+                from efferents.metrics_view import constraint_failures
+                evaluation_issues.extend(failure for row in outcomes[-1].get("rows", [])
+                                         for failure in constraint_failures(row, cfg=cfg))
+                if evaluation_issues:
+                    (root / "halt_reason.txt").write_text("Evaluation incomplete or invalid: " + "; ".join(evaluation_issues))
+                    break
                 sync(submission, runtime_status="running", quiet=True)
                 exchange(submission)
             attend(cfg=cfg, lab_root=root)
@@ -239,5 +246,6 @@ def trial(submission: Path, *, runs: int = 3, student_id: str | None = None,
             daemon.clear_pidfile(root / "daemon.pid")
             Registry().update_status(cfg.lab_id, "stopped")
             sync(submission, runtime_status="stopped", quiet=True)
-        return {"ok": all(o.get("ok") for o in outcomes), "runs": len(outcomes), "lab_id": cfg.lab_id,
+        return {"ok": len(outcomes) == runs and not evaluation_issues and all(o.get("ok") for o in outcomes),
+                "evaluation_issues": evaluation_issues, "runs": len(outcomes), "lab_id": cfg.lab_id,
                 "outcomes": outcomes}

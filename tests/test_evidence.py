@@ -250,3 +250,10 @@ def test_failed_and_incomplete_experiments_do_not_falsify(tmp_path):
         {'accuracy': 0, 'cases_completed': 1, 'model_call_success_rate': 0}], cfg)) == 'undecided'
     assert ev.verdict(ev.evaluate_falsifiers([
         {'accuracy': .9, 'cases_completed': 100, 'model_call_success_rate': 1}], cfg)) == 'falsified'
+
+
+def test_legacy_null_execution_metadata_remains_usable(tmp_path):
+    cfg = make_cfg(tmp_path, bucket_axes=(), falsifiers=[
+        agg('threshold', column='score', agg='mean', op='<', value=1, min_n=1)])
+    assert ev.verdict(ev.evaluate_falsifiers([
+        {'score': 0, 'status': 'succeeded', 'exit_code': None, 'evaluation_valid': None}], cfg)) == 'falsified'
