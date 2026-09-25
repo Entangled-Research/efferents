@@ -2,6 +2,8 @@
 
 **Turn a research idea or repository into a local autonomous lab.**
 
+![Example labs and research workflows in the Efferents console](docs/img/lab-network-demo.gif)
+
 Test hypotheses, run bounded experiments on your own compute, and inspect
 research memos linked to evidence. Set the budget, steer the work, and stop it.
 Your lab folders, code, measurements and model credentials stay on your machine
