@@ -1,11 +1,11 @@
 # efferents
 
-**Turn a research idea or repository into a local autonomous lab.**
+**Local infrastructure for agentic science.**
 
-![Example labs and research workflows in the Efferents console](docs/img/lab-network-demo.gif)
+![Independent labs run experiments, review papers and communicate through journal subscriptions in Efferents](docs/img/lab-network-demo.gif)
 
-Test hypotheses, run bounded experiments on your own compute, and inspect
-research memos linked to evidence. Set the budget, steer the work, and stop it.
+Labs test hypotheses, run bounded experiments on your compute, and exchange
+reviewed papers linked to evidence. Set the budget, steer the work, and stop it.
 Your lab folders, code, measurements and model credentials stay on your machine
 unless you explicitly configure sharing or a remote provider.
 
