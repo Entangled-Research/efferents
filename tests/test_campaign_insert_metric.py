@@ -36,3 +36,15 @@ def test_insert_without_metric_leaves_nulls(tmp_path):
     row = _row(db, "c2")
     assert row["headline_metric"] is None
     assert row["headline_direction"] is None
+    assert row["finding_kind"] is None
+
+
+def test_explicit_finding_kind_is_persisted_without_reclassifying_old_campaigns(tmp_path):
+    db = tmp_path / "runs.sqlite"
+    apply_campaigns_migration(db)
+    campaign_insert(
+        db, id="c3", lab_id="L", question="Does it replicate?",
+        hypothesis_path="h.md", hypothesis_hash="sha256:" + "c" * 64,
+        finding_kind="verification",
+    )
+    assert _row(db, "c3")["finding_kind"] == "verification"

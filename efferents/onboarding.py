@@ -59,13 +59,17 @@ def create_lab(destination: Path, *, starter: str = "auto", idea: str = "",
             raise ValueError(f"{field} must be text of at most {limit} characters")
     if starter == "auto":
         words = idea.lower()
-        starter = next((name for name, keys in (
+        inferred = next((name for name, keys in (
             ("vehicle", ("vehicle", "driverless", "cruise", "following")),
             ("active-learning", ("labels", "learning", "classification", "banknote")),
             ("orbit", ("planet", "orbit", "physics", "verlet")),
             ("integration", ("integrat", "quadrature", "simpson", "calculus")),
             ("evacuation", ("evacuat", "congestion", "rerout", "stable routes")),
-        ) if any(word in words for word in keys)), "coloring")
+            ("coloring", ("graph", "coloring", "chromatic", "dsatur")),
+        ) if any(word in words for word in keys)), None)
+        if inferred is None and idea.strip():
+            raise ValueError("No compatible starter exists for this idea. Use intake.md with your coding agent to build a local evaluator, or explicitly choose a starter to learn the workflow.")
+        starter = inferred or "coloring"
     if starter not in TEMPLATES:
         raise ValueError("Choose a documented starter, or connect an existing lab for another domain.")
     if destination.exists():

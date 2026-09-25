@@ -71,6 +71,30 @@ def test_litellm_adapter_converts_text_usage_and_model(monkeypatch):
     assert response.usage.output_tokens == 3
 
 
+def test_gpt56_chat_completions_uses_tool_compatible_effort(monkeypatch):
+    calls = []
+
+    def fake_completion(**kwargs):
+        calls.append(kwargs)
+        return SimpleNamespace(
+            choices=[SimpleNamespace(finish_reason="stop",
+                                     message=SimpleNamespace(content="ok", tool_calls=[]))],
+            usage=SimpleNamespace(prompt_tokens=1, completion_tokens=1),
+        )
+
+    monkeypatch.setattr("litellm.completion", fake_completion)
+    client = LiteLLMMessagesClient().messages
+    client.create(model="openai/gpt-5.6-sol", max_tokens=128,
+                  messages=[{"role": "user", "content": "hello"}],
+                  tools=[{"name": "lookup", "description": "Lookup", "input_schema": {"type": "object"}}])
+    assert calls[0]["max_completion_tokens"] == 128
+    assert "max_tokens" not in calls[0]
+    assert calls[0]["reasoning_effort"] == "none"
+    client.create(model="openai/gpt-5.6-luna", max_tokens=128,
+                  messages=[{"role": "user", "content": "hello"}])
+    assert calls[1]["reasoning_effort"] == "high"
+
+
 def test_non_anthropic_model_uses_litellm_pricing():
     assert cost_usd("openai/gpt-5", CallUsage(1_000_000, 1_000_000)) > 0
 

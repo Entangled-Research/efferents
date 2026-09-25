@@ -37,13 +37,14 @@ CODE_REPO: str = ""
 # Peer-review gate. Applied AFTER the mechanical should_publish gate
 # (novelty + significant gain). When enabled, papers enter a 3-reviewer
 # board (critical / neutral / enthusiast); only papers with
-# mean score ≥ PEER_REVIEW_ACCEPT_MEAN_THRESHOLD and
-# min score ≥ PEER_REVIEW_ACCEPT_MIN_THRESHOLD are accepted.
+# no reviewer flags a documented material flaw, mean score ≥
+# PEER_REVIEW_ACCEPT_MEAN_THRESHOLD, and min score ≥
+# PEER_REVIEW_ACCEPT_MIN_THRESHOLD are accepted.
 # ---------------------------------------------------------------------------
 PEER_REVIEW_ENABLED: bool = False
 PEER_REVIEW_GAIN_THRESHOLD: float = 0.05
-PEER_REVIEW_ACCEPT_MEAN_THRESHOLD: float = 6.0
-PEER_REVIEW_ACCEPT_MIN_THRESHOLD: int = 4
+PEER_REVIEW_ACCEPT_MEAN_THRESHOLD: float = 4.0
+PEER_REVIEW_ACCEPT_MIN_THRESHOLD: int = 3
 
 
 # ---------------------------------------------------------------------------
@@ -756,8 +757,8 @@ def _build_labconfig(
     flat_digest_epsilon = float(metrics_raw.get("flat_digest_epsilon", 0.005))
     max_open_campaigns = int(raw.get("max_open_campaigns_per_student", 2))
     gain_threshold = float(peer_review_raw.get("gain_threshold", 0.05))
-    accept_mean = float(peer_review_raw.get("accept_mean_threshold", 6.0))
-    accept_min = int(peer_review_raw.get("accept_min_threshold", 4))
+    accept_mean = float(peer_review_raw.get("accept_mean_threshold", 4.0))
+    accept_min = int(peer_review_raw.get("accept_min_threshold", 3))
     if run_timeout_s <= 0 or smoke_timeout_s <= 0:
         raise SubmissionError("executor timeouts must be positive")
     if daily_cap_usd < 0:
@@ -893,8 +894,8 @@ class LabConfig:
     ))
     peer_review_enabled: bool = False
     peer_review_gain_threshold: float = 0.05
-    peer_review_accept_mean_threshold: float = 6.0
-    peer_review_accept_min_threshold: int = 4
+    peer_review_accept_mean_threshold: float = 4.0
+    peer_review_accept_min_threshold: int = 3
     prompts_dir: Path | None = None
     # From hypothesis.md frontmatter: the running claim's slug and, when it
     # replaced an earlier claim, the slug it supersedes.

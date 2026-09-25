@@ -108,3 +108,13 @@ def test_trial_reports_incomplete_evaluation_without_discarding_run(tmp_path, mo
     assert 'cases_completed' in result['evaluation_issues'][0]
     with sqlite3.connect(submission / 'lab/runs.sqlite') as db:
         assert db.execute('SELECT COUNT(*) FROM runs').fetchone()[0] == 1
+
+
+def test_unmatched_idea_requires_a_real_evaluator(tmp_path):
+    with pytest.raises(ValueError, match="No compatible starter"):
+        create_lab(tmp_path / "unrelated", idea="Explain obscure reaction mechanisms")
+    assert not (tmp_path / "unrelated").exists()
+    result = create_lab(tmp_path / "explicit", starter="integration",
+                        idea="Learn the workflow before building a chemistry evaluator")
+    assert result["starter"] == "integration"
+    assert "does not establish" in result["scope_notice"]

@@ -1,15 +1,15 @@
 """Reviewer agent — peer-review board for paper artifacts.
 
 Each campaign that clears the mechanical `should_publish` gate (novelty +
-≥5% metric gain; agents/writer.py) is submitted to a 3-reviewer board
+metric gain, or an explicit bounded negative/verification finding;
+agents/writer.py) is submitted to a 3-reviewer board
 before it can be accepted into the journal. The three personas are:
 
-    critical    — adversarial; looks for confounds, weak baselines, p-hacking,
-                  alternative mechanisms. Score-ceiling 6 unless airtight.
+    critical    — stress-tests validity, confounds, baselines, and provenance.
     neutral     — balanced; is the claim supported, methodology reproducible,
                   contribution clear.
-    optimistic  — constructive; takes the claim seriously, suggests
-                  strengthenings; ceiling 9 (no 10s without exceptional case).
+    optimistic  — constructive; takes the claim seriously and suggests
+                  strengthenings.
 
 Each reviewer scores 1–10 (OpenReview-style; see the prompts) and surfaces
 strengths / weaknesses / questions. `decide()` aggregates scores against
@@ -42,6 +42,8 @@ class Review:
     raw_md: str = ""
     confidence: int | None = None
     valid: bool = True
+    material_flaw: bool | None = None
+    material_flaw_reason: str = ""
 
     def to_markdown(self) -> str:
         """Render as a markdown block for the per-paper reviews.md side-car."""
@@ -49,6 +51,8 @@ class Review:
             f"### Reviewer: {self.persona} — score {self.score}/10",
             "",
             f"**Confidence**: {self.confidence}/5" if self.confidence is not None else "**Confidence**: not recorded",
+            f"**Material flaw**: {'yes' if self.material_flaw else 'no' if self.material_flaw is False else 'not recorded'}",
+            f"**Flaw rationale**: {self.material_flaw_reason or '(none)'}",
             f"**Summary**: {self.summary}",
             "",
             "**Strengths**:",
@@ -132,8 +136,13 @@ def review(
 
     score = parsed.get("score")
     confidence = parsed.get("confidence")
+    material_flaw = parsed.get("material_flaw")
+    flaw_reason = parsed.get("material_flaw_reason")
     valid = (not parsed.get("_parse_error") and type(score) is int and 1 <= score <= 10
-             and type(confidence) is int and 1 <= confidence <= 5)
+             and type(confidence) is int and 1 <= confidence <= 5
+             and type(material_flaw) is bool
+             and isinstance(flaw_reason, str)
+             and (not material_flaw or bool(flaw_reason.strip())))
     score_int = score if type(score) is int and 1 <= score <= 10 else 0
 
     def _as_str_list(v: Any) -> list[str]:
@@ -151,6 +160,8 @@ def review(
         raw_md="",
         confidence=confidence if type(confidence) is int and 1 <= confidence <= 5 else None,
         valid=valid,
+        material_flaw=material_flaw if type(material_flaw) is bool else None,
+        material_flaw_reason=flaw_reason if isinstance(flaw_reason, str) else "",
     )
     rev.raw_md = rev.to_markdown()
     return rev
@@ -173,7 +184,10 @@ def decide(
 
     personas = {"optimistic" if r.persona == "enthusiast" else r.persona for r in reviews}
     if (len(reviews) != 3 or personas != set(PERSONAS)
-            or any(not r.valid or type(r.score) is not int or not 1 <= r.score <= 10 for r in reviews)):
+            or any(not r.valid or type(r.score) is not int or not 1 <= r.score <= 10
+                   or type(r.material_flaw) is not bool
+                   or (r.material_flaw and not r.material_flaw_reason.strip())
+                   for r in reviews)):
         return {
             "accept": False,
             "mean_score": 0.0,
@@ -185,14 +199,15 @@ def decide(
     scores = [r.score for r in reviews]
     mean = sum(scores) / len(scores)
     mn = min(scores)
-    accept = mean >= accept_mean and mn >= accept_min
+    flaws = [r.persona for r in reviews if r.material_flaw]
+    accept = not flaws and mean >= accept_mean and mn >= accept_min
     reason = (
         f"mean={mean:.2f}, min={mn} — "
-        + (
+        + (f"reject (material flaw flagged by {', '.join(flaws)})" if flaws else (
             f"accept (≥ {accept_mean:.1f} mean and ≥ {accept_min} min)"
             if accept
             else f"reject (need mean ≥ {accept_mean:.1f} AND min ≥ {accept_min})"
-        )
+        ))
     )
     return {
         "accept": accept,

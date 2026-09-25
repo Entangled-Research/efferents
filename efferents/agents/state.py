@@ -623,6 +623,7 @@ def campaign_insert(
     student_id: str = "primary",
     headline_metric: str | None = None,
     headline_direction: str | None = None,
+    finding_kind: str | None = None,
 ) -> None:
     conn = sqlite3.connect(db_path)
     try:
@@ -642,6 +643,9 @@ def campaign_insert(
         if "headline_direction" in cols:
             names.append("headline_direction")
             values.append(headline_direction)
+        if "finding_kind" in cols:
+            names.append("finding_kind")
+            values.append(finding_kind)
         placeholders = ", ".join("?" for _ in names)
         conn.execute(
             f"INSERT INTO campaigns ({', '.join(names)}) VALUES ({placeholders})",

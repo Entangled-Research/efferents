@@ -56,6 +56,8 @@ _NEW_CAMPAIGN_COLUMNS = (
     # consumers fall back to LabConfig.metrics.headline.
     ("headline_metric", "TEXT"),
     ("headline_direction", "TEXT"),
+    # Explicit finding route. Existing campaigns remain ordinary improvements.
+    ("finding_kind", "TEXT"),
 )
 
 

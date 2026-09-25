@@ -1269,6 +1269,9 @@ def propose(
                 student_id=student_id,
                 headline_metric=_hm,
                 headline_direction=_hd,
+                finding_kind=(new_campaign.get("finding_kind")
+                              if new_campaign.get("finding_kind") in
+                              ("negative_result", "verification") else None),
             )
             new_campaign_id = campaign_id
             notebook_append(

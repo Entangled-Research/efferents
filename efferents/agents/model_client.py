@@ -498,6 +498,11 @@ class _Messages:
         tools = _convert_tools(kwargs.get("tools") or [])
         if tools:
             call["tools"] = tools
+        if str(kwargs["model"]).split("/", 1)[-1].startswith("gpt-5.6-"):
+            call["max_completion_tokens"] = call.pop("max_tokens")
+            # Chat Completions requires reasoning=none when function tools are
+            # present; tool-free agent calls use high reasoning.
+            call["reasoning_effort"] = "none" if tools else "high"
         if os.environ.get("EFFERENTS_API_BASE"):
             call["api_base"] = os.environ["EFFERENTS_API_BASE"]
         response = completion(**call)

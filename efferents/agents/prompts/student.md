@@ -408,6 +408,7 @@ new_campaign:                       # omit entirely if not opening one
   draft_hypothesis: "..."
   headline_metric: "your_metric_name"   # valid identifier: letters/digits/underscores
   direction: "min"                        # "min" (lower better) or "max" (higher better)
+  finding_kind: "negative_result"           # optional: negative_result or verification
 ```
 
 If you do not open a new campaign, omit `new_campaign`.
@@ -419,3 +420,8 @@ When you declare a `new_campaign`, also design its eval:
 Your run command MUST emit this metric under the stdout `metrics` JSON object.
 If you omit these, the lab falls back to its default headline metric
 (`{headline_metric}`, optimized toward `{headline_direction}`).
+Declare `finding_kind` only when the campaign is designed to test a bounded
+negative result or to verify a prior result. Ordinary campaigns omit it and
+must show the configured metric gain before paper review. A declared finding
+still needs successful runs with a measured comparator and a reproducible,
+honestly scoped claim; a label does not make unsupported findings publishable.
