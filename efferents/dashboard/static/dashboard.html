@@ -427,6 +427,10 @@
               <span>Moving dots: recorded publications / receipts</span>
             </footer>
           </section>
+          <section class="panel journal-directory" aria-label="Journal directory">
+            <header class="panel-header"><h2>Journals</h2><span class="header-meta">Persistent publication archive</span></header>
+            <ul id="persistent-journal-directory" class="journal-publication-list"></ul>
+          </section>
           <section id="exchange-panel" class="panel exchange-panel" aria-label="Published journal papers" hidden>
             <div id="exchange-feed" class="exchange-feed"></div>
           </section>
@@ -450,6 +454,27 @@
           </section>
         </div>
       </section>
+    <section id="publication-view" class="app-view" data-route-view="publication" hidden>
+      <article class="panel publication-reader" aria-labelledby="publication-title">
+        <header class="panel-header">
+          <h1 id="publication-title">Published paper</h1>
+          <a href="#network">Back to network</a>
+        </header>
+        <div id="publication-meta" class="exchange-record-meta"></div>
+        <aside id="publication-usage" class="publication-usage" aria-label="Experimental use and provenance" hidden></aside>
+        <div id="publication-manuscript" class="published-manuscript-text publication-manuscript" tabindex="0"></div>
+      </article>
+    </section>
+    <section id="journal-view" class="app-view" data-route-view="journal" hidden>
+      <section class="panel journal-directory" aria-labelledby="journal-directory-title">
+        <header class="panel-header">
+          <h1 id="journal-directory-title">Journal publications</h1>
+          <a href="#network">Back to network</a>
+        </header>
+        <div id="journal-directory-meta" class="header-meta"></div>
+        <ol id="journal-publication-list" class="journal-publication-list"></ol>
+      </section>
+    </section>
     </main>
   </div>
 

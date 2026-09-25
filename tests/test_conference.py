@@ -183,3 +183,16 @@ def test_non_stem_is_not_an_occasional_destination(labs):
     for visit in range(1, 11):
         conference.attend(cfg=cfg, lab_root=root, registry=registry, now=visit*600)
     assert all(row["lab_id"] == "sampling" for row in conference._rows(root / "conference/inbox.jsonl"))
+
+
+def test_local_journal_reader_keeps_full_accepted_manuscript(labs):
+    from efferents.dashboard.exchange import network_evidence
+    _, pairs = labs
+    cfg, root = pairs["geometry"]
+    manuscript = "## Methods\n" + "Evidence with provenance. " * 250
+    (root / "paper/experiment-1.md").write_text(manuscript)
+    payload = network_evidence()
+    paper = next(p for p in payload["findings"] if p["lab_id"] == cfg.lab_id)
+    assert len(paper["body"]) <= 4000
+    assert manuscript in paper["manuscript"]
+    assert paper["publication_status"] == "accepted"

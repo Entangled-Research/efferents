@@ -29,7 +29,7 @@ def network_evidence() -> dict:
                                          "finding_id": use["publication_id"]})
             talks = _talks(cfg, submission, root)
             for talk in talks:
-                findings[talk["id"]] = {**talk, "body": talk["body"][:4000]}
+                findings[talk["id"]] = {**talk, "body": talk["body"][:4000], "manuscript": talk["body"]}
             for talk in _rows(root / "conference" / "inbox.jsonl", submission)[-100:]:
                 if not is_publication(talk):
                     continue
@@ -37,7 +37,7 @@ def network_evidence() -> dict:
                     "kind": "observation", "finding_id": talk["id"],
                     "track": talk.get("track", "field"), "at": talk.get("received_at"),
                     "meaning": "Received into the lab's research inbox; not a replication"})
-                findings.setdefault(talk["id"], {**talk, "body": talk["body"][:4000]})
+                findings.setdefault(talk["id"], {**talk, "body": talk["body"][:4000], "manuscript": talk["body"]})
         except (OSError, ValueError):
             continue
     routed = [{**row, "journal": journal_for_domain(row["domain"]),

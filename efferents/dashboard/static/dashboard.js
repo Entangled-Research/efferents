@@ -42,7 +42,7 @@ let portfolioBudget = { spent: 0, cap: 0 };
 function renderBudget() {
   const route = currentRoute();
   const meta = document.getElementById("budget-meta");
-  const isNetwork = route === "network";
+  const isNetwork = ["network", "publication", "journal"].includes(route);
   const budget = isNetwork ? portfolioBudget : labBudget;
   const show = isNetwork
     ? portfolioState.labs.length > 0
@@ -169,6 +169,8 @@ function formatRelativeTime(value) {
 function currentRoute() {
   const route = window.location.hash.replace(/^#/, "");
   if (route === "steer" || /^observe\/[^/]+(?:\/idea\/[^/]+)?$/.test(route)) return "observe";
+  if (/^publication\/[^/]+\/[^/]+$/.test(route)) return "publication";
+  if (/^journal\/[^/]+$/.test(route)) return "journal";
   return ["connect", "observe", "network"].includes(route) ? route : "connect";
 }
 
@@ -189,10 +191,16 @@ function renderRoute() {
       void selectPortfolioLab(labId, false);
     }
   }
-  if (controlState.hydrated && !controlState.connected && !routeLabId() && !["connect", "network"].includes(route)) {
+  if (controlState.hydrated && !controlState.connected && !routeLabId() && !["connect", "network", "publication", "journal"].includes(route)) {
     route = "connect";
   }
-  if (!routeLabId() && window.location.hash !== `#${route}`) {
+  if (portfolioHydrated && route === "publication" && !renderPublication()) {
+    history.replaceState(null, "", "#network"); route = "network";
+  }
+  if (portfolioHydrated && route === "journal" && !renderJournal()) {
+    history.replaceState(null, "", "#network"); route = "network";
+  }
+  if (!/^#(?:publication|journal|observe)\//.test(window.location.hash) && window.location.hash !== `#${route}`) {
     history.replaceState(null, "", `#${route}`);
   }
   document.querySelectorAll("[data-route-view]").forEach((view) => {
@@ -205,7 +213,7 @@ function renderRoute() {
     }
   });
   document.querySelectorAll("[data-route-link]").forEach((link) => {
-    if (link.dataset.routeLink === route) {
+    if (link.dataset.routeLink === (["publication", "journal"].includes(route) ? "network" : route)) {
       link.setAttribute("aria-current", "page");
     } else {
       link.removeAttribute("aria-current");
@@ -219,7 +227,8 @@ function renderRoute() {
   renderLabTabs();
   renderBudget();
   if (route === "observe" && portfolioHydrated) renderIdeaDirectory();
-  if (route === "network" && networkWasHidden) renderNetwork();
+  document.getElementById("connection-bar").hidden = route !== "observe" || !controlState.connected;
+  if (["network", "publication", "journal"].includes(route) && networkWasHidden) renderNetwork();
 }
 
 // The labs rail pops in and out from the topbar. Collapsed by default so the
@@ -448,7 +457,8 @@ function renderIdeaSuite(data) {
   text("idea-suite-title", suite.title || "Eval suite");
   text("idea-suite-status", suite.message || (data.runs?.history?.total ? "Measured results" : "No measured results yet"));
   document.getElementById("idea-suite-plan").innerHTML = `<p>${esc(suite.rationale || "")}</p>` +
-    `<div class="idea-eval-graphs">${(suite.graphs || []).map(graph => ideaEvalGraph({...graph, emptyMessage: data.detail_unavailable ? "Results not shared with this viewer" : "No measured values yet"})).join("")}</div>`;
+    `<div class="idea-eval-graphs">${(suite.graphs || []).map(graph => ideaEvalGraph({...graph, emptyMessage: data.detail_unavailable ? "Results not shared with this viewer" : "No measured values yet"})).join("")}</div>` +
+    `<p>${(suite.samples || []).map(sample => `${esc(sample.kind)}: ${esc(sample.description)}`).join(" · ")}</p>`;
   const available = !data.detail_unavailable;
   document.getElementById("idea-results").hidden = !available;
   if (!available) return;
@@ -460,7 +470,7 @@ function renderIdeaSuite(data) {
     }
   }
   renderRuns(data.runs);
-  renderEvidence(data.evidence);
+  renderEvidence(data.evidence, false);
   renderVerdict(data.verdict);
   // Shared notebook entries and paper lists cannot be attributed to this idea.
   document.querySelector(".papers-panel").hidden = true;
@@ -481,7 +491,7 @@ function ideaEvalGraph(graph) {
     return `<polyline fill="none" stroke="${colors[i % colors.length]}" stroke-width="2" points="${points.map(p => p.slice(0,2).join(",")).join(" ")}"/>` +
       points.map(p => `<circle cx="${p[0]}" cy="${p[1]}" r="3" fill="${colors[i % colors.length]}"><title>${esc(s.column)} · ${esc(p[2].run_id)} · ${esc(formatMetric(p[2].value))}</title></circle>`).join("");
   }).join("");
-  return `<article class="panel eval-graph"><h3>${esc(graph.title)}</h3><svg viewBox="0 0 560 185" role="img" aria-label="${esc(graph.title)}"><path d="M70 20V150H545" fill="none" stroke="currentColor"/><text x="1" y="28" font-size="18">${esc(Number(max.toPrecision(3)))}</text><text x="1" y="150" font-size="18">${esc(Number(min.toPrecision(3)))}</text>${lines}<text x="70" y="180" font-size="18">Eligible runs · oldest → newest</text></svg><p>${series.map((s, i) => `<span style="color:${colors[i % colors.length]}">${esc(s.column)} (${s.points.length})</span>`).join(" · ")}</p></article>`;
+  return `<article class="panel eval-graph"><h3>${esc(graph.title)}</h3><svg viewBox="0 0 560 185" role="img" aria-label="${esc(graph.title)}"><path d="M70 20V150H545" fill="none" stroke="currentColor"/><text x="1" y="28" font-size="18">${esc(formatMetric(max))}</text><text x="1" y="150" font-size="18">${esc(formatMetric(min))}</text>${lines}<text x="70" y="180" font-size="18">Eligible runs · oldest → newest</text></svg><p>${series.map((s, i) => `<span style="color:${colors[i % colors.length]}">${esc(s.column)} (${s.points.length})</span>`).join(" · ")}</p></article>`;
 }
 
 // One ordered list for every workspace page. Migrate existing browser tabs once.
@@ -507,7 +517,8 @@ function workspaceTabItems() {
     }))),
     ...portfolioState.labs.map(lab => ({href: labHref(lab.lab_id),
       label: labDisplayName(lab.lab_id), status: lab.status || "stopped"})),
-    ...[]
+    ...journalNames().map(name => ({href: journalHref(name), label: `${name} · papers`})),
+    ...publishedFindings().filter(item => item.manuscript).map(item => ({href: publicationHref(item), label: item.title || item.campaign_id}))
   ];
 }
 
@@ -702,7 +713,7 @@ function networkLabNames(labs) {
     const generatedId = /-[a-f0-9]{8,}$/i.test(lab.lab_id || "");
     const base = actualName || (generatedId || !lab.lab_id
       ? placeholderName()
-      : lab.lab_id.replace(/[-_]+/g, " ").replace(/^./, c => c.toUpperCase()));
+      : lab.lab_id.replace(/[-_]+/g, " ").replace(/^lab ([a-z])$/i, (_, letter) => `Lab ${letter.toUpperCase()}`).replace(/^./, c => c.toUpperCase()));
     const count = (counts.get(base) || 0) + 1;
     counts.set(base, count);
     names.set(lab.lab_id, {base, count});
@@ -714,6 +725,190 @@ function publishedFindings() {
   return [...new Map([...portfolioState.findings, ...(portfolioState.eventNetwork?.findings || [])]
     .filter(item => item.kind === "publication" && item.publication_status === "accepted")
     .map(item => [item.id, item])).values()];
+}
+
+function labSpendMarkup(lab) {
+  if (!lab.budget) return "";
+  const spent = Number(lab.budget.spent);
+  const amount = Number.isFinite(spent) ? Math.max(0, spent) : 0;
+  return `<div class="network-lab-spend" aria-label="Lab model spend: $${amount.toFixed(2)}">` +
+    `<div class="network-lab-spend-label"><span>LAB SPEND</span><strong>$${amount.toFixed(2)}</strong></div></div>`;
+}
+
+function ideaBranchMarkup(lab) {
+  const ideas = labIdeas(lab);
+  return `<div class="lab-idea-branches" aria-label="Ideas feeding ${esc(labDisplayName(lab.lab_id))}">` +
+    `<span class="lab-idea-label">Ideas · ${ideas.length}</span>` +
+    ideas.map(idea => `<a class="lab-idea-branch${idea.verdict === "falsified" ? " falsified" : ""}" ` +
+      `href="${esc(ideaHref(lab.lab_id, idea.id))}" title="${esc(idea.focus || ideaName(idea))}">` +
+      `<span>${esc(ideaName(idea))}</span><small>${esc(idea.verdict || "undecided")}</small></a>`).join("") +
+    (!ideas.length ? `<small>No shared ideas yet</small>` : "") + `</div>`;
+}
+
+function journalUses() {
+  const accepted = new Set(publishedFindings().map(item => item.id));
+  return [...(portfolioState.journal_uses || []), ...(portfolioState.eventNetwork?.journal_uses || [])]
+    .filter(use => accepted.has(use.finding_id));
+}
+
+function publicationUseMarkup(item) {
+  const uses = journalUses().filter(use => use.finding_id === item.id);
+  if (!uses.length) return "";
+  return `<div class="publication-uses"><strong>Recorded use in experiments</strong>` + uses.map(use => {
+    const lab = portfolioLabs().find(lab => lab.lab_id === use.target);
+    const crossDomain = lab && homeJournal(lab) !== homeJournal(item);
+    const label = use.use_kind === "replication_attempt" ? "replication attempt" : "method or design";
+    const verification = use.reproduction_status === "verified" ? "reproduction verified" : "reproduction not verified";
+    return `<p><a href="${esc(labHref(use.target))}">${esc(labDisplayName(use.target))}</a>` +
+      ` · ${crossDomain ? "cross-domain · " : ""}${label} · ${verification}` +
+      `${use.local_campaign_id ? ` · campaign ${esc(use.local_campaign_id)}` : ""}` +
+      `<br>Runs: ${(use.run_ids || []).map(id => `<code>${esc(id)}</code>`).join(", ") || "not recorded"}` +
+      (use.why ? `<br>${esc(use.why)}` : "") + `</p>`;
+  }).join("") + `</div>`;
+}
+
+function publicationHref(item) {
+  return `#publication/${encodeURIComponent(item.lab_id)}/${encodeURIComponent(item.campaign_id)}`;
+}
+
+function journalHref(name) {
+  return `#journal/${encodeURIComponent(name)}`;
+}
+
+function renderPublication() {
+  const parts = window.location.hash.replace(/^#publication\//, "").split("/");
+  let labId = "", campaignId = "";
+  try {
+    labId = decodeURIComponent(parts[0] || "");
+    campaignId = decodeURIComponent(parts[1] || "");
+  } catch (error) {
+    labId = campaignId = "";
+  }
+  const item = publishedFindings().find((finding) =>
+    finding.lab_id === labId && finding.campaign_id === campaignId &&
+    typeof finding.manuscript === "string" && finding.manuscript);
+  if (!item) {
+    return false;
+  }
+  rememberWorkspaceTab(publicationHref(item));
+  text("publication-title", item.title || item.campaign_id);
+  const scores = Object.entries(item.review_scores || {}).map(([reviewer, score]) => `${reviewer} ${Number(score)}/10`).join(" · ");
+  text("publication-meta", `${labDisplayName(item.lab_id)} · ${item.journal || homeJournal(item)} · ${item.at || "date unavailable"}${scores ? ` · ${scores}` : ""}`);
+  document.getElementById("publication-manuscript").innerHTML = renderMarkdownSafe(item.manuscript);
+  document.getElementById("publication-usage").innerHTML = publicationUseMarkup(item);
+  document.getElementById("publication-usage").hidden = !document.getElementById("publication-usage").innerHTML;
+  return true;
+}
+
+function journalNames() {
+  return [...new Set([
+    ...(portfolioState.journals || []).map(item => item.name),
+    ...(portfolioState.eventNetwork?.journals || []).map(item => item.name),
+    ...portfolioLabs().map(homeJournal),
+    ...publishedFindings().map(item => item.journal || homeJournal(item)),
+    ...workspaceTabs.filter(href => href.startsWith("#journal/")).flatMap(href => {
+      try { return [decodeURIComponent(href.slice(9))]; } catch { return []; }
+    }),
+  ].filter(Boolean))].sort();
+}
+
+function renderJournalDirectory() {
+  const directory = document.getElementById("persistent-journal-directory");
+  if (!directory) return;
+  directory.innerHTML = journalNames().map(name => {
+    const count = publishedFindings().filter(item => (item.journal || homeJournal(item)) === name).length;
+    return `<li><a href="${esc(journalHref(name))}">${esc(name)}</a> <span>${count} accepted ${count === 1 ? "paper" : "papers"}</span></li>`;
+  }).join("") || '<li>No journals registered yet</li>';
+}
+
+function renderJournal() {
+  let journalName = "";
+  try {
+    journalName = decodeURIComponent(window.location.hash.replace(/^#journal\//, ""));
+  } catch (error) {
+    journalName = "";
+  }
+  const knownJournals = new Set(journalNames());
+  const papers = publishedFindings()
+    .filter(item => (item.journal || homeJournal(item)) === journalName)
+    .sort((a, b) => String(b.at || "").localeCompare(String(a.at || "")));
+  if (!journalName || !knownJournals.has(journalName)) {
+    return false;
+  }
+  rememberWorkspaceTab(journalHref(journalName));
+  text("journal-directory-title", journalName);
+  text("journal-directory-meta", `${papers.length} accepted ${papers.length === 1 ? "paper" : "papers"}`);
+  document.getElementById("journal-publication-list").innerHTML = papers.length ? papers.map(item =>
+    `<li>` + (typeof item.manuscript === "string" ? `<a href="${esc(publicationHref(item))}">${esc(item.title || item.campaign_id)}</a>` : `<details><summary>${esc(item.title || item.campaign_id)} · journal entry</summary><p>${esc(item.body)}</p><small>Full manuscript not shared</small></details>`) +
+    `<p>${esc(labDisplayName(item.lab_id))} · ${esc(item.at || "date unavailable")} · ` +
+    `${Object.entries(item.review_scores || {}).map(([reviewer, score]) => `${esc(reviewer)} ${Number(score)}/10`).join(" · ")}</p></li>`
+  ).join("") : '<li class="empty-state">No accepted publications yet</li>';
+  return true;
+}
+
+function renderPublicationInline(value) {
+  const source = String(value);
+  const tokens = /\\([!"#$%&'()*+,\-./:;<=>?@[\\\]^_`{|}~])|(`+)([^\n]*?[^`])\2(?!`)|\*\*(\S(?:[^\n]*?\S)?)\*\*|__(\S(?:[^\n]*?\S)?)__|\*(\S(?:[^*\n]*?\S)?)\*/g;
+  let result = "", position = 0, match;
+  while ((match = tokens.exec(source))) {
+    result += esc(source.slice(position, match.index));
+    if (match[1] !== undefined) result += esc(match[1]);
+    else if (match[2] !== undefined) result += `<code>${esc(match[3])}</code>`;
+    else if (match[4] !== undefined || match[5] !== undefined) {
+      result += `<strong>${renderPublicationInline(match[4] ?? match[5])}</strong>`;
+    } else result += `<em>${renderPublicationInline(match[6])}</em>`;
+    position = tokens.lastIndex;
+  }
+  return result + esc(source.slice(position));
+}
+
+function renderMarkdownSafe(markdown) {
+  const source = String(markdown || "").replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, "");
+  const lines = source.split(/\r?\n/);
+  const out = [];
+  let paragraph = [], listType = "", tableRows = [], code = null;
+  const flushParagraph = () => {
+    if (paragraph.length) out.push(`<p>${paragraph.map(renderPublicationInline).join("<br>")}</p>`);
+    paragraph = [];
+  };
+  const flushList = () => { if (listType) out.push(`</${listType}>`); listType = ""; };
+  const flushTable = () => {
+    if (!tableRows.length) return;
+    const rows = tableRows.filter(row => !/^\|?\s*:?-{3,}/.test(row));
+    out.push(`<div class="markdown-table-wrap"><table>${rows.map((row, index) =>
+      `<${index === 0 ? "thead" : "tbody"}><tr>${row.replace(/^\||\|$/g, "").split("|").map(cell => `<${index === 0 ? "th" : "td"}>${renderPublicationInline(cell.trim())}</${index === 0 ? "th" : "td"}>`).join("")}</tr>${index === 0 ? "</thead>" : "</tbody>"}`
+    ).join("")}</table></div>`);
+    tableRows = [];
+  };
+  for (const line of lines) {
+    if (/^```/.test(line)) {
+      flushParagraph(); flushList(); flushTable();
+      if (code) { out.push(`<pre><code>${code.map(esc).join("\n")}</code></pre>`); code = null; }
+      else code = [];
+      continue;
+    }
+    if (code) { code.push(line); continue; }
+    if (/^\s*\|.*\|\s*$/.test(line)) {
+      flushParagraph(); flushList(); tableRows.push(line.trim()); continue;
+    }
+    flushTable();
+    const heading = line.match(/^(#{1,6})\s+(.+)$/);
+    if (heading) {
+      flushParagraph(); flushList();
+      const level = Math.min(heading[1].length + 1, 6);
+      out.push(`<h${level}>${renderPublicationInline(heading[2])}</h${level}>`);
+    } else if (/^\s*[-*+]\s+/.test(line)) {
+      flushParagraph(); if (listType !== "ul") { flushList(); listType = "ul"; out.push("<ul>"); }
+      out.push(`<li>${renderPublicationInline(line.replace(/^\s*[-*+]\s+/, ""))}</li>`);
+    } else if (/^\s*\d+[.)]\s+/.test(line)) {
+      flushParagraph(); if (listType !== "ol") { flushList(); listType = "ol"; out.push("<ol>"); }
+      out.push(`<li>${renderPublicationInline(line.replace(/^\s*\d+[.)]\s+/, ""))}</li>`);
+    } else if (!line.trim()) { flushParagraph(); flushList(); }
+    else { flushList(); paragraph.push(line); }
+  }
+  flushParagraph(); flushList(); flushTable();
+  if (code) out.push(`<pre><code>${code.map(esc).join("\n")}</code></pre>`);
+  return out.join("");
 }
 
 function networkDialog(title, content) {
@@ -779,12 +974,13 @@ function reviewBoardMarkup(board = {}) {
   return `<div class="review-board-title">Review board <small>${esc(board.status || "awaiting paper")}</small></div>` +
     `<div class="review-scores">${personas.map(persona => {
       const score = scores[persona] ?? (persona === "optimistic" ? scores.enthusiast : null);
-      return `<div><span>${persona}</span><strong>${Number.isInteger(score) ? `${score}/10` : "—"}</strong></div>`;
+      return `<div><span>${persona}</span><strong>${Number.isInteger(score) && score >= 1 && score <= 10 ? `${score}/10` : "—"}</strong></div>`;
     }).join("")}</div>`;
 }
 
 function renderNetwork() {
   if (document.getElementById("network-view").hidden) return;
+  renderJournalDirectory();
   const labs = portfolioLabs();
   const findings = publishedFindings();
   const publicationById = new Map(findings.map(item => [item.id, item]));
@@ -805,8 +1001,22 @@ function renderNetwork() {
   labs.forEach(lab => groups.set(homeJournal(lab), [...(groups.get(homeJournal(lab)) || []), lab]));
   const names = [...groups.keys()];
   const sizes = names.map(name => groups.get(name).length);
-  // Re-layout when the lab set, the journals, or the viewport changed; never on a plain poll.
-  const change = sizeMapViewport([...labs.map(lab => lab.lab_id).sort(), ...names].join("|"));
+  const cards = new Map();
+  labs.forEach(lab => {
+    const card = document.createElement("article");
+    card.className = `network-lab-boundary${lab.mine ? " mine" : ""}`;
+    card.dataset.labId = lab.lab_id;
+    card.style.width = `${MAP_CELL.card}px`;
+    card.innerHTML = `<a class="lab-identity" href="${esc(labHref(lab.lab_id))}" aria-current="${lab.lab_id === networkSelection}"><strong>${esc(labDisplayName(lab.lab_id))}</strong><small>${esc(lab.status || "stopped")}${lab.remote ? " · read only" : ""}</small></a>` +
+      `<div class="network-lab-owner">${esc(lab.owner_name || "")}${lab.mine ? " · yours" : ""}</div>` +
+      labSpendMarkup(lab) + ideaBranchMarkup(lab) +
+      `<div class="internal-research"><span>Hypothesis → Experiment → Evidence → Paper</span></div>`;
+    nodes.appendChild(card);
+    cards.set(lab.lab_id, card);
+  });
+  MAP_CELL.row = Math.max(300, ...[...cards.values()].map(card => card.offsetHeight + 168));
+  // Idea additions and longer names change the containment geometry, too.
+  const change = sizeMapViewport([...labs.map(lab => `${lab.lab_id}:${cards.get(lab.lab_id).offsetHeight}`).sort(), ...names].join("|"));
   if (change.content || change.view) mapView.layout = chooseMapLayout(sizes);
   const {cols: columns, groupCols} = mapView.layout;
   const world = layoutMapGroups(sizes, columns, groupCols);
@@ -841,19 +1051,8 @@ function renderNetwork() {
     members.forEach((lab, index) => {
       const x = groupLeft + MAP_CELL.pad + (index % columns + 0.5) * MAP_CELL.slot;
       const y = groupTop + MAP_CELL.journal + Math.floor(index / columns) * rowHeight + 138;
-      const card = document.createElement("article");
-      card.className = "network-lab-boundary";
-      card.dataset.labId = lab.lab_id;
+      const card = cards.get(lab.lab_id);
       Object.assign(card.style, {left: `${x}px`, top: `${y}px`, width: `${width}px`});
-      const ideas = labIdeas(lab);
-      card.innerHTML = `<button type="button" class="lab-identity" aria-haspopup="dialog" aria-pressed="${lab.lab_id === networkSelection}"><strong>${esc(labDisplayName(lab.lab_id))}</strong><small>${esc(lab.status || "stopped")}${lab.remote ? " · read only" : ""}</small></button>` +
-        `<div class="lab-map-actions"><button type="button" data-lab-ideas>Ideas · ${ideas.length || (lab.remote ? "private" : "0")}</button><button type="button" data-lab-evals>Evals</button></div>` +
-        `<div class="lab-idea-nodes" aria-label="Ideas in ${esc(labDisplayName(lab.lab_id))}"><span class="lab-idea-label">Ideas · ${ideas.length}</span>${ideas.map(ideaLineMarkup).join("") || `<small>${lab.remote ? "Idea roster stays on the participant’s host" : "No ideas yet"}</small>`}</div>` +
-        `<div class="internal-research"><span>Hypothesis → Experiment → Evidence → Paper</span></div>`;
-      card.querySelector(".lab-identity").onclick = () => openLabTab(lab.lab_id);
-      card.querySelector("[data-lab-ideas]").onclick = () => openLabTab(lab.lab_id);
-      card.querySelector("[data-lab-evals]").onclick = () => openLabTab(lab.lab_id);
-      nodes.appendChild(card);
       const owned = findings.filter(item => item.lab_id === lab.lab_id && homeJournal(item) === name);
       const latest = owned.at(-1);
       const board = lab.review_board?.status ? lab.review_board : (latest ? {status: "accepted", scores: latest.review_scores} : {});
@@ -886,13 +1085,10 @@ function renderNetwork() {
       labPorts.set(lab.lab_id, {x: x - half, y: y + 25, lane: x - half - 25});
     });
     const published = findings.filter(item => homeJournal(item) === name);
-    const journal = document.createElement("button");
-    journal.type = "button";
+    const journal = document.createElement("div");
     journal.className = "shared-journal-node";
-    journal.setAttribute("aria-haspopup", "dialog");
     Object.assign(journal.style, {left: `${journalX - 200}px`, top: `${journalY}px`, width: "400px"});
-    journal.innerHTML = `<small>CONFERENCE · HOME JOURNAL</small><strong>${esc(name)}</strong><small>Inspect journal directory · ${published.length} publications</small>`;
-    journal.onclick = () => inspectJournal(name);
+    journal.innerHTML = `<a class="shared-journal-link" href="${esc(journalHref(name))}" aria-label="Browse ${esc(name)}, ${published.length} accepted papers"><small>CONFERENCE · HOME JOURNAL</small><strong>${esc(name)}</strong><small>Inspect journal directory · ${published.length} publications</small></a>`;
     journalsLayer.appendChild(journal);
     journalPorts.set(name, {x: journalX + 200, y: journalY + 35});
     members.forEach(lab => {
@@ -906,17 +1102,17 @@ function renderNetwork() {
   const subscriptions = new Set();
   observations.forEach(receipt => {
     const publication = publicationById.get(receipt.finding_id);
-    const name = publication.journal || homeJournal(publication);
+    const name = homeJournal(publication);
     const lab = labs.find(item => item.lab_id === receipt.target);
     const journal = journalPorts.get(name), port = labPorts.get(receipt.target);
     const key = `${name}:${receipt.target}`;
     if (!journal || !port || !lab || homeJournal(lab) === name || subscriptions.has(key)) return;
     subscriptions.add(key);
     route(`M${journal.x},${journal.y} V${journal.y + 40} H${port.lane - 10} V${port.y - 16} H${port.x - 7} V${port.y}`,
-      "visit", true, `${name} → ${labDisplayName(lab.lab_id)}: occasional cross-conference visit`);
+      "visit", true, `${name} → ${labDisplayName(lab.lab_id)}: recorded cross-domain subscription receipt${journalUses().some(use => use.target === lab.lab_id && homeJournal(publicationById.get(use.finding_id)) === name) ? "; used in a completed experiment" : "; not evidence of experimental use"}`);
   });
   setMapWorld(world.width, world.height, change.view || (change.content && !mapView.moved));
-  text("network-node-count", `${groups.size} conferences · ${labs.length} labs`);
+  text("network-node-count", `${labs.length} ${labs.length === 1 ? "lab" : "labs"} · ${groups.size} ${groups.size === 1 ? "conference" : "conferences"}`);
   renderEventAdmin(); renderExchange();
 }
 
@@ -1094,9 +1290,15 @@ function renderExchange() {
     const observers = [...new Set(receipts.filter((r) => r.finding_id === item.id).map((r) => r.target))];
     return `<article class="exchange-record"><div class="exchange-record-meta"><strong>${esc(labDisplayName(item.lab_id))}</strong>` +
       `<span>${esc(item.kind)} → ${esc(homeJournal(item))}</span></div>` +
-      (item.kind === "hypothesis" ? `<details><summary>Experiment claim</summary><p>${esc(item.body)}</p></details>` : `<p>${esc(item.body)}</p>`) + `<div class="exchange-provenance">` +
+      (item.kind === "hypothesis" ? `<details><summary>Experiment claim</summary><p>${esc(item.body)}</p></details>` : `<p>${esc(item.body)}</p>`) +
+      (item.kind === "publication" && typeof item.manuscript === "string" && item.manuscript
+        ? `<p><a href="${esc(publicationHref(item))}">Open accepted paper</a> · <a href="${esc(journalHref(item.journal || homeJournal(item)))}">Browse journal</a></p>`
+        : "") + `<div class="exchange-provenance">` +
       `${item.run_id ? `Run ${esc(item.run_id)} · ` : ""}Record ${esc(item.id.slice(0, 12))}` +
-      `</div><div class="exchange-receipt">${observers.length ? `Received by ${observers.map(id => esc(labDisplayName(id))).join(", ")}` : "Awaiting a peer visit"}</div></article>`;
+      `</div><div class="exchange-receipt">${observers.length ? `Received by ${observers.map(id => {
+        const lab = portfolioLabs().find(lab => lab.lab_id === id);
+        return esc(labDisplayName(id)) + (lab && homeJournal(lab) !== homeJournal(item) ? " (cross-domain)" : "");
+      }).join(", ")}` : "Awaiting a journal subscription receipt"}</div>` + publicationUseMarkup(item) + `</article>`;
   }).join("") : "";
   // The panel carries no copy of its own; it appears only once papers exist.
   document.getElementById("exchange-panel").hidden = !rows.length;
@@ -1128,6 +1330,8 @@ function renderPortfolio(payload) {
   portfolioState = {
     labs: Array.isArray(payload?.labs) ? payload.labs : [],
     edges: Array.isArray(payload?.edges) ? payload.edges : [],
+    journals: Array.isArray(payload?.journals) ? payload.journals : [],
+    journal_uses: Array.isArray(payload?.journal_uses) ? payload.journal_uses : [],
     findings: Array.isArray(payload?.findings) ? payload.findings : [],
     observations: Array.isArray(payload?.observations) ? payload.observations : [],
     eventNetwork: payload?.event_network || null,
@@ -1151,6 +1355,7 @@ function renderPortfolio(payload) {
   renderLabTabs();
   renderBudget();
   renderNetwork();
+  if (["publication", "journal"].includes(currentRoute())) renderRoute();
 }
 
 async function refreshPortfolio() {
@@ -1236,19 +1441,23 @@ function renderState(state) {
   applyThesisClamp("falsifier");
 }
 
+function hasMetricValue(value) {
+  return value != null && value !== "" && Number.isFinite(Number(value));
+}
+
 function renderRuns(data) {
   const headline = data.headline || { column: "metric", direction: "min" };
   const direction = headline.direction === "max" ? "max" : "min";
   const directionLabel = direction === "max" ? "higher is better" : "lower is better";
   const runs = Array.isArray(data.runs) ? data.runs : [];
   const history = data.history || {};
-  const observedRuns = runs.filter((run) => Number.isFinite(Number(run.value)));
+  const observedRuns = runs.filter((run) => hasMetricValue(run.value));
   const eligibleRuns = observedRuns.filter((run) => run.eligible !== false);
   const eligibleValues = eligibleRuns.map((run) => Number(run.value));
   const recentBest = eligibleValues.length
     ? (direction === "max" ? Math.max(...eligibleValues) : Math.min(...eligibleValues))
     : null;
-  const best = Number.isFinite(Number(history.best)) ? Number(history.best) : recentBest;
+  const best = hasMetricValue(history.best) ? Number(history.best) : recentBest;
   const latest = eligibleRuns.length ? Number(eligibleRuns[0].value) : null;
   const bestRunId = history.best_run_id ||
     eligibleRuns.find((run) => Number(run.value) === best)?.run_id || "";
@@ -1283,7 +1492,7 @@ function renderRuns(data) {
   const tbody = document.querySelector("#runs tbody");
   tbody.innerHTML = "";
   const firstBestIndex = runs.findIndex((run) =>
-    run.eligible !== false && Number.isFinite(Number(run.value)) && Number(run.value) === best
+    run.eligible !== false && hasMetricValue(run.value) && Number(run.value) === best
   );
   runs.forEach((run, index) => {
     const numericValue = Number(run.value);
@@ -1341,7 +1550,7 @@ function svgElement(name, attributes = {}) {
 function renderTrend(series, direction, summary = {}) {
   const svg = document.getElementById("trend");
   svg.innerHTML = "";
-  const finiteSeries = series.filter((point) => Number.isFinite(Number(point.value)));
+  const finiteSeries = series.filter((point) => hasMetricValue(point.value));
   svg.setAttribute(
     "aria-label",
     `${summary.metric || "metric"} across ${finiteSeries.length} eligible observations`,
@@ -1578,10 +1787,10 @@ function evalGraph(graph) {
     return `<polyline fill="none" stroke="${colors[i % colors.length]}" stroke-width="2" points="${points.map(p => p.slice(0,2).join(",")).join(" ")}"/>` +
       points.map(p => `<circle cx="${p[0]}" cy="${p[1]}" r="3" fill="${colors[i % colors.length]}"><title>${esc(s.column)} · ${esc(p[2].run_id)} · ${esc(formatMetric(p[2].value))}</title></circle>`).join("");
   }).join("");
-  return `<article class="panel eval-graph"><h3>${esc(graph.title)}</h3><svg viewBox="0 0 560 185" role="img" aria-label="${esc(graph.title)}"><path d="M70 20V150H545" fill="none" stroke="currentColor"/><text x="1" y="28" font-size="18">${esc(Number(max.toPrecision(3)))}</text><text x="1" y="150" font-size="18">${esc(Number(min.toPrecision(3)))}</text>${lines}<text x="70" y="180" font-size="18">Eligible runs · oldest → newest</text></svg><p>${series.map((s, i) => `<span style="color:${colors[i % colors.length]}">${esc(s.column)} (${s.points.length})</span>`).join(" · ")}</p></article>`;
+  return `<article class="panel eval-graph"><h3>${esc(graph.title)}</h3><svg viewBox="0 0 560 185" role="img" aria-label="${esc(graph.title)}"><path d="M70 20V150H545" fill="none" stroke="currentColor"/><text x="1" y="28" font-size="18">${esc(formatMetric(max))}</text><text x="1" y="150" font-size="18">${esc(formatMetric(min))}</text>${lines}<text x="70" y="180" font-size="18">Eligible runs · oldest → newest</text></svg><p>${series.map((s, i) => `<span style="color:${colors[i % colors.length]}">${esc(s.column)} (${s.points.length})</span>`).join(" · ")}</p></article>`;
 }
 
-function renderEvidence(data) {
+function renderEvidence(data, showSuite = true) {
   const panel = document.getElementById("evidence-panel");
   const records = Array.isArray(data?.records) ? data.records : [];
   const metricPanels = Array.isArray(data?.panels) ? data.panels : [];
@@ -1597,6 +1806,7 @@ function renderEvidence(data) {
     suitePanel.id = "eval-suite";
     panel.querySelector(".panel-header").after(suitePanel);
   }
+  suitePanel.hidden = !showSuite;
   const suite = data?.suite || {};
   suitePanel.innerHTML = suite.status === "configured"
     ? `<h3>${esc(suite.title)}</h3><details><summary>Evaluation protocol</summary><p>${esc(suite.rationale)}</p></details><div class="eval-graphs">${(suite.graphs || []).map(evalGraph).join("")}</div><p>${(suite.samples || []).map(s => `${esc(s.kind)} (${Number(s.available || 0)} images): ${esc(s.description)}`).join(" · ")}</p>`

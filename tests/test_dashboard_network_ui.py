@@ -57,12 +57,12 @@ def test_network_map_is_a_pan_zoom_viewport():
     assert "initMapPanZoom();" in javascript
     assert "translate(${mapView.x}px, ${mapView.y}px) scale(${mapView.k})" in javascript
     # Both local and remote labs expose an inspector; local evals open the observer.
-    assert '() => openLabTab(lab.lab_id)' in javascript
+    assert 'href="${esc(labHref(lab.lab_id))}"' in javascript
     assert 'Open eval suite' in javascript
     assert "await openLabTab(lab.lab_id)" in javascript
     # Layout follows the viewport shape and the lab set, not the poll interval.
     assert "function chooseMapLayout(sizes)" in javascript
-    assert "labs.map(lab => lab.lab_id).sort()" in javascript
+    assert "cards.get(lab.lab_id).offsetHeight" in javascript
     assert "change.view || (change.content && !mapView.moved)" in javascript
     assert 'lines.setAttribute("viewBox", `0 0 ${world.width} ${world.height}`);' in javascript
     # The map no longer grows to its content height.
@@ -132,7 +132,7 @@ def test_observer_is_compact_validity_aware_and_supports_visual_evidence():
     assert ".evidence-gallery" in css
     assert ".evidence-comparison-grid" in css
     assert "run.eligible !== false" in javascript
-    assert 'renderEvidence(data.evidence)' in javascript
+    assert 'renderEvidence(data.evidence, false)' in javascript
     assert "groupEvidenceRecords" in javascript
     assert "Matched comparison" in javascript
     assert "Eligible-run summary statistics" in html
@@ -157,7 +157,7 @@ def test_journal_panel_has_no_explanatory_copy_and_hides_when_empty():
     static = Path(__file__).resolve().parents[1] / "efferents" / "dashboard" / "static"
     html = (static / "dashboard.html").read_text()
     js = (static / "dashboard.js").read_text()
-    for removed in ("Journal publications", "Labs communicate only", "exchange-count",
+    for removed in ("Labs communicate only", "exchange-count",
                     "exchange-explanation"):
         assert removed not in html and removed not in js
     assert '<section id="exchange-panel" class="panel exchange-panel" ' \
