@@ -352,6 +352,7 @@ function renderControl(info) {
     : '<span aria-hidden="true"></span> live';
   const live = info.status === "running" || info.status === "paused";
   const ownerPaused = Boolean(info.owner_paused);
+  const mine = !info.remote;
   document.getElementById("start-lab").hidden = pausedDemo || live;
   document.getElementById("stop-lab").hidden = pausedDemo || !live;
   document.getElementById("delete-lab").hidden = pausedDemo || !mine;
@@ -413,7 +414,7 @@ let pendingIdeaRoute = "";
 function renderIdeaDirectory() {
   const lab = portfolioState.labs.find(item => item.lab_id === routeLabId());
   const selected = routeIdeaId();
-  document.getElementById("delete-idea").hidden = !selected || !lab || (isCluster() ? !lab.mine : Boolean(lab.remote));
+  document.getElementById("delete-idea").hidden = !selected || !lab || Boolean(lab.remote);
   document.getElementById("lab-ideas-directory").hidden = Boolean(selected);
   document.getElementById("idea-evaluation").hidden = !selected;
   if (!lab) return;
