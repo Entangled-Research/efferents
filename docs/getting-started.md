@@ -7,7 +7,7 @@ For installation, start with the [offline demo](#try-it-offline-60-seconds-no-ap
 
 ## Connect a lab
 
-Two ways in, straight from the gateway's Connect page:
+Two ways in, from the local console’s Connect page:
 
 **Launch via agent** — open your coding agent in a terminal, inside your
 research repo or a fresh folder, and paste one instruction:
@@ -17,9 +17,9 @@ Read https://raw.githubusercontent.com/Entangled-Research/efferents/main/intake.
 ```
 
 The agent-facing [`intake.md`](../intake.md) installs efferents, configures the
-lab around your code, gates a first hypothesis through an adversarial
-[popper-probe](https://github.com/mashathepotato/popper-probe) dialogue, and
-runs a bounded first cycle.
+lab around your code, validates the hypothesis and runs a bounded first trial.
+Lightweight validation needs no Popper installation; adversarial Popper intake
+is available for stricter review.
 
 **Submit a repo** — paste a GitHub repository/README URL or a local path. A
 valid submission has a `README`, `lab.yaml`, and a Popper-passed
@@ -35,16 +35,17 @@ owner, preserving their hypotheses and sharing the lab's existing budget.
 efferents serve
 ```
 
-**Network** is the home of the gateway: a map of every lab in the local
+**Network** is the home of the local console: a map of every lab in the local
 registry around the control-plane hub, with a docked rail listing them. The
 topbar shows the summed spend and daily caps across all labs. Clicking a lab —
 in the rail or on the map — opens it as a tab, VS Code style, next to the
 permanent NETWORK tab, and open tabs persist across reloads.
 
-Labs can opt into [private event conferences](conferences.md): frequent
-same-field idea exchange, occasional interdisciplinary talks, and questions
-and responses incorporated into their budgeted research turns. Participation
-is explicit per lab and currently works within one trusted host.
+Labs can opt into [journal subscriptions](conferences.md). Only accepted papers
+cross lab boundaries; no direct researcher messages or raw experiment exchange.
+Receipts record reading, while experimental use and reproduction have separate
+provenance. Related STEM journals are visited occasionally (every five visits by
+default). Click a journal or accepted paper to open its persistent workspace tab.
 
 ## Audit a lab
 
@@ -91,11 +92,10 @@ its root ([runnable example](../examples/repo-adapter/efferents.yaml)) and run
 
 ## Run a live lab
 
-For a first hosted organizer workspace with HTTPS, login, and persistent state,
-follow the [DigitalOcean deployment guide](digitalocean.md). It includes a
-no-token experiment to verify the console. This deployment is for one trusted
-organizer; participant accounts and automatic cross-machine networking are
-not yet provided.
+Run locally with your own credentials and lab budgets. No Events account,
+enrollment code or hosted service is required. Keep the console bound to
+localhost: it trusts the person with access to the local machine. Use a fresh
+`EFFERENTS_HOME` directory if you want an isolated registry of example labs.
 
 ```bash
 cp .env.example .env        # choose a model and add its provider key
@@ -104,7 +104,7 @@ efferents start    --submission examples/smoke-lab/
 efferents serve
 ```
 
-Claude is the zero-configuration default (`ANTHROPIC_API_KEY`); any
+Claude is the default model provider (`ANTHROPIC_API_KEY`); any
 [LiteLLM model identifier](https://docs.litellm.ai/docs/providers) works via
 `EFFERENTS_MODEL`, with per-role overrides (`EFFERENTS_MODEL_CODER`, …). To
 open a known lab directly: `efferents serve --lab-root examples/smoke-lab/lab`.
@@ -133,6 +133,13 @@ says `supersedes: <current slug>`; the retired hypothesis is marked
 `autonomy.coder_mode: review` the Coder writes diffs to `lab/patches/` instead
 of editing source; `patch apply <path>` applies one with `git apply` and
 records the decision.
+
+The console also offers **Delete lab** and **Delete idea**, with confirmation.
+These archive active work without erasing results, costs or citations. A deleted
+lab stays stopped; archived ideas cannot be scheduled or restored by old routing
+receipts. Keep the original folder to troubleshoot or upgrade an existing lab.
+`lab/daemon.log`, `lab/halt_reason.txt` and `efferents status` provide local
+operational diagnostics; no hosted diagnostics account is needed.
 
 ## Safety & budget
 

@@ -1,101 +1,82 @@
 # efferents
 
-**Turn your research repo into an autonomous lab.**
+**Turn a research idea or repository into a local autonomous lab.**
 
-Test hypotheses, run bounded experiments on your compute, and get research
-memos linked to real evidence. Set the budget, steer the work, and stop it
-when you need to. Your code and results stay under your control.
+Test hypotheses, run bounded experiments on your own compute, and inspect
+research memos linked to evidence. Set the budget, steer the work, and stop it.
+Your lab folders, code, measurements and model credentials stay on your machine
+unless you explicitly configure sharing or a remote provider.
 
-![Three labs running bounded research cycles in the efferents console](docs/img/lab-network-demo.gif)
+## Try it locally
 
-### See the event network
-
-The network shows ideas inside their labs, a three-reviewer board between each
-lab and journal, and journal subscriptions. Critical, neutral and optimistic
-reviewers score papers; rejected work returns to the lab and accepted papers enter
-the journal. Researchers never communicate directly across lab boundaries. See the
-[current architecture contract](context/lab_network_architecture.md).
-
-Run a private event with participant-owned execution using the
-[participant quickstart](docs/event-quickstart.md). The versioned evacuation and
-numerical-integration starters use `efferents starter evacuation` or
-`efferents starter integration`; event join,
-preflight, heartbeat, status, and leave are handled by `efferents event`.
-Organizers should use the [live-event runbook](docs/event-operator-runbook.md)
-before sharing the participant URL.
-
-The console's **Start an idea → Infer defaults and run** creates a lightweight
-experiment contract and runs three real CPU experiments without model calls or
-a Popper installation. Labs can share a `research_goal` or explore independent
-domains. The central graph shows accepted papers and journal subscription receipts, with full evidence
-kept locally. [Test the private event workspace](docs/event-testing.md).
-
-<a id="entangled-labs"></a>
-
-## Efferents editions
-
-**Open Source:** run and configure Efferents yourself.
-
-**Commercial:** Efferents with integration, operations and lab/pipeline analytics
-from Entangled Research, for startups and R&D teams.
-
-| What you get | Efferents Open Source | Efferents Commercial |
-| --- | :---: | :---: |
-| Autonomous experiment loops | ✓ | ✓ |
-| Evidence, research memos and local multi-lab console | ✓ | ✓ |
-| Budgets, owner steering and stop controls | ✓ | ✓ |
-| Custom metrics, prompts and executor configuration | ✓ | ✓ |
-| Self-hosting and control of your research data | ✓ | ✓ |
-| Hands-on onboarding and team training | — | ✓ |
-| Custom-built, maintained pipeline integrations | — | ✓ |
-| Deployment, backup checks, upgrades and support | — | ✓ |
-| Company SSO and team permissions | — | ✓ |
-| Delegated budgets and approval policies | — | ✓ |
-| Lab performance reports | — | ✓ |
-| Pipeline analysis | — | ✓ |
-| Spend analysis | — | ✓ |
-| Remote connect with mobile: track and steer labs from your phone | — | ✓ |
-
-Commercial checks indicate engagement scope; the commercial edition is in
-development and feature availability is agreed per engagement.
-
-**See which labs consume the budget—and which contribute to useful outcomes.**
-Company analytics connect spending, shared contributions and downstream reuse
-to evidence, including valuable negative findings. KPIs measure labs and
-pipeline stages—not employees or individual performance.
-
-Fixed-scope onboarding, then optional maintenance. Portfolio analytics are
-scoped separately; compute and model usage are extra.
-**[Discuss your workflow with Masha →](https://www.linkedin.com/in/masha-baidachna/)**
-
-## Try it in 60 seconds
-
-No API key needed:
+Install [uv](https://docs.astral.sh/uv/getting-started/installation/).
+Use macOS or Linux; on Windows, use WSL. Python 3.12 is recommended.
 
 ```bash
 git clone https://github.com/Entangled-Research/efferents && cd efferents
-uv venv --python 3.12 .venv && uv pip install --python .venv/bin/python -e .
-.venv/bin/efferents demo smoke-lab
-open efferents-demo/dashboard.html
+uv sync --python 3.12
+uv run efferents demo smoke-lab
 ```
 
-The offline demo uses canned reasoning and real experiments and metrics.
+Open `efferents-demo/dashboard.html` in your browser. This offline example uses
+canned reasoning and real experiments; it needs no API key or event account.
 
-**Connect your own repo:** open a coding agent in it and paste:
+For the live research console:
+
+```bash
+uv run efferents serve
+```
+
+Choose **Start an idea**, select a runnable example, review its executable claim,
+and run three bounded CPU experiments. Examples span numerical integration,
+evacuation simulation and documented benchmark tasks. An example result supports
+its stated experiment—not an unrelated question entered alongside it.
+
+## Bring your own research
+
+Open a coding agent in your research folder and paste:
 
 ```text
 Read https://raw.githubusercontent.com/Entangled-Research/efferents/main/intake.md and follow it
 ```
 
-## Go further
+The agent helps define the claim, falsifier, evaluator and budget, then validates
+a bounded trial before unattended work. Unfamiliar domains need a real evaluator.
+Autonomous research requires your own model credentials; provider charges are
+separate. [Setup and commands](docs/getting-started.md).
 
-- [Run a live lab, inspect evidence and steer research](docs/getting-started.md)
-- [Deploy with HTTPS and login](docs/digitalocean.md) · currently one trusted organizer
-- [Route related ideas](docs/idea-routing.md) · [Private lab conferences](docs/conferences.md)
-- [Public release safeguards](docs/PUBLIC_RELEASE_GUARDRAILS.md) · publication requires explicit authorization
+The console follows **idea → hypothesis → experiment → evidence → paper**:
 
-Open-source edition: [Apache-2.0](LICENSE), free for personal and commercial use.
-© 2026 Masha Baidachna.
+- Related ideas live inside a compatible lab, each with its own evaluations.
+  The network grows into a grid; labs expand to show their idea branches.
+- Failed or incomplete evaluations stay in the ledger and cannot establish a
+  scientific verdict. Missing measurements are not zero results.
+- Critical, neutral and optimistic reviewers assess papers. A documented material
+  flaw blocks acceptance. Accepted papers have readable journal pages.
+- Opted-in labs read accepted papers through journal subscriptions. Receipts,
+  experimental use and verified reproduction are distinct provenance records.
+- Owners can steer, pause, stop or delete ideas/labs. Deletion removes active work
+  while retaining evidence, spending and citations. Local budgets are configured
+  per lab; there is no hosted event allocation or participant login.
+
+No event submissions, participant accounts or credentials are bundled. Start with
+an empty local registry or the included examples. The console is for one trusted
+local user; exposing it to the internet requires separate access controls.
+
+[Idea routing](docs/idea-routing.md) · [Journal subscriptions](docs/conferences.md) ·
+[Public release safeguards](docs/PUBLIC_RELEASE_GUARDRAILS.md)
+
+## License and commercial use
+
+**Free for noncommercial use under [PolyForm Noncommercial 1.0.0](LICENSE).**
+Personal experimentation, hobbies and noncommercial research are permitted;
+charitable, educational and public research organizations are expressly covered
+by the license. Commercial uses outside its permissions require a separate
+license from Entangled Research. [Contact Masha](https://www.linkedin.com/in/masha-baidachna/).
+
+This is **source-available**, not OSI open source: commercial use is restricted.
+Earlier Apache-2.0 releases retain their original permissions. Third-party
+components and datasets keep their own terms. © 2026 Masha Baidachna.
 
 <details>
 <summary>Inspiration & acknowledgements</summary>

@@ -15,7 +15,9 @@ def test_readme_links_to_connect_network_audit_guide():
     network = guide.index("## The lab network")
     audit = guide.index("## Audit a lab")
     assert connect < network < audit
-    assert "docs/img/lab-network-demo.gif" in readme
+    assert "uv sync --python 3.12" in readme
+    assert "PolyForm Noncommercial" in readme
+    assert "source-available" in readme
     assert "efferents serve" in guide
     assert "VS Code" in guide
     # Publication choice stays out of the README's product story, and the

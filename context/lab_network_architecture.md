@@ -55,8 +55,9 @@ NeurIPS year uses the same scale. Existing `enthusiast` records map to optimisti
 the historical prompt filename remains compatible with lab prompt overrides.
 The structured assessment follows the [NeurIPS reviewer guidance](https://neurips.cc/Conferences/2026/ReviewerGuidelines); the existing local 1–10 acceptance scale is preserved.
 
-A complete valid board is mandatory for acceptance. Configured mean/minimum
-thresholds govern the decision (defaults: mean ≥6 and minimum ≥4). Missing,
+A complete valid board is mandatory for acceptance. Each reviewer must explicitly
+record whether a material flaw exists; any documented material flaw vetoes acceptance. Configured mean/minimum
+thresholds govern the decision (defaults: mean ≥4 and minimum ≥3). Missing,
 duplicate, malformed, or failed reviews fail closed. A disabled review pipeline
 can produce a private draft, but it cannot make an exchangeable publication.
 Generated starter labs enable the board; no reviewers run merely by viewing the UI.

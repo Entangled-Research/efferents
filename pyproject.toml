@@ -1,12 +1,12 @@
 [project]
 name = "efferents"
-version = "0.1.4"
+version = "0.2.0"
 description = "A framework for autonomous research labs that exchange falsifiable claims (multi-agent research as efferent signal propagation)."
 authors = [
     {name = "Masha Baidachna"},
 ]
 readme = "README.md"
-license = "Apache-2.0"
+license = "PolyForm-Noncommercial-1.0.0"
 license-files = ["LICENSE", "NOTICE"]
 requires-python = ">=3.10"
 dependencies = [

@@ -48,11 +48,11 @@ the stated budget, or overwrite existing work.
 
 **Shared goal:** preserve a common `research_goal` string in every participating
 lab. Record a distinct `approach` for each contribution. People retain their
-own lab, budget, evidence and stop controls. Related findings enter each lab's
+own lab, budget, evidence and stop controls. Accepted journal papers enter each lab's
 inbox during research visits.
 
 **Independent labs:** keep `research_goal` empty and give each lab its real
-domain and approach. Every third conference visit includes a different domain.
+domain and approach. Every fifth journal visit may include a related STEM domain.
 An observation means a finding reached the research inbox; it does not mean
 replication, agreement or proof. Any result used as a foundation must still be
 reproduced locally.
