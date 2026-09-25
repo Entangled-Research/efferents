@@ -559,7 +559,10 @@ class Orchestrator:
             reports=lab_root / "reports",
             context=self.context_dir,
         )
+        from efferents.lifecycle import inactive
         for campaign in campaign_open_list(self.paths.runs_db, _lab.LAB_ID):
+            if inactive(self.paths.root, campaign.get("student_id") or _lab.DEFAULT_STUDENT_ID):
+                continue
             cid = campaign["id"]
             existing_draft = (wpaths.paper / f"{cid}.md").exists()
             try:

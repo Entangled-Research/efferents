@@ -232,3 +232,11 @@ def test_generated_ideas_route_within_owner_pool_and_keep_review_enabled(tmp_pat
     assert joined["action"] == "join"
     assert len(LabConfig.from_submission(first).students) == 2
     assert routing.route(unrelated, apply=True, use_model=False)["action"] == "create"
+
+
+def test_deleted_lab_is_not_a_routing_destination(intake):
+    from efferents.lifecycle import remove
+    target, incoming = intake
+    remove(target / 'lab', by='owner')
+    result = routing.route(incoming, use_model=False)
+    assert result['action'] == 'create' and not result['candidates']

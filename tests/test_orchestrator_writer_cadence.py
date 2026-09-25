@@ -200,3 +200,15 @@ def test_step_ran_branch_calls_maybe_write(tmp_path, monkeypatch):
     result = o.step()
     assert result["event"] == "ran"
     assert called == ["write"]
+
+
+def test_deleted_idea_does_not_start_paper_review(tmp_path, monkeypatch):
+    from efferents.lifecycle import remove
+    o = _make_orch(tmp_path)
+    _seed_campaign(o)
+    _seed_runs(o.paths.runs_db, 25)
+    remove(o.paths.root, by='owner', student_id=_lab.DEFAULT_STUDENT_ID)
+    calls = []
+    monkeypatch.setattr(orch.writer, 'write_phase_a_paper', lambda *a, **k: calls.append(1))
+    o._maybe_write()
+    assert not calls

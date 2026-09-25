@@ -83,7 +83,10 @@ def decide(submission: Path, *, registry: Registry, use_model: bool = True) -> d
         return decision
     signature = _runner(cfg)
     candidates = []
+    from efferents.lifecycle import inactive
     for rec in registry.list():
+        if inactive(Path(rec.lab_root)):
+            continue
         root = Path(rec.submission_dir).resolve()
         if root == submission:
             continue
