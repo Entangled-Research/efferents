@@ -24,12 +24,13 @@ const document = {getElementById: () => strip, activeElement: null, hidden: fals
 '''
 
     def execute(body):
-        result = subprocess.run([node, "-e", harness + source + '''
+        # Feed the source through stdin: Linux limits each argv entry to 128 KiB.
+        result = subprocess.run([node, "-"], input=harness + source + '''
 portfolioState = {labs: [{lab_id:'a',display_name:'Alpha',status:'stopped'}, {lab_id:'b',display_name:'Beta',status:'stopped'}],findings:[],edges:[],observations:[],eventNetwork:null};
 portfolioHydrated = true;
 controlState = {connected:true,hydrated:true,lab_id:'a'};
 selectedLabId = 'a';
-''' + body], capture_output=True, text=True)
+''' + body, capture_output=True, text=True)
         assert result.returncode == 0, result.stderr
     return execute
 
