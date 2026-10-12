@@ -32,7 +32,7 @@ def test_dashboard_has_portfolio_rail_and_network_map():
     # The network route renders the animated live graph; the entry page stays
     # focused on onboarding and does not embed the illustrative prototype.
     assert 'src="/prototypes/event-network.html"' not in html
-    assert "network-packet" in javascript
+    assert "flow-packet" in javascript
 
 
 def test_network_map_is_a_pan_zoom_viewport():
@@ -61,10 +61,10 @@ def test_network_map_is_a_pan_zoom_viewport():
     assert 'Open eval suite' in javascript
     assert "await openLabTab(lab.lab_id)" in javascript
     # Layout follows the viewport shape and the lab set, not the poll interval.
-    assert "function chooseMapLayout(sizes)" in javascript
+    assert "function organicGroupLayout(members, sizes, compact)" in javascript
     assert "cards.get(lab.lab_id).offsetHeight" in javascript
     assert "change.view || (change.content && !mapView.moved)" in javascript
-    assert 'lines.setAttribute("viewBox", `0 0 ${world.width} ${world.height}`);' in javascript
+    assert 'lines.setAttribute("viewBox", `0 0 ${width} ${height}`);' in javascript
     # The map no longer grows to its content height.
     assert "map.style.minHeight" not in javascript
 
@@ -163,3 +163,13 @@ def test_journal_panel_has_no_explanatory_copy_and_hides_when_empty():
     assert '<section id="exchange-panel" class="panel exchange-panel" ' \
            'aria-label="Published journal papers" hidden>' in html
     assert 'document.getElementById("exchange-panel").hidden = !rows.length;' in js
+
+
+def test_ideas_branch_inside_a_lab_without_clipping():
+    js = (STATIC / "dashboard.js").read_text()
+    css = (STATIC / "dashboard.css").read_text()
+    assert 'class="lab-idea-branches"' in js
+    assert 'href="${esc(ideaHref(lab.lab_id, idea.id))}"' in js
+    assert "organicGroupLayout(members, sizes, compact)" in js
+    assert '.network-lab-boundary { height: auto; }' in css
+    assert '.lab-idea-branch::before' in css

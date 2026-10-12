@@ -52,6 +52,12 @@ Read these first:
   Python example apps that emit HTML must embed it through
   `efferents.dashboard.theme.embed_research_theme`; generated offline reports
   must use `efferents.dashboard.report_theme.REPORT_CSS`.
+- The canonical network uses solid lab boundaries in organic journal constellations,
+  cream/cobalt with restrained teal, compact review gates, and idea-count-dependent
+  vertical or wide lab shapes. Keep this in the shared dashboard assets, not an
+  event-specific skin. Slow, bounded attraction is viewer-local and derives only
+  from distinct recorded reading of accepted publications; retain the Drift pause
+  and reduced-motion support. It must never create direct scientific exchange.
 - Light mode is the default. Dark mode may be offered only as an explicit,
   persistent user choice. Do not default from the operating-system color
   scheme.

@@ -933,9 +933,10 @@ function inspectLab(labId, section = "ideas") {
   const ideas = labIdeas(lab), headline = lab.headline || {};
   const dialog = networkDialog(labDisplayName(labId),
     `<p>${esc(homeJournal(lab))} · ${esc(lab.status || "stopped")}</p>` +
-    `<nav class="lab-map-actions" aria-label="Lab inspection"><button type="button" data-inspect="ideas" aria-pressed="${section === "ideas"}">Ideas · ${ideas.length || (lab.remote ? "private" : "0")}</button><button type="button" data-inspect="evals" aria-pressed="${section === "evals"}">Evals</button>` +
+    `<nav class="lab-map-actions" aria-label="Lab inspection"><button type="button" data-inspect="ideas" aria-pressed="${section === "ideas"}">Ideas · ${ideas.length || (lab.remote ? "private" : "0")}</button><button type="button" data-inspect="evals" aria-pressed="${section === "evals"}">Evals</button><button type="button" data-inspect="review" aria-pressed="${section === "review"}">Review</button>` +
     (portfolioState.labs.some(item => item.lab_id === labId) ? `<button type="button" data-open-lab>Open lab</button>` : "") + `</nav>` +
-    (section === "ideas" ? `<div class="inspector-ideas">${ideas.map(idea => `<article><h3>${esc(ideaName(idea))}</h3><p>${esc(idea.focus || "No focus recorded")}</p><small>Track ${esc(idea.id)} · ${esc(idea.verdict || "undecided")}</small></article>`).join("") || `<p>${lab.remote ? "The idea roster is private to the participant’s local console." : "No ideas recorded."}</p>`}</div>` :
+    (section === "ideas" ? `<div class="inspector-ideas">${ideas.map(idea => `<article><h3>${esc(ideaName(idea))}</h3><p>${esc(idea.focus || "No focus recorded")}</p><small>Track ${esc(idea.id)} · ${esc(idea.verdict || "undecided")}</small></article>`).join("") || `<p>${lab.remote ? "The idea roster is private to the participant’s local console." : "No ideas recorded."}</p>`}</div>` : section === "review" ?
+      `<h3>Journal review</h3><p>Campaign ${esc(lab.review_board?.campaign_id || "—")} · ${esc(lab.review_board?.status || "awaiting paper")}</p>${reviewBoardMarkup(lab.review_board || {})}<p>Only accepted journal publications circulate to other labs.</p>` :
       `<h3>Evaluation summary</h3><dl class="inspector-metrics"><dt>Metric</dt><dd>${esc(headline.column || "Not recorded")}</dd><dt>Direction</dt><dd>${esc(headline.direction || "—")}</dd><dt>Latest</dt><dd>${esc(headline.latest ?? "—")}</dd><dt>Best eligible</dt><dd>${esc(headline.best ?? "—")}</dd><dt>Runs</dt><dd>${esc(headline.observations ?? 0)}</dd></dl>` +
       (lab.remote ? `<p>Shared heartbeat summary · ${esc(formatTimestamp(lab.received_at, true))}. Detailed evals remain on the participant’s host.</p>` : `<button type="button" data-open-evals>Open evals, runs and evidence</button>`)));
   dialog.querySelectorAll("[data-inspect]").forEach(button => {
@@ -978,151 +979,301 @@ function reviewBoardMarkup(board = {}) {
     }).join("")}</div>`;
 }
 
+// Derive exchange only from accepted publications and persisted reading receipts.
+function networkFlowRecords(labs, findings, observations) {
+  const valid = findings.filter(paper => paper.kind === "publication" && paper.publication_status === "accepted" &&
+    ["critical", "neutral", "optimistic"].every(persona => {
+      const score = paper.review_scores?.[persona] ?? (persona === "optimistic" ? paper.review_scores?.enthusiast : null);
+      return Number.isInteger(score) && score >= 1 && score <= 10;
+    }));
+  const byId = new Map(valid.map(paper => [paper.id, paper]));
+  const byLab = new Map(labs.map(lab => [lab.lab_id, lab]));
+  const seen = new Set();
+  const reading = observations.flatMap(receipt => {
+    const paper = byId.get(receipt.finding_id), lab = byLab.get(receipt.target);
+    if (!paper || !lab) return [];
+    const journal = homeJournal(paper), key = `${journal}:${lab.lab_id}`;
+    if (seen.has(key)) return [];
+    seen.add(key);
+    return [{journal, target: lab.lab_id, occasional: journal !== homeJournal(lab)}];
+  });
+  return {publications: valid, reading};
+}
+
+// Per-viewer spatial state only. Reading affinity never creates scientific exchange.
+const networkGravityOffsets = new Map();
+let networkGravityTimer = null;
+let networkGravityLayoutKey = "";
+let networkDrift = readStored("efferents-network-drift", true) !== false;
+function networkAffinity(labs, publications, observations) {
+  const ids = new Set(labs.map(lab => lab.lab_id));
+  const byId = new Map(publications.map(paper => [paper.id, paper]));
+  const seen = new Set(), pairs = new Map();
+  observations.forEach(receipt => {
+    const paper = byId.get(receipt.finding_id);
+    if (!paper || !ids.has(paper.lab_id) || !ids.has(receipt.target) || paper.lab_id === receipt.target) return;
+    const key = `${paper.id}:${receipt.target}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    const [a, b] = [paper.lab_id, receipt.target].sort();
+    const pairKey = `${a}:${b}`;
+    const pair = pairs.get(pairKey) || {a, b, weight: 0};
+    pair.weight += 1; pairs.set(pairKey, pair);
+  });
+  return [...pairs.values()];
+}
+
+function advanceNetworkGravity(bodies, pairs, offsets, seconds) {
+  const dt = Math.max(0, Math.min(.25, seconds));
+  const forces = new Map(bodies.map(body => [body.id, {x: 0, y: 0}]));
+  const byId = new Map(bodies.map(body => [body.id, body]));
+  const position = body => ({x: body.x + (offsets[body.id]?.x || 0), y: body.y + (offsets[body.id]?.y || 0)});
+  pairs.forEach(pair => {
+    const a = byId.get(pair.a), b = byId.get(pair.b);
+    if (!a || !b) return;
+    const p = position(a), q = position(b), dx = q.x - p.x, dy = q.y - p.y;
+    const distance = Math.hypot(dx, dy) || 1;
+    const strength = 2.1 * Math.log1p(pair.weight);
+    const f = {x: dx / distance * strength, y: dy / distance * strength};
+    forces.get(a.id).x += f.x; forces.get(a.id).y += f.y;
+    forces.get(b.id).x -= f.x; forces.get(b.id).y -= f.y;
+  });
+  const next = {};
+  bodies.forEach(body => {
+    const old = offsets[body.id] || {x: 0, y: 0}, force = forces.get(body.id);
+    const mass = Math.sqrt(1 + body.ideas);
+    const vx = force.x / mass - old.x * .008, vy = force.y / mass - old.y * .008;
+    const speed = Math.hypot(vx, vy), limit = speed > 1.25 ? 1.25 / speed : 1;
+    let x = old.x + vx * limit * dt, y = old.y + vy * limit * dt;
+    y = Math.max(body.minY ?? -72, y);
+    const radius = Math.hypot(x, y);
+    if (radius > 72) { x *= 72 / radius; y *= 72 / radius; }
+    next[body.id] = {x, y};
+  });
+  // Reject a move that would squeeze a lab or its review gate into another lab.
+  // Current positions are a safe fallback, so collision prevention never jumps.
+  const collides = (a, b) => {
+    const p = {x: a.x + next[a.id].x, y: a.y + next[a.id].y};
+    const q = {x: b.x + next[b.id].x, y: b.y + next[b.id].y};
+    return Math.abs(p.x - q.x) < (a.width + b.width) / 2 + 30 &&
+      p.y - 110 < q.y + b.height + 30 && p.y + a.height + 30 > q.y - 110;
+  };
+  for (let pass = 0; pass < 2; pass++) {
+    for (let i = 0; i < bodies.length; i++) for (let j = i + 1; j < bodies.length; j++) {
+      if (collides(bodies[i], bodies[j])) {
+        next[bodies[i].id] = {...(offsets[bodies[i].id] || {x: 0, y: 0})};
+        next[bodies[j].id] = {...(offsets[bodies[j].id] || {x: 0, y: 0})};
+      }
+    }
+  }
+  return next;
+}
+
+function organicGroupLayout(members, sizes, compact) {
+  const averageIdeas = members.reduce((sum, lab) => sum + labIdeas(lab).length, 0) / members.length;
+  const cols = compact ? 1 : Math.max(1, Math.min(3, Math.round(Math.sqrt(members.length * averageIdeas / 3))));
+  const cell = compact ? 420 : Math.max(...members.map(lab => sizes.get(lab.lab_id).width)) + 112;
+  const columns = Array(cols).fill(compact ? 212 : 294);
+  const placements = members.map((lab, index) => {
+    const size = sizes.get(lab.lab_id);
+    const col = index < cols ? index : columns.indexOf(Math.min(...columns));
+    const seed = [...lab.lab_id].reduce((value, letter) => (value * 31 + letter.charCodeAt(0)) >>> 0, 7);
+    const sway = compact ? 0 : seed % 31 - 15;
+    const x = (col + .5) * cell + sway;
+    const y = columns[col] + (compact ? 0 : seed % 25);
+    columns[col] = y + size.height + 190;
+    return {lab, x, y, col, row: index >= cols ? 1 : 0, size};
+  });
+  return {width: cols * cell, height: Math.max(...columns) + 40, placements, cols};
+}
+
+let networkJournalFilter = "";
+
 function renderNetwork() {
+  if (networkGravityTimer) { clearInterval(networkGravityTimer); networkGravityTimer = null; }
   if (document.getElementById("network-view").hidden) return;
   renderJournalDirectory();
-  const labs = portfolioLabs();
-  const findings = publishedFindings();
-  const publicationById = new Map(findings.map(item => [item.id, item]));
-  const observations = [...portfolioState.observations, ...(portfolioState.eventNetwork?.observations || [])]
-    .filter(item => publicationById.has(item.finding_id));
-  const lines = document.getElementById("network-lines");
-  const nodes = document.getElementById("network-nodes");
+  const allLabs = portfolioLabs(), findings = publishedFindings();
+  const journalNames = [...new Set(allLabs.map(homeJournal))];
+  const filter = document.getElementById("network-journal-filter");
+  if (!journalNames.includes(networkJournalFilter)) networkJournalFilter = "";
+  const filterMarkup = '<option value="">All journals</option>' + journalNames.map(name => `<option value="${esc(name)}">${esc(name)}</option>`).join("");
+  if (filter.innerHTML !== filterMarkup) filter.innerHTML = filterMarkup;
+  filter.value = networkJournalFilter;
+  filter.onchange = () => { networkJournalFilter = filter.value; mapView.moved = false; mapView.contentKey = ""; renderNetwork(); };
+  const labs = networkJournalFilter ? allLabs.filter(lab => homeJournal(lab) === networkJournalFilter) : allLabs;
+  const flow = networkFlowRecords(labs, findings,
+    [...portfolioState.observations, ...(portfolioState.eventNetwork?.observations || [])]);
+  const lines = document.getElementById("network-lines"), nodes = document.getElementById("network-nodes");
   const journalsLayer = document.getElementById("network-journals");
-  const ideasLayer = document.getElementById("network-ideas");
-  [lines, nodes, journalsLayer, ideasLayer].forEach(el => el.replaceChildren());
+  [lines, nodes, journalsLayer, document.getElementById("network-ideas")].forEach(el => el.replaceChildren());
   document.querySelector(".network-hub").hidden = true;
   const empty = document.getElementById("network-empty");
   empty.hidden = labs.length > 0;
-  empty.textContent = "Connect a lab to build a reviewed journal.";
-  const selected = labs.find(lab => lab.lab_id === networkSelection) || labs[0];
-  networkSelection = selected?.lab_id || null;
+  empty.textContent = "Connect a lab to begin.";
+  text("network-node-count", `${networkJournalFilter ? `${labs.length} / ${allLabs.length}` : labs.length} labs · ${new Set(labs.map(homeJournal)).size} ${new Set(labs.map(homeJournal)).size === 1 ? "journal" : "journals"}`);
+  if (!labs.length) { renderEventAdmin(); renderExchange(); return; }
+  networkSelection = labs.find(lab => lab.lab_id === networkSelection)?.lab_id || labs[0].lab_id;
   const groups = new Map();
   labs.forEach(lab => groups.set(homeJournal(lab), [...(groups.get(homeJournal(lab)) || []), lab]));
-  const names = [...groups.keys()];
-  const sizes = names.map(name => groups.get(name).length);
   const cards = new Map();
+  const boardFor = lab => lab.review_board?.status ? lab.review_board : (() => {
+    const latest = flow.publications.filter(paper => paper.lab_id === lab.lab_id).at(-1);
+    return latest ? {status: "accepted", scores: latest.review_scores} : {};
+  })();
   labs.forEach(lab => {
     const card = document.createElement("article");
-    card.className = `network-lab-boundary${lab.mine ? " mine" : ""}`;
+    card.className = `network-lab-boundary efferent-lab${lab.mine ? " mine" : ""}`;
     card.dataset.labId = lab.lab_id;
-    card.style.width = `${MAP_CELL.card}px`;
-    card.innerHTML = `<a class="lab-identity" href="${esc(labHref(lab.lab_id))}" aria-current="${lab.lab_id === networkSelection}"><strong>${esc(labDisplayName(lab.lab_id))}</strong><small>${esc(lab.status || "stopped")}${lab.remote ? " · read only" : ""}</small></a>` +
-      `<div class="network-lab-owner">${esc(lab.owner_name || "")}${lab.mine ? " · yours" : ""}</div>` +
-      labSpendMarkup(lab) + ideaBranchMarkup(lab) +
-      `<div class="internal-research"><span>Hypothesis → Experiment → Evidence → Paper</span></div>`;
+    const ideaCount = labIdeas(lab).length;
+    card.dataset.growth = ideaCount >= 4 ? "wide" : ideaCount <= 2 ? "compact" : "vertical";
+    const headline = lab.headline || {}, board = boardFor(lab);
+    card.innerHTML = `<header class="efferent-lab-head"><span class="lab-nucleus" aria-hidden="true">ℯ</span>` +
+      `<div><a class="lab-identity" href="${esc(labHref(lab.lab_id))}"><strong>${esc(labDisplayName(lab.lab_id))}</strong></a>` +
+      `<small>${esc(lab.owner_name || "")}${lab.mine ? " · yours" : ""} · ${esc(lab.status || "stopped")}${lab.remote ? " · read only" : ""}</small></div>` +
+      `<button class="lab-inspect" type="button" aria-label="Inspect ${esc(labDisplayName(lab.lab_id))}">↗</button></header>` +
+      `<div class="lab-readout"><span>${Number(headline.observations) || 0} runs</span>` +
+      `<span>${headline.best == null ? "No eligible result" : `${esc(headline.column || "metric")} <strong>${esc(formatMetric(headline.best))}</strong>`}</span></div>` +
+      labSpendMarkup(lab) + ideaBranchMarkup(lab);
     nodes.appendChild(card);
+    card.querySelector(".lab-inspect").onclick = () => inspectLab(lab.lab_id);
+    card.dataset.review = board.status || "pending";
     cards.set(lab.lab_id, card);
   });
-  MAP_CELL.row = Math.max(300, ...[...cards.values()].map(card => card.offsetHeight + 168));
-  // Idea additions and longer names change the containment geometry, too.
-  const change = sizeMapViewport([...labs.map(lab => `${lab.lab_id}:${cards.get(lab.lab_id).offsetHeight}`).sort(), ...names].join("|"));
-  if (change.content || change.view) mapView.layout = chooseMapLayout(sizes);
-  const {cols: columns, groupCols} = mapView.layout;
-  const world = layoutMapGroups(sizes, columns, groupCols);
-  const rowHeight = MAP_CELL.row;
-  lines.setAttribute("viewBox", `0 0 ${world.width} ${world.height}`);
-  const defs = svgElement("defs", {});
-  for (const kind of ["publish", "subscribe", "accepted", "rejected", "visit"]) {
-    const marker = svgElement("marker", {id: `${kind}-arrow`, viewBox: "0 0 10 10",
-      refX: 9, refY: 5, markerWidth: 9, markerHeight: 9, markerUnits: "userSpaceOnUse", orient: "auto"});
-    marker.appendChild(svgElement("path", {d: "M0 0 L10 5 L0 10 Z", class: `${kind}-arrow`}));
-    defs.appendChild(marker);
-  }
-  lines.appendChild(defs);
-  const route = (d, kind, active, label) => {
-    const edge = svgElement("path", {d, fill: "none", class: `journal-route ${kind}${active ? " active" : " pending"}`,
-      "marker-end": `url(#${kind}-arrow)`});
-    const title = svgElement("title", {}); title.textContent = label;
-    edge.appendChild(title); lines.appendChild(edge);
-    if (active) {
-      const dot = svgElement("circle", {r: 3, class: `network-packet ${kind}`});
-      dot.appendChild(svgElement("animateMotion", {dur: "4s", repeatCount: "indefinite", path: d}));
-      lines.appendChild(dot);
-    }
-  };
-  const labPorts = new Map(), journalPorts = new Map();
-  names.forEach((name, groupIndex) => {
-    const members = groups.get(name);
-    const {x: groupLeft, y: groupTop, width: groupWidth} = world.origins[groupIndex];
-    const journalY = groupTop + 24;
-    const journalX = groupLeft + groupWidth / 2;
-    const width = MAP_CELL.card, half = width / 2;
-    members.forEach((lab, index) => {
-      const x = groupLeft + MAP_CELL.pad + (index % columns + 0.5) * MAP_CELL.slot;
-      const y = groupTop + MAP_CELL.journal + Math.floor(index / columns) * rowHeight + 138;
-      const card = cards.get(lab.lab_id);
-      Object.assign(card.style, {left: `${x}px`, top: `${y}px`, width: `${width}px`});
-      const owned = findings.filter(item => item.lab_id === lab.lab_id && homeJournal(item) === name);
-      const latest = owned.at(-1);
-      const board = lab.review_board?.status ? lab.review_board : (latest ? {status: "accepted", scores: latest.review_scores} : {});
-      const reviewY = y - 120;
-      const review = document.createElement("div");
-      review.className = "network-review-board";
-      Object.assign(review.style, {left: `${x}px`, top: `${reviewY}px`, width: `${width}px`});
-      review.innerHTML = reviewBoardMarkup(board);
-      nodes.appendChild(review);
-      // Solid parent branches express membership; packets express recorded outcomes.
-      const memberRow = Math.floor(index / columns);
-      const branchPath = memberRow === 0 ? `M${journalX},${journalY + 70} L${x},${reviewY}`
-        : `M${journalX - 200},${journalY + 35} H${groupLeft + 15} V${reviewY - 18} H${x} V${reviewY}`;
-      const branch = svgElement("path", {d: branchPath,
-        class: "conference-branch", fill: "none"});
-      lines.appendChild(branch);
-      route(`M${x},${y} V${reviewY + 95}`, "publish", false,
-        `${labDisplayName(lab.lab_id)} submits to its home journal review board`);
-      if (board.status === "rejected") {
-        route(`M${x + half},${reviewY + 45} H${x + half + 20} V${y + 25} H${x + half + 5}`,
-          "rejected", true, `Rejected paper → ${labDisplayName(lab.lab_id)} for revision`);
-      }
-      const accepted = board.status === "accepted" && owned.some(item =>
-        !board.campaign_id || item.campaign_id === board.campaign_id);
-      if (accepted) {
-        route(memberRow === 0 ? `M${x},${reviewY} L${journalX},${journalY + 75}`
-          : `M${x},${reviewY} V${reviewY - 18} H${groupLeft + 15} V${journalY + 35} H${journalX - 205}`,
-          "accepted", true, `${labDisplayName(lab.lab_id)} → ${name}: accepted papers only`);
-      }
-      labPorts.set(lab.lab_id, {x: x - half, y: y + 25, lane: x - half - 25});
-    });
-    const published = findings.filter(item => homeJournal(item) === name);
+  // Geometry is measured before placement so additional ideas never overlap.
+  const compact = document.getElementById("lab-map").clientWidth < 720;
+  const sizes = new Map(labs.map(lab => [lab.lab_id, {width: cards.get(lab.lab_id).offsetWidth, height: cards.get(lab.lab_id).offsetHeight}]));
+  const groupSpecs = [...groups].map(([name, members]) => ({name, members, layout: organicGroupLayout(members, sizes, compact)}));
+  const gutter = compact ? 0 : 140;
+  const width = compact ? 420 : Math.max(760, groupSpecs.reduce((sum, group) => sum + group.layout.width + gutter, gutter));
+  let groupLeft = gutter, baseY = 0;
+  const positions = [], journalPorts = new Map(), labPorts = new Map();
+  groupSpecs.forEach(({name, members, layout}) => {
+    const center = compact ? width / 2 : groupLeft + layout.width / 2;
+    const journalY = baseY + (compact ? 22 : 58);
     const journal = document.createElement("div");
-    journal.className = "shared-journal-node";
-    Object.assign(journal.style, {left: `${journalX - 200}px`, top: `${journalY}px`, width: "400px"});
-    journal.innerHTML = `<a class="shared-journal-link" href="${esc(journalHref(name))}" aria-label="Browse ${esc(name)}, ${published.length} accepted papers"><small>CONFERENCE · HOME JOURNAL</small><strong>${esc(name)}</strong><small>Inspect journal directory · ${published.length} publications</small></a>`;
+    journal.className = "shared-journal-node efferent-journal";
+    journal.style.left = `${center}px`; journal.style.top = `${journalY}px`;
+    const papers = flow.publications.filter(paper => homeJournal(paper) === name);
+    journal.innerHTML = `<a class="shared-journal-link" href="${esc(journalHref(name))}" aria-label="Browse ${esc(name)}, ${papers.length} accepted papers">` +
+      `<small>SHARED JOURNAL · ${papers.length} ACCEPTED</small><strong>${esc(name)}</strong><span aria-hidden="true">↗</span></a>`;
     journalsLayer.appendChild(journal);
-    journalPorts.set(name, {x: journalX + 200, y: journalY + 35});
-    members.forEach(lab => {
-      const port = labPorts.get(lab.lab_id);
-      const active = observations.some(item => item.target === lab.lab_id && homeJournal(publicationById.get(item.finding_id)) === name);
-      // Home readership uses the solid tree. Only cross-conference visits are dotted.
-      if (active) route(`M${journalX - 200},${journalY + 35} H${groupLeft + 10} V${port.y - 15} H${port.x - 7} V${port.y}`,
-        "subscribe", true, `${name} → ${labDisplayName(lab.lab_id)}: recorded home-journal receipt`);
+    journalPorts.set(name, {x: center, y: journalY + 77, side: center + 142, top: journalY + 38});
+    const laneX = compact ? 28 : groupLeft + 6;
+    layout.placements.forEach(({lab, x: localX, y: localY, col, row, size}) => {
+      const x = (compact ? 0 : groupLeft) + localX;
+      const y = baseY + localY;
+      const card = cards.get(lab.lab_id);
+      Object.assign(card.style, {left: `${x}px`, top: `${y}px`});
+      // Publish from the top border, through the lab's own review gate.
+      const labX = x - size.width * .25, labY = y, gateY = y - 86;
+      const board = boardFor(lab), scores = board.scores || {};
+      const review = document.createElement("button");
+      review.type = "button"; review.className = `review-gate ${esc(board.status || "pending")}`;
+      Object.assign(review.style, {left: `${labX}px`, top: `${gateY}px`});
+      review.setAttribute("aria-label", `Inspect ${labDisplayName(lab.lab_id)} review`);
+      review.innerHTML = `<span>Review · ${esc(board.status || "awaiting paper")}</span>` +
+        `<small>${["critical", "neutral", "optimistic"].map(persona => {
+          const score = scores[persona] ?? (persona === "optimistic" ? scores.enthusiast : null);
+          return `${persona === "critical" ? "C" : persona === "neutral" ? "N" : "O"} ${Number.isInteger(score) && score >= 1 && score <= 10 ? score : "—"}`;
+        }).join(" · ")}</small>`;
+      review.onclick = () => inspectLab(lab.lab_id, "review");
+      nodes.appendChild(review);
+      const root = journalPorts.get(name);
+      positions.push({lab, name, labX, labY, gateY, laneX: compact ? 28 : groupLeft + col * (layout.width / layout.cols) + 12, cardX: x, baseX: x, baseY: y, size, row, card, review, root});
+      labPorts.set(lab.lab_id, {x: x - size.width / 2, y: y + 62, root: name, gateY, laneX: x - size.width / 2 - 24});
     });
+    if (compact) baseY += layout.height + 100;
+    else groupLeft += layout.width + gutter;
   });
-  const subscriptions = new Set();
-  observations.forEach(receipt => {
-    const publication = publicationById.get(receipt.finding_id);
-    const name = homeJournal(publication);
-    const lab = labs.find(item => item.lab_id === receipt.target);
-    const journal = journalPorts.get(name), port = labPorts.get(receipt.target);
-    const key = `${name}:${receipt.target}`;
-    if (!journal || !port || !lab || homeJournal(lab) === name || subscriptions.has(key)) return;
-    subscriptions.add(key);
-    route(`M${journal.x},${journal.y} V${journal.y + 40} H${port.lane - 10} V${port.y - 16} H${port.x - 7} V${port.y}`,
-      "visit", true, `${name} → ${labDisplayName(lab.lab_id)}: recorded cross-domain subscription receipt${journalUses().some(use => use.target === lab.lab_id && homeJournal(publicationById.get(use.finding_id)) === name) ? "; used in a completed experiment" : "; not evidence of experimental use"}`);
+  const height = Math.max(620, ...positions.map(pos => pos.labY + cards.get(pos.lab.lab_id).offsetHeight + 128));
+  lines.setAttribute("viewBox", `0 0 ${width} ${height}`);
+  const addPath = (d, cls, label) => {
+    const edge = svgElement("path", {d, class: cls, fill: "none"});
+    const title = svgElement("title", {}); title.textContent = label;
+    edge.appendChild(title); lines.appendChild(edge); return edge;
+  };
+  const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+  const packet = (d, kind, index = 0) => {
+    if (reducedMotion) return null;
+    const dot = svgElement("circle", {r: kind === "publication" ? 4.5 : 3.5, class: `flow-packet ${kind}`});
+    dot.appendChild(svgElement("animateMotion", {dur: "8s", begin: `${-((performance.now() / 1000 + index * 2) % 8)}s`, repeatCount: "indefinite", path: d}));
+    lines.appendChild(dot); return dot.querySelector("animateMotion");
+  };
+  const affinity = networkAffinity(labs, flow.publications,
+    [...portfolioState.observations, ...(portfolioState.eventNetwork?.observations || [])]);
+  const bodies = positions.map(pos => ({id: pos.lab.lab_id, x: pos.baseX, y: pos.baseY, width: pos.size.width, height: pos.size.height, ideas: labIdeas(pos.lab).length,
+    minY: Math.min(0, pos.root.y + 18 - (pos.baseY - 86))}));
+  const gravityKey = `${networkJournalFilter}:${compact}:` + bodies.map(body => `${body.id}:${body.x}:${body.y}:${body.width}:${body.height}`).join("|");
+  if (gravityKey !== networkGravityLayoutKey) { networkGravityOffsets.clear(); networkGravityLayoutKey = gravityKey; }
+  const routes = [];
+  const route = (getPath, cls, label, kind, index) => {
+    const d = getPath(), edge = addPath(d, cls, label), motion = kind ? packet(d, kind, index) : null;
+    routes.push({getPath, edge, motion});
+  };
+  const limbFor = pos => pos.row > 0
+    ? `M${pos.labX},${pos.gateY} C${pos.labX},${pos.gateY - 72} ${pos.laneX},${pos.gateY - 24} ${pos.laneX},${pos.gateY - 104} L${pos.laneX},${pos.root.y + 112} C${pos.laneX},${pos.root.y + 28} ${pos.root.x},${pos.root.y + 84} ${pos.root.x},${pos.root.y}`
+    : `M${pos.labX},${pos.gateY} C${pos.labX},${(pos.gateY + pos.root.y) / 2} ${pos.root.x},${(pos.gateY + pos.root.y) / 2} ${pos.root.x},${pos.root.y}`;
+  const neckFor = pos => `M${pos.labX},${pos.labY} C${pos.labX},${pos.labY - 28} ${pos.labX},${pos.gateY + 68} ${pos.labX},${pos.gateY + 42}`;
+  positions.forEach((pos, index) => {
+    const {lab, name} = pos;
+    route(() => neckFor(pos), "nerve-root", `${labDisplayName(lab.lab_id)} → its review board`);
+    route(() => limbFor(pos), "nerve-branch", `${labDisplayName(lab.lab_id)} → ${name}: home journal`);
+    if (flow.publications.some(paper => paper.lab_id === lab.lab_id && homeJournal(paper) === name)) {
+      route(() => `${neckFor(pos)} ${limbFor(pos)}`, "flow-path publication", `${labDisplayName(lab.lab_id)} → ${name}: accepted paper`, "publication", index);
+    }
+    if (boardFor(lab).status === "rejected") {
+      route(() => `M${pos.labX + 92},${pos.gateY + 22} C${pos.labX + 160},${pos.gateY + 22} ${pos.cardX + pos.size.width * .38},${pos.labY - 42} ${pos.cardX + pos.size.width * .38},${pos.labY}`,
+        "flow-path revision", `${labDisplayName(lab.lab_id)}: rejected paper returns for revision`, "revision", index);
+    }
   });
-  setMapWorld(world.width, world.height, change.view || (change.content && !mapView.moved));
-  text("network-node-count", `${labs.length} ${labs.length === 1 ? "lab" : "labs"} · ${groups.size} ${groups.size === 1 ? "conference" : "conferences"}`);
+  flow.reading.forEach((receipt, index) => {
+    const journal = journalPorts.get(receipt.journal), port = labPorts.get(receipt.target);
+    if (!journal || !port) return;
+    route(() => {
+      const lane = port.laneX - (receipt.occasional ? 16 : 8);
+      return receipt.occasional
+        ? `M${journal.side},${journal.top} C${journal.side + 92},${journal.top - 66} ${lane},${journal.top - 66} ${lane},${journal.top + 56} L${lane},${port.y - 44} Q${lane},${port.y} ${port.x},${port.y}`
+        : `M${journal.x - 118},${journal.top + 38} C${lane},${journal.top + 46} ${lane},${journal.top + 84} ${lane},${journal.top + 116} L${lane},${port.y - 44} Q${lane},${port.y} ${port.x},${port.y}`;
+    }, `flow-path reading${receipt.occasional ? " occasional" : ""}`,
+    `${receipt.journal} → ${labDisplayName(receipt.target)}: recorded reading; not proof of replication`, "reading", index + 1);
+  });
+  const place = () => {
+    positions.forEach(pos => {
+      const offset = networkGravityOffsets.get(pos.lab.lab_id) || {x: 0, y: 0};
+      pos.cardX = pos.baseX + offset.x; pos.labY = pos.baseY + offset.y;
+      pos.labX = pos.cardX - pos.size.width * .25; pos.gateY = pos.labY - 86;
+      Object.assign(pos.card.style, {left: `${pos.cardX}px`, top: `${pos.labY}px`});
+      Object.assign(pos.review.style, {left: `${pos.labX}px`, top: `${pos.gateY}px`});
+      Object.assign(labPorts.get(pos.lab.lab_id), {x: pos.cardX - pos.size.width / 2, y: pos.labY + 62, gateY: pos.gateY, laneX: pos.cardX - pos.size.width / 2 - 24});
+    });
+    routes.forEach(item => { const d = item.getPath(); item.edge.setAttribute("d", d); if (item.motion) item.motion.setAttribute("path", d); });
+  };
+  place();
+  const driftButton = document.querySelector('[data-map-zoom="drift"]');
+  driftButton.setAttribute("aria-pressed", String(networkDrift));
+  if (!reducedMotion) {
+    networkGravityTimer = setInterval(() => {
+      const map = document.getElementById("lab-map");
+      if (document.hidden || document.getElementById("network-view").hidden || !networkDrift || map.classList.contains("panning") ||
+          document.querySelector(".network-inspector[open]") || map.querySelector("button:hover, a:hover")) return;
+      const offsets = Object.fromEntries(bodies.map(body => [body.id, networkGravityOffsets.get(body.id) || {x: 0, y: 0}]));
+      const next = advanceNetworkGravity(bodies, affinity, offsets, .1);
+      Object.entries(next).forEach(([id, value]) => networkGravityOffsets.set(id, value));
+      place();
+    }, 100);
+  }
+  const contentKey = [...labs.map(lab => `${lab.lab_id}:${cards.get(lab.lab_id).offsetHeight}`).sort(), ...groups.keys(), compact].join("|");
+  const change = sizeMapViewport(contentKey);
+  setMapWorld(width, height, change.view || (change.content && !mapView.moved));
   renderEventAdmin(); renderExchange();
 }
 
 // ---------------------------------------------------------- map pan / zoom
 // #lab-map is a fixed viewport; #network-world holds every layer at its
 // natural layout size and only its transform changes.
-const mapView = {x: 0, y: 0, k: 1, width: 1000, height: 460, contentKey: "", viewKey: "", moved: false, layout: {cols: 2, groupCols: 1}};
-const MAP_ZOOM = {min: 0.25, max: 2.5, fitMin: 0.35, fitMax: 1, margin: 16, step: 1.3, pan: 60};
-// World geometry in px: a lab slot is a card plus its two routing gutters.
-const MAP_CELL = {slot: 460, card: 360, pad: 40, row: 390, journal: 150};
+const mapView = {x: 0, y: 0, k: 1, width: 1000, height: 460, contentKey: "", viewKey: "", moved: false};
+const MAP_ZOOM = {min: 0.15, max: 2.5, fitMin: 0.85, fitMax: 1, margin: 16, step: 1.3, pan: 60};
 const clamp = (value, low, high) => Math.min(high, Math.max(low, value));
 
 function applyMapView(animated = false) {
@@ -1134,9 +1285,14 @@ function applyMapView(animated = false) {
 
 function fitMap(animated = false) {
   const map = document.getElementById("lab-map");
+  if (map.clientWidth < 720 && !animated) {
+    mapView.k = Math.min(.92, (map.clientWidth - 20) / mapView.width);
+    mapView.x = 10; mapView.y = 10; mapView.moved = false;
+    applyMapView(animated); return;
+  }
   const room = (size) => Math.max(1, size - 2 * MAP_ZOOM.margin);
   mapView.k = clamp(Math.min(room(map.clientWidth) / mapView.width, room(map.clientHeight) / mapView.height),
-    MAP_ZOOM.fitMin, MAP_ZOOM.fitMax);
+    animated ? 0.01 : MAP_ZOOM.fitMin, MAP_ZOOM.fitMax);
   // Centered; content larger than the viewport at the minimum fit starts at its top-left.
   const center = (view, size) => Math.max(MAP_ZOOM.margin, (view - size * mapView.k) / 2);
   mapView.x = center(map.clientWidth, mapView.width);
@@ -1166,39 +1322,6 @@ function panMap(dx, dy) {
   applyMapView();
 }
 
-// Journal groups flow in rows of groupCols; each group holds its labs in up to
-// cols columns and is only as wide as the labs it has.
-function layoutMapGroups(sizes, cols, groupCols) {
-  const origins = [];
-  let top = 0, width = MAP_CELL.slot + 2 * MAP_CELL.pad;
-  for (let i = 0; i < sizes.length; i += groupCols) {
-    const row = sizes.slice(i, i + groupCols);
-    let left = 0;
-    row.forEach(size => {
-      const groupWidth = Math.min(cols, size) * MAP_CELL.slot + 2 * MAP_CELL.pad;
-      origins.push({x: left, y: top, width: groupWidth});
-      left += groupWidth;
-    });
-    width = Math.max(width, left);
-    top += Math.max(...row.map(size => Math.ceil(size / cols) * MAP_CELL.row + MAP_CELL.journal));
-  }
-  return {origins, width, height: Math.max(460, top)};
-}
-
-// Pick the column counts whose world shape fits the viewport at the largest scale.
-function chooseMapLayout(sizes) {
-  const map = document.getElementById("lab-map");
-  let best = {cols: 1, groupCols: 1, scale: 0};
-  for (let cols = Math.min(2, Math.max(1, ...sizes)); cols <= Math.max(1, ...sizes); cols++) {
-    for (let groupCols = 1; groupCols <= Math.max(1, sizes.length); groupCols++) {
-      const world = layoutMapGroups(sizes, cols, groupCols);
-      const scale = Math.min(map.clientWidth / world.width, map.clientHeight / world.height);
-      if (scale > best.scale) best = {cols, groupCols, scale};
-    }
-  }
-  return best;
-}
-
 // Size the viewport to the window and report what changed since the last render.
 function sizeMapViewport(contentKey) {
   const map = document.getElementById("lab-map");
@@ -1207,7 +1330,7 @@ function sizeMapViewport(contentKey) {
   // Fill the window below the map's top; when stacked panels push the map
   // under the fold (narrow screens), give it most of one screen instead.
   const room = Math.floor(window.innerHeight - top - below - MAP_ZOOM.margin);
-  map.style.height = `${room >= 320 ? room : Math.floor(window.innerHeight * 0.7)}px`;
+  map.style.height = `${Math.max(map.clientWidth < 720 ? 500 : 460, room)}px`;
   const viewKey = `${map.clientWidth}x${map.clientHeight}`;
   const change = {content: contentKey !== mapView.contentKey, view: viewKey !== mapView.viewKey};
   Object.assign(mapView, {contentKey, viewKey});
@@ -1275,7 +1398,9 @@ function initMapPanZoom() {
   });
   map.querySelector(".map-controls").addEventListener("click", (event) => {
     const action = event.target.closest("[data-map-zoom]")?.dataset.mapZoom;
-    if (action === "fit") fitMap(true);
+    if (action === "drift") { networkDrift = !networkDrift; writeStored("efferents-network-drift", networkDrift); renderNetwork(); }
+    else if (action === "fit") fitMap(true);
+    else if (action === "read") fitMap(false);
     else if (action) zoomMapCentered(action === "in" ? MAP_ZOOM.step : 1 / MAP_ZOOM.step);
   });
   window.addEventListener("resize", renderNetwork);

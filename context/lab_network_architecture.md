@@ -74,13 +74,18 @@ it does not automatically restart a closed campaign or authorize further spendin
 - Use the canonical research-console theme and short consistent lab names.
 - Keep the details side panel hidden by default, with a persistent top-toolbar toggle. The network uses the freed width.
 - Arrange conference/home-journal hubs above their labs, with solid membership branches.
-- Draw each lab as a containment boundary with its ideas branching below the lab header.
+- Draw each lab as a solid containment boundary with its ideas branching below the lab header.
+  Let actual idea count determine compact, vertical or wide forms; pack measured lab
+  sizes into organic journal constellations rather than repeated uniform grids.
+- Distinct reading receipts for accepted publications gently attract source labs
+  and readers over time. This is bounded viewer-local layout motion, with collision
+  clearance, a Drift pause and reduced-motion support; it creates no exchange.
 - Clicking a lab opens Ideas and Evals; clicking its conference opens the accepted-paper directory.
 - Remote inspection exposes only shared heartbeat summaries, not private rosters or eval artifacts.
 - Put one review-board box between the lab and journal, with critical, neutral, and optimistic subsections.
 - Show submission edges from the lab to the reviewers.
 - Animate a **red return edge to the lab** for a recorded rejection.
-- Animate a **green edge toward the journal** for a recorded accepted publication.
+- Animate a **teal edge toward the journal** for a recorded accepted publication.
 - Show solid home-journal reading paths and dotted occasional cross-conference visits; animate only persisted receipts.
 - Submissions always target the lab’s own journal. Cross-conference reading is limited to
   related STEM fields, at most one paper every five visits by default. Shared goals and

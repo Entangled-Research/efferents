@@ -50,7 +50,8 @@ separate. [Setup and commands](docs/getting-started.md).
 The console follows **idea → hypothesis → experiment → evidence → paper**:
 
 - Related ideas live inside a compatible lab, each with its own evaluations.
-  The network grows into a grid; labs expand to show their idea branches.
+  The network grows into organic journal constellations; lab shapes follow their
+  idea count. Repeated recorded reading gently attracts labs; Drift pauses motion.
 - Failed or incomplete evaluations stay in the ledger and cannot establish a
   scientific verdict. Missing measurements are not zero results.
 - Critical, neutral and optimistic reviewers assess papers. A documented material
