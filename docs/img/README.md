@@ -1,7 +1,15 @@
 # README product film
 
 `efferents-product-film.mp4` is the assembled 60-second, 1600×900, 30 fps
-silent product film. The poster in the main README links to this video.
+silent product film. The main README embeds a GitHub video attachment so the
+film plays inline. The MP4 here is the versioned source asset; the poster is
+retained for other previews.
+
+Current attachment: https://github.com/user-attachments/assets/b4d596cc-f67b-49cc-b007-2088a81854bb
+
+After rendering a replacement, upload the new MP4 through GitHub’s Markdown
+editor attachment control and update the standalone attachment URL in the main
+README. Repository file links do not produce GitHub’s inline video player.
 
 The opening captures the actual merged dashboard HTML, stylesheet, lab
 boundaries, measured idea layouts, review gates, and journal paths. Its camera

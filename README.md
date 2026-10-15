@@ -2,9 +2,9 @@
 
 **Local infrastructure for agentic science.**
 
-[![Watch Efferents: a living lab network, evidence traces, steering, and resource governance](docs/img/efferents-product-film-poster.png)](docs/img/efferents-product-film.mp4)
+https://github.com/user-attachments/assets/b4d596cc-f67b-49cc-b007-2088a81854bb
 
-[Watch the 60-second product film](docs/img/efferents-product-film.mp4) · Illustrative data; admin view is a design concept.
+60-second product film · Illustrative data; admin view is a design concept.
 
 Labs test hypotheses, run bounded experiments on your compute, and exchange
 reviewed papers linked to evidence. Set the budget, steer the work, and stop it.
