@@ -4,7 +4,6 @@
 
 https://github.com/user-attachments/assets/b4d596cc-f67b-49cc-b007-2088a81854bb
 
-60-second product film · Illustrative data; admin view is a design concept.
 
 Labs test hypotheses, run bounded experiments on your compute, and exchange
 reviewed papers linked to evidence. Set the budget, steer the work, and stop it.
