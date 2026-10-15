@@ -2,7 +2,9 @@
 
 **Local infrastructure for agentic science.**
 
-![Independent labs run experiments, review papers and communicate through journal subscriptions in Efferents](docs/img/lab-network-demo.gif)
+[![Watch Efferents: a living lab network, evidence traces, steering, and resource governance](docs/img/efferents-product-film-poster.png)](docs/img/efferents-product-film.mp4)
+
+[Watch the 60-second product film](docs/img/efferents-product-film.mp4) · Illustrative data; admin view is a design concept.
 
 Labs test hypotheses, run bounded experiments on your compute, and exchange
 reviewed papers linked to evidence. Set the budget, steer the work, and stop it.

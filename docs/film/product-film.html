@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><title>Efferents — research in motion</title>
+<style>html,body{margin:0;background:#f1ede2;width:100%;height:100%;overflow:hidden}canvas{display:block;width:100%;height:100%;object-fit:contain}#transport{position:fixed;bottom:0;height:7px;width:100%;accent-color:#2d5379;opacity:0}#transport:hover{opacity:1}</style>
+<canvas id="film" width="1600" height="900" aria-label="Efferents product concept film. Space pauses; arrow keys seek."></canvas><input id="transport" aria-label="Film time" type="range" min="0" max="65" step="0.01">
+<script>
+const canvas=document.querySelector('canvas'),c=canvas.getContext('2d');
+const C={bg:'#f1ede2',panel:'#faf8f0',ink:'#211d15',muted:'#5d564a',line:'#c9c1ad',soft:'#e1dbc9',blue:'#2d5379',teal:'#33614d',red:'#a8502b'};
+const mono='"SFMono-Regular",Menlo,monospace',sans='-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif';
+const clamp=x=>Math.max(0,Math.min(1,x)),ease=x=>{x=clamp(x);return clamp(x*x*x*(x*(x*6-15)+10))},lerp=(a,b,t)=>a+(b-a)*t;
+function text(s,x,y,size=16,color=C.ink,font=mono,weight=400){c.fillStyle=color;c.font=`${weight} ${size}px ${font}`;c.fillText(s,x,y)}
+function line(x,y,X,Y,color=C.line,w=1){c.strokeStyle=color;c.lineWidth=w;c.beginPath();c.moveTo(x,y);c.lineTo(X,Y);c.stroke()}
+function box(x,y,w,h,fill=C.panel,stroke=C.line){c.fillStyle=fill;c.fillRect(x,y,w,h);c.strokeStyle=stroke;c.lineWidth=1;c.strokeRect(x+.5,y+.5,w-1,h-1)}
+function dot(x,y,r=4,color=C.blue){c.beginPath();c.fillStyle=color;c.arc(x,y,r,0,Math.PI*2);c.fill()}
+function tag(s,x,y,color=C.teal){text('● '+s,x,y,12,color)}
+function label(s,x,y){text(s.toUpperCase(),x,y,11,C.muted)}
+function header(section,t){text('ℯ',44,52,43,C.blue,sans,500);text('efferents',88,45,21,C.blue,mono,600);text('/ '+section,295,43,13,C.muted);text('LOCAL RESEARCH CONSOLE',1158,38,11,C.muted);dot(1500,34,4,C.teal);line(40,72,1560,72,C.ink);text('PRODUCT FILM  /  ILLUSTRATIVE DATA',44,866,10,C.muted);text(t>=48&&t<60?'ADMIN VIEW · DESIGN CONCEPT':'AUTONOMOUS RESEARCH / HUMAN DIRECTION',1120,866,10,C.muted);line(44,889,1556,889,C.line);line(44,889,44+1512*t/65,889,C.blue,3)}
+function title(n,s,sub){label(n,44,110);text(s,44,165,42,C.ink,sans,550);text(sub,45,199,15,C.muted,sans)}
+function panelTitle(s,x,y,w,right=''){box(x,y,w,40);text(s,x+18,y+26,14,C.blue,mono,600);if(right)text(right,x+w-210,y+25,11,C.muted)}
+function cursor(x,y,t,click=false){c.save();c.translate(x,y);c.fillStyle=C.ink;c.strokeStyle=C.panel;c.lineWidth=2;c.beginPath();c.moveTo(0,0);c.lineTo(0,24);c.lineTo(7,18);c.lineTo(13,29);c.lineTo(19,26);c.lineTo(12,15);c.lineTo(23,14);c.closePath();c.fill();c.stroke();if(click){c.strokeStyle=C.blue;c.lineWidth=2;c.beginPath();c.arc(4,6,13+10*(t%1),0,Math.PI*2);c.stroke()}c.restore()}
+const labs=[
+['Numerical methods',440,365,3,'$18.42'],['Error bounds',205,540,2,'$9.10'],['Adaptive quadrature',610,620,4,'$24.60'],
+['Graph algorithms',870,355,3,'$31.20'],['Combinatorics',1065,565,2,'$12.08'],['Spectral methods',1280,370,3,'$22.14'],
+['Orbital dynamics',1270,655,2,'$15.30'],['Conservation laws',860,690,2,'$8.72'],['Mesh refinement',180,720,1,'$6.40']];
+const hubs=[[410,270,'MATHEMATICS & COMPUTATION'],[1090,255,'COMPUTATIONAL SCIENCE']];
+function lab(l,i,t){
+ const [name,x0,y0,n,cost]=l;
+ const born=i===2?ease((t-7.7)/1.8):1,added=i===0?ease((t-8.5)/1.8):0,pruned=i===3?ease((t-10)/1.8):0,paused=i===8?ease((t-11.5)/1.4):0;
+ const x=x0+Math.sin(t*.22+i)*4,y=y0+Math.cos(t*.19+i)*3;
+ const count=n+added-pruned,w=lerp(180,220,ease(count-3)),h=80+count*19;
+ c.save();c.translate(x,y);c.scale(.72+.28*born,.72+.28*born);c.globalAlpha*=born;
+ box(-w/2,-24,w,h,C.panel,i===0?C.blue:C.line);
+ text(name,-w/2+10,-3,11,i===0?C.blue:C.ink,mono,600);
+ tag(paused>.7?'PAUSED · LIMIT':'RUNNING',-w/2+10,14,paused>.7?C.red:C.teal);
+ for(let j=0;j<n+(i===0?1:0);j++){
+  const growth=i===0&&j===n?added:i===3&&j===n-1?1-pruned:1;
+  if(growth<=0)continue;c.save();c.globalAlpha*=growth;
+  const yy=38+j*19;
+  line(-w/2+13,yy-7,-w/2+13+13*growth,yy-7,i===3&&j===n-1&&pruned>0?C.red:C.blue);
+  dot(-w/2+13+13*growth,yy-7,2,i===0&&j===n?C.teal:C.blue);
+  text('Idea '+String.fromCharCode(65+j),-w/2+34,yy-3,9,C.muted);
+  if(paused<.9){const p=(t*.22+j*.21+i*.11)%1;line(20,yy-7,20+35*p,yy-7,C.teal,2)}c.restore();
+ }
+ text(cost+' / $'+(i===8?'6.40':'50'),-w/2+10,h-39,9,C.muted);
+ if(pruned>0){c.save();c.globalAlpha*=pruned;text('CLOSED C · NO GAIN',-w/2+10,h-30,8,C.red);c.restore()}
+ c.restore();
+}
+function fiber(x,y,X,Y,growth=1,color=C.line,width=1){
+ // Cubic paths and a moving endpoint make growth and flow continuous.
+ c.strokeStyle=color;c.lineWidth=width;c.beginPath();
+ for(let j=0;j<=70*growth;j++){const p=j/70,inv=1-p;
+ const px=inv*inv*inv*x+3*inv*inv*p*x+3*inv*p*p*X+p*p*p*X;
+ const py=inv*inv*inv*y+3*inv*inv*p*(y+55)+3*inv*p*p*(Y-55)+p*p*p*Y;
+ j?c.lineTo(px,py):c.moveTo(px,py)}c.stroke();
+}
+function network(t){title('01 / A LIVING RESEARCH NETWORK','Science that keeps moving.','Independent labs. Bounded resources. Evidence that changes what happens next.');
+box(44,226,1512,586);c.save();c.beginPath();c.rect(45,227,1510,584);c.clip();
+// A continuous camera pullback begins inside the first lab.
+const z=lerp(3.65,1,ease((t-1.5)/6));c.translate(800,505);c.scale(z,z);c.translate(-lerp(440,800,ease((t-1.5)/6)),-lerp(410,505,ease((t-1.5)/6)));
+for(let i=0;i<labs.length;i++){
+ const l=labs[i],hub=hubs[i<3||i===8?0:1],birth=i===2?ease((t-7.7)/1.8):1;
+ if(birth===0)continue;
+ const px=hub[0],py=hub[1]+15,X=l[1],Y=l[2]-25;
+ fiber(px,py,X,Y,birth,C.line);
+ // Small review gates sit on each path. Publications pass the gate before the journal.
+ const gx=lerp(px,X,.44),gy=lerp(py,Y,.44);
+ c.save();c.globalAlpha*=birth;box(gx-10,gy-5,20,10,C.panel,C.line);
+ for(let r=0;r<3;r++)dot(gx-5+r*5,gy,1.1,C.blue);c.restore();
+ const phase=(t*.11+i*.17)%1,p=1-phase,inv=1-p;
+ const dx=inv*inv*inv*px+3*inv*inv*p*px+3*inv*p*p*X+p*p*p*X;
+ const dy=inv*inv*inv*py+3*inv*inv*p*(py+55)+3*inv*p*p*(Y-55)+p*p*p*Y;
+ c.save();c.globalAlpha*=birth;dot(dx,dy,2.5,C.teal);c.restore();
+}
+for(const [x,y,s] of hubs){box(x-150,y-21,300,40);text(s,x-136,y+3,11,C.blue,mono,600)}
+labs.forEach((l,i)=>lab(l,i,t));
+if(t>8.5){c.save();c.globalAlpha*=ease((t-8.5)/1.3);tag('+ IDEA D · ADDED TO LAB',334,565,C.teal);c.restore()}
+if(t>11.5){c.save();c.globalAlpha*=ease((t-11.5)/1.3);text('BUDGET EXHAUSTED → PAUSE',77,674,10,C.red);c.restore()}
+c.restore();
+if(t>7.5){c.save();c.globalAlpha*=ease((t-7.5)/1);box(1220,245,315,99);label('RECORDED NETWORK ACTIVITY',1236,268);text(t<9?'New lab → bounded allocation':t<11?'No gain → close idea C':'Cost limit → spending paused',1236,294,12,C.blue);text('Evidence and history retained',1236,320,11,C.muted);c.restore()}
+if(t>13){cursor(lerp(1400,452,ease((t-13)/1.1)),lerp(730,385,ease((t-13)/1.1)),t,t>14.4)}
+}
+const ideas=[['A','Adaptive integration','Testing','Lower error at matched evaluation budgets.','18 runs / 3 hypotheses'],['B','Discontinuity detection','Queued','Can a local test locate sharp changes?','6 runs / 2 hypotheses'],['C','Error certificates','Review','Bound the error before increasing compute.','12 runs / 4 hypotheses'],['D','Oscillatory functions','New','Extend the evaluator to difficult inputs.','0 runs / suite proposed']];
+function ideaScene(t){title('02 / INSIDE A LAB','A lab is a portfolio of questions.','Numerical methods / Ideas / Each idea keeps its own claim, experiments, and eval suite.');
+box(44,232,340,580);label('NUMERICAL METHODS',65,265);text('Find the limits.',65,315,27,C.blue,sans,550);text('Then test them.',65,350,27,C.blue,sans,550);line(65,380,362,380);tag('RUNNING',65,412);label('BUDGET USED',65,455);text('$18.42 / $50.00',65,490,25);line(65,517,360,517,C.line,5);line(65,517,174,517,C.blue,5);label('EVIDENCE RETAINED',65,568);text('36 experiments',65,602,17);text('9 hypotheses',65,636,17);text('2 reviewed papers',65,670,17);label('OWNER CONTROLS',65,747);text('Steer  /  Pause  /  Stop',65,778,13,C.blue);
+ideas.forEach((a,i)=>{let y=232+i*145;box(408,y,1148,130,C.panel,i===0?C.blue:C.line);label('IDEA '+a[0],428,y+29);text(a[1],540,y+34,23,C.blue,sans,550);tag(a[2].toUpperCase(),1350,y+30);text(a[3],540,y+67,16,C.muted,sans);text(a[4],540,y+105,12,C.muted);text('OPEN EVAL SUITE ↗',1335,y+105,11,C.blue)});
+if(t>21)cursor(lerp(1120,1380,ease((t-21)/1.4)),lerp(680,335,ease((t-21)/1.4)),t,t>23)}
+const vals=[.42,.31,.34,.22,.19,.205,.14,.12,.115,.096,.084,.079];
+function chart(x,y,w,h,progress=1,steered=false){label('ABSOLUTE ERROR · 12 ELIGIBLE / 18 RUNS',x,y);const left=x+58,top=y+25,ww=w-80,hh=h-70;for(let i=0;i<5;i++){let Y=top+i*hh/4;line(left,Y,left+ww,Y,C.soft);text((.5-i*.125).toFixed(3),x,Y+5,11,C.muted)}
+const count=vals.length*clamp(progress);c.strokeStyle=C.blue;c.lineWidth=3;c.beginPath();vals.forEach((v,i)=>{if(i>count)return;let X=left+ww*i/11,Y=top+hh*(1-v/.5);i?c.lineTo(X,Y):c.moveTo(X,Y)});c.stroke();vals.forEach((v,i)=>{if(i<=count)dot(left+ww*i/11,top+hh*(1-v/.5),4,C.blue)});text('RUN 001',left,top+hh+28,11,C.muted);text('RUN 018',left+ww-62,top+hh+28,11,C.muted);
+if(steered){line(left+ww*.75,top,left+ww*.75,top+hh,C.red);text('STEERING RECORDED',left+ww*.75-90,top-8,10,C.red)}
+}
+function evalScene(t,steering=false){title(steering?'04 / HUMAN DIRECTION':'03 / THE EVIDENCE TRACE',steering?'Change the question. Keep the evidence.':'Every result has a history.',steering?'Owner instruction → supervisor plan → bounded experiment.':'Numerical methods / Adaptive integration / Eval suite');
+panelTitle('Eval suite · Adaptive integration',44,230,960,'v1 · 18 runs');box(44,270,960,363);chart(67,303,915,290,steering?1:ease((t-24)/6),steering);
+box(44,650,960,162);label('HYPOTHESIS → EXPERIMENT → EVIDENCE',64,678);text('Adaptive subdivision reduces error at equal function evaluations.',64,714,18,C.ink,sans);text('Falsifier: no improvement on the fixed analytic suite across 3 seeds.',64,747,15,C.muted,sans);text('18 runs   /   2 failed hypotheses retained   /   code + config + seed linked',64,787,12,C.blue);
+if(!steering){panelTitle('Run ledger',1024,230,532);box(1024,270,532,542);['RUN     ERROR      RESULT     COST','018     0.079      PASS       $0.42','017     0.084      PASS       $0.38','016     0.096      PASS       $0.41','015     0.115      PASS       $0.37','014     0.120      PASS       $0.40','013     0.140      PASS       $0.39','012     —          FAILED     $0.16'].forEach((s,i)=>{text(s,1045,304+i*40,13,i===0?C.muted:i===7?C.red:C.ink);line(1044,318+i*40,1536,318+i*40,C.soft)});label('NEXT QUESTION',1045,670);text('Does this hold beyond smooth inputs?',1045,705,17,C.blue,sans);box(1045,740,488,48,C.blue,C.blue);text('Steer this lab →',1064,770,14,C.panel);if(t>33)cursor(lerp(1100,1260,ease((t-33)/1.6)),lerp(580,758,ease((t-33)/1.6)),t,t>35)}
+else{panelTitle('Steer lab',1024,230,532,'OWNER / LOCAL');box(1024,270,532,542);label('RESEARCH INSTRUCTION',1045,306);box(1045,325,490,174);let s='Test oscillatory functions next. Compare against the same baseline at equal evaluation budgets. Cap this branch at $5.';let visible=s.slice(0,Math.floor(clamp((t-36.5)/4)*s.length));let words=visible.split(' '),row='',yy=358;for(const w of words){if((row+w).length>40){text(row,1061,yy,17,C.ink,sans);yy+=29;row=''}row+=w+' '}text(row+(t<40.5?'│':''),1061,yy,17,C.ink,sans);label('SCOPE: NEXT EXPERIMENTS',1045,531);box(1045,550,490,45,t>41?C.teal:C.blue);text(t>41?'✓ Instruction recorded · S-004':'Record steering →',1062,579,14,C.panel);if(t<41.5)cursor(1370,571,t,t>40.5);if(t>42){label('SUPERVISOR PLAN',1045,641);text('01  Add oscillatory benchmark cases',1045,678,14,C.blue);text('02  Keep v1 results immutable',1045,713,14,C.blue);text('03  Queue suite v2 · budget ≤ $5',1045,748,14,C.blue);tag('QUEUED · NO NEW RESULTS YET',1045,790)}}
+}
+const rows=[['Numerical methods','$18.42','$50.00','36','2 / 1','2','RUNNING'],['Graph algorithms','$31.20','$50.00','48','3 / 2','4','RUNNING'],['Adaptive quadrature','$24.60','$50.00','31','1 / 2','1','RUNNING'],['Spectral methods','$22.14','$50.00','29','2 / 1','2','RUNNING'],['Orbital dynamics','$15.30','$50.00','24','1 / 1','1','RUNNING'],['Combinatorics','$12.08','$50.00','22','1 / 1','1','RUNNING'],['Error bounds','$9.10','$50.00','18','0 / 1','0','RUNNING'],['Conservation laws','$8.72','$50.00','17','1 / 0','1','RUNNING'],['Mesh refinement','$6.40','$6.40','11','0 / 2','0','PAUSED']];
+function admin(t){title('05 / RESOURCE GOVERNANCE','Fund the questions worth pursuing.','Cost, scientific output, and the next spending decision — in one place.');
+const metrics=[['SPEND / TOTAL LIMIT','$147.96 / $406.40'],['EXPERIMENTS','236'],['ACCEPTED / REJECTED','11 / 11'],['INDEPENDENT REPRODUCTIONS','12']];metrics.forEach((a,i)=>{let x=44+i*382;box(x,230,366,112);label(a[0],x+18,258);text(a[1],x+18,311,i===0?29:36,C.blue)});
+box(44,363,1512,449);const xs=[62,426,583,758,942,1143,1372];['LAB','SPENT','LIMIT','RUNS','PAPERS A / R','REPRODUCED','STATE'].forEach((s,i)=>label(s,xs[i],392));rows.forEach((r,i)=>{let y=435+i*32;if(i===0){c.fillStyle='#e2e9ef';c.fillRect(45,y-25,1510,39)}r.forEach((s,j)=>text(s,xs[j],y,j===0?14:13,i===8?C.red:j===0?C.blue:C.ink));line(60,y+13,1540,y+13,C.soft)});
+if(t>52){box(61,717,1477,77,C.panel,C.blue);label('NEXT COMMITMENT / NUMERICAL METHODS',80,739);text('Oscillatory suite · maximum $5 · steering S-004',80,772,19,C.blue,sans,550);text('APPROVE BUDGET / PAUSE / OPEN EVIDENCE ↗',1130,768,11,C.blue)}
+}
+function end(t){text('ℯ',76,248,160,C.blue,sans,500);text('efferents',78,342,73,C.blue,mono,500);text('Research that runs.',80,463,61,C.ink,sans,550);text('Direction that stays yours.',80,543,61,C.ink,sans,550);line(82,596,1518,596,C.blue);text('SET THE BUDGET.  STEER THE WORK.  FOLLOW THE EVIDENCE.',82,643,19,C.blue);text('github.com/Entangled-Research/efferents',82,744,18,C.muted);text('Local infrastructure for agentic science.',82,785,18,C.muted,sans)}
+window.renderFrame=function(t){c.globalAlpha=1;c.fillStyle=C.bg;c.fillRect(0,0,1600,900);header(t<15?'Network':t<24?'Numerical methods / Ideas':t<36?'Adaptive integration / Eval suite':t<48?'Numerical methods / Steer':t<60?'Admin / Resources':'Research in motion',t);if(t<15)network(t);else if(t<16.4){const q=ease((t-15)/1.4);c.save();c.globalAlpha=1-ease(q*2);network(14.99);c.restore();c.save();c.globalAlpha=ease((q-.5)*2);ideaScene(t);c.restore();c.save();c.globalAlpha=Math.sin(q*Math.PI);box(lerp(334,44,q),lerp(340,232,q),lerp(220,340,q),lerp(156,580,q),C.panel,C.blue);text('Numerical methods',lerp(345,65,q),lerp(362,265,q),lerp(11,15,q),C.blue,mono,600);c.restore()}else if(t<24)ideaScene(t);else if(t<36)evalScene(t);else if(t<48)evalScene(t,true);else if(t<60)admin(t);else end(t);document.querySelector('#transport').value=t;};
+let playing=true,start=performance.now(),offset=0;function tick(now){if(playing){let t=(now-start)/1000+offset;if(t>65){t=65;playing=false}window.renderFrame(t)}requestAnimationFrame(tick)}
+if(!new URLSearchParams(location.search).has('capture'))requestAnimationFrame(tick);else renderFrame(0);
+document.onkeydown=e=>{if(e.code==='Space'){e.preventDefault();if(playing){offset=Math.min(65,(performance.now()-start)/1000+offset);playing=false}else{if(offset>=65)offset=0;start=performance.now();playing=true}}if(e.code==='ArrowRight'||e.code==='ArrowLeft'){offset=clamp(((playing?(performance.now()-start)/1000:0)+offset+(e.code==='ArrowRight'?5:-5))/65)*65;start=performance.now();renderFrame(offset)}};
+document.querySelector('#transport').oninput=e=>{offset=+e.target.value;start=performance.now();renderFrame(offset)};
+</script></html>
