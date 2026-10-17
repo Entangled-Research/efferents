@@ -1,46 +1,62 @@
 """Shared journal routing vocabulary; routing is not publication or acceptance."""
 
-def journal_for_domain(domain: str) -> str:
-    value = domain.casefold().replace("_", "-")
-    if any(tag in value for tag in ("chemistry", "chemical", "reaction-mechanism", "cheminformatics")):
-        return "Chemistry"
-    if value == "numerical-analysis":
-        return "Journal of Numerical Analysis"
-    if value == "ml" or any(tag in value for tag in ("machine-learning", "active-learning", "artificial-intelligence")):
-        return "ML & Autonomous Systems"
-    if any(tag in value for tag in ("vehicle", "traffic", "simulation", "routing", "transport")):
-        return "Simulation & Autonomous Systems"
-    if any(tag in value for tag in ("physics", "orbit", "mechanics")):
-        return "Physics & Dynamics"
-    if any(tag in value for tag in ("math", "graph", "numerical", "algorithm", "optimisation", "optimization")):
-        return "Mathematics & Computation"
-    return domain.replace("-", " ").strip().title() or "General Research"
-
+# Ordered rules: the first matching journal wins. Keep short aliases exact so
+# that, for example, "html" does not match "ml".
+JOURNAL_TAGS = {
+    "Chemistry": ("chemistry", "chemical", "reaction-mechanism", "cheminformatics"),
+    "Journal of Numerical Analysis": (),
+    "ML & Autonomous Systems": ("machine-learning", "active-learning", "artificial-intelligence"),
+    "Simulation & Autonomous Systems": ("vehicle", "traffic", "simulation", "routing", "transport"),
+    "Physics & Dynamics": ("physics", "orbit", "mechanics"),
+    "Mathematics & Computation": ("math", "graph", "numerical", "algorithm", "optimisation", "optimization"),
+}
+JOURNAL_EXACT_TAGS = {
+    "Journal of Numerical Analysis": ("numerical-analysis",),
+    "ML & Autonomous Systems": ("ml",),
+}
+JOURNAL_FIELDS = {
+    "ML & Autonomous Systems": "computing",
+    "Simulation & Autonomous Systems": "engineering",
+    "Physics & Dynamics": "physics",
+    "Mathematics & Computation": "mathematics",
+    "Journal of Numerical Analysis": "mathematics",
+}
+FIELD_TAGS = {
+    "biology": {"biology", "biological", "ecology", "genetics", "neuroscience", "bioinformatics"},
+    "chemistry": {"chemistry", "chemical", "materials"},
+    "earth": {"earth", "climate", "geology", "geoscience", "environmental"},
+    "computing": {"computing", "computer", "robotics"},
+    "engineering": {"engineering", "electrical", "energy"},
+}
+RELATED_FIELDS = {
+    frozenset(pair) for pair in (
+        ("computing", "engineering"), ("computing", "biology"),
+        ("computing", "physics"), ("physics", "engineering"),
+        ("physics", "chemistry"), ("physics", "earth"),
+        ("chemistry", "biology"), ("chemistry", "earth"),
+        ("chemistry", "engineering"), ("biology", "earth"),
+    )
+}
 
 # Shared by the daemon and the standalone event gateway. Unknown domains stay
 # in their own journal until an explicit disciplinary relationship is defined.
 INTERDISCIPLINARY_EVERY = 5
 
 
+def journal_for_domain(domain: str) -> str:
+    value = domain.casefold().replace("_", "-")
+    for journal, tags in JOURNAL_TAGS.items():
+        if value in JOURNAL_EXACT_TAGS.get(journal, ()) or any(tag in value for tag in tags):
+            return journal
+    return domain.replace("-", " ").strip().title() or "General Research"
+
+
 def stem_field(domain: str) -> str | None:
     journal = journal_for_domain(domain)
-    known = {
-        "ML & Autonomous Systems": "computing",
-        "Simulation & Autonomous Systems": "engineering",
-        "Physics & Dynamics": "physics",
-        "Mathematics & Computation": "mathematics",
-        "Journal of Numerical Analysis": "mathematics",
-    }
-    if journal in known:
-        return known[journal]
+    if journal in JOURNAL_FIELDS:
+        return JOURNAL_FIELDS[journal]
     tokens = set(domain.casefold().replace("_", "-").split("-"))
-    for field, tags in {
-        "biology": {"biology", "biological", "ecology", "genetics", "neuroscience", "bioinformatics"},
-        "chemistry": {"chemistry", "chemical", "materials"},
-        "earth": {"earth", "climate", "geology", "geoscience", "environmental"},
-        "computing": {"computing", "computer", "robotics"},
-        "engineering": {"engineering", "electrical", "energy"},
-    }.items():
+    for field, tags in FIELD_TAGS.items():
         if tokens & tags:
             return field
     return None
@@ -53,13 +69,4 @@ def related_stem_domains(source: str, target: str) -> bool:
         return False
     if left == right or "mathematics" in {left, right}:
         return True
-    neighbors = {
-        frozenset(pair) for pair in (
-            ("computing", "engineering"), ("computing", "biology"),
-            ("computing", "physics"), ("physics", "engineering"),
-            ("physics", "chemistry"), ("physics", "earth"),
-            ("chemistry", "biology"), ("chemistry", "earth"),
-            ("chemistry", "engineering"), ("biology", "earth"),
-        )
-    }
-    return frozenset((left, right)) in neighbors
+    return frozenset((left, right)) in RELATED_FIELDS
