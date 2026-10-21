@@ -232,7 +232,7 @@ def _run_and_capture(
     )
 
 
-def _execute_run(config_path: Path, *, smoke: bool = False) -> RunResult:
+def _execute_run(config_path: Path, *, smoke: bool = False, source_dir: Path | None = None) -> RunResult:
     """Render the lab's run_command and execute it, parsing stdout JSON."""
     cfg = _lab.get_config()
     template = (
@@ -240,13 +240,15 @@ def _execute_run(config_path: Path, *, smoke: bool = False) -> RunResult:
         if smoke and cfg.executor.smoke_command
         else cfg.executor.run_command
     )
+    if source_dir is not None:
+        template = template.replace(str(cfg.source.dir.resolve()), str(source_dir))
     cmd = template.format(config_path=str(config_path))
     return _run_and_capture(
         cmd,
         timeout_s=(
             cfg.executor.smoke_timeout_s if smoke else cfg.executor.run_timeout_s
         ),
-        cwd=str(cfg.source.dir),
+        cwd=str(source_dir or cfg.source.dir),
         env_passthrough=cfg.executor.env_passthrough,
     )
 

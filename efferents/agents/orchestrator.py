@@ -37,6 +37,8 @@ from efferents.agents.state import (
     load_state,
     notebook_append,
     queue_pop,
+    queue_pop_batch,
+    read_jsonl,
     queue_ack,
     queue_requeue_inflight,
     queue_push,
@@ -159,7 +161,16 @@ class Orchestrator:
         researcher_min_interval_s: float = 0.0,
         backoff_cap_s: float = BACKOFF_CAP_S,
         submission_dir: str | Path | None = None,
+        max_parallel_ideas: int | None = None,
     ):
+        self._auto_parallel_ideas = max_parallel_ideas is None and "EFFERENTS_MAX_PARALLEL_IDEAS" not in os.environ
+        if max_parallel_ideas is None:
+            safe = getattr(_lab.get_config().executor, "isolated_parallel_safe", False)
+            default = "2" if len(_lab.student_ids()) > 1 and safe else "1"
+            max_parallel_ideas = int(os.environ.get("EFFERENTS_MAX_PARALLEL_IDEAS", default))
+        if not 1 <= max_parallel_ideas <= 16:
+            raise ValueError("max_parallel_ideas must be between 1 and 16")
+        self.max_parallel_ideas = max_parallel_ideas
         self.paths: LabPaths = lab_paths(lab_dir)
         # The submission directory owns paper/, popper-corpus/ and context/;
         # lab/ (``lab_dir``) is the daemon's own state. Callers that only
@@ -169,6 +180,8 @@ class Orchestrator:
             else self.paths.root.resolve().parent
         )
         init_lab(self.paths)
+        if self.max_parallel_ideas == 1 and len(_lab.student_ids()) > 1:
+            notebook_append(self.paths.notebook, "## Execution concurrency: 1\n\nCustom labs opt into isolated concurrent runs with executor.isolated_parallel_safe: true after verifying relative output paths.\n")
         apply_campaigns_migration(self.paths.runs_db)
         self.context_dir = Path(context_dir)
         # ``total_cap_usd`` is a lifetime cap on the ledger. The CLI passes
@@ -235,7 +248,7 @@ class Orchestrator:
         return ids[idx]
 
     def _refill_queue(self) -> int:
-        if queue_size(self.paths.queue) > 0:
+        if self.max_parallel_ideas == 1 and queue_size(self.paths.queue) > 0:
             return 0
         if self.dry_run:
             # Hardcoded probe proposal so the loop is exercisable without API calls.
@@ -269,6 +282,11 @@ class Orchestrator:
         # _lab.STUDENTS). With one student configured, picks 'primary' every
         # time and behavior matches single-student.
         student_id = self._next_student_id()
+        if self.max_parallel_ideas > 1 and any(
+            (p.get("student_id") or _lab.DEFAULT_STUDENT_ID) == student_id
+            for p in read_jsonl(self.paths.queue)
+        ):
+            return 0
         sstate = StudentStateView(state, student_id)
         if self.researcher_min_interval_s > 0:
             since_s = _hours_since(sstate.get("last_researcher_ts")) * 3600.0
@@ -607,6 +625,9 @@ class Orchestrator:
             return {"event": "owner_paused", "added": 0}
         from efferents.agents.routing import refresh_students
         refresh_students(self.paths.root)
+        if self._auto_parallel_ideas:
+            safe = getattr(_lab.get_config().executor, "isolated_parallel_safe", False)
+            self.max_parallel_ideas = 2 if safe and len(_lab.student_ids()) > 1 else 1
         from efferents.lifecycle import inactive
         if inactive(self.paths.root) or not any(
             not inactive(self.paths.root, sid) for sid in _lab.student_ids()
@@ -625,8 +646,14 @@ class Orchestrator:
                 f"{len(attendance['errors'])} peer errors. "
                 "See lab/conference/attendance.jsonl and inbox.jsonl.\n",
             )
-        n_added = self._refill_queue()
-        proposal = queue_pop(self.paths.queue)
+        n_added = sum(self._refill_queue() for _ in range(
+            len(_lab.student_ids()) if self.max_parallel_ideas > 1 else 1
+        ))
+        proposals = (queue_pop_batch(self.paths.queue, self.max_parallel_ideas)
+                     if self.max_parallel_ideas > 1 else [])
+        proposal = proposals[0] if proposals else (
+            queue_pop(self.paths.queue) if self.max_parallel_ideas == 1 else None
+        )
         if proposal is None:
             # No config proposal to execute. Still fire digest + coder cadence;
             # if the Researcher just produced architectural proposals, the Coder
@@ -644,16 +671,38 @@ class Orchestrator:
             # spin-pump on saturation-driven architectural-only rounds.
             self._interruptible_sleep(self.empty_queue_sleep_s)
             return {"event": "no_proposal", "added": n_added}
+        _steer.apply_pending(self)
+        if _steer.owner_paused(self.paths.root):
+            queue_requeue_inflight(self.paths.queue)
+            return {"event": "owner_paused", "added": n_added}
         try:
-            outcome = executor.execute(paths=self.paths, proposal=proposal)
+            if self.max_parallel_ideas > 1:
+                from concurrent.futures import ThreadPoolExecutor
+                with ThreadPoolExecutor(max_workers=self.max_parallel_ideas) as pool:
+                    futures = [pool.submit(executor.execute, paths=self.paths, proposal=p, isolated=True) for p in proposals]
+                    outcomes = []
+                    for future in futures:
+                        try:
+                            outcomes.append(future.result())
+                        except Exception as error:
+                            notebook_append(self.paths.notebook, f"## {now_iso()} — parallel execution error\n\n{type(error).__name__}: {error}\n")
+                            outcomes.append({"ok": False, "deferred": True, "error": str(error)})
+                outcome = outcomes[0]
+            else:
+                outcomes = [executor.execute(paths=self.paths, proposal=proposal)]
+                proposals = [proposal]
+                outcome = outcomes[0]
         except Exception:
             queue_requeue_inflight(self.paths.queue)
             raise
-        else:
-            queue_ack(self.paths.queue)
-        if outcome.get("ok"):
-            from efferents.journal.provenance import record_execution
-            record_execution(self.paths.root, proposal, outcome)
+        from efferents.journal.provenance import record_execution
+        for completed, result in zip(proposals, outcomes):
+            if result.get("deferred"):
+                queue_push(self.paths.queue, completed)
+            if result.get("ok"):
+                record_execution(self.paths.root, completed, result)
+        queue_ack(self.paths.queue)
+        if any(result.get("ok") for result in outcomes):
             state = load_state(self.paths.state)
             state["last_success_ts"] = now_iso()
             save_state(self.paths.state, state)
@@ -662,7 +711,7 @@ class Orchestrator:
         self._maybe_write()
         if self.step_pause_s > 0:
             self._interruptible_sleep(self.step_pause_s)
-        return {"event": "ran", "added": n_added, "outcome_ok": outcome.get("ok"), "name": outcome.get("name")}
+        return {"event": "ran", "added": n_added, "outcome_ok": all(result.get("ok") for result in outcomes), "name": outcome.get("name"), "outcomes": outcomes}
 
     def _record_step_failure(self, e: Exception) -> None:
         import traceback as _tb

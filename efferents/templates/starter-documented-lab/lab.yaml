@@ -6,6 +6,7 @@ source:
   dir: ./src
   allowed_patterns: ["**/*.py"]
 executor:
+  isolated_parallel_safe: true
   run_command: "python3 run_experiment.py --config {config_path}"
   config_template: ../configs/default.yaml
   run_timeout_s: 25

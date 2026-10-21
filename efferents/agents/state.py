@@ -17,6 +17,15 @@ import json
 import os
 import re
 import sqlite3
+import tempfile
+import threading
+
+try:
+    import fcntl
+except ImportError:  # Windows; worker threads still share this lock.
+    fcntl = None
+
+_APPEND_LOCK = threading.RLock()
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -130,14 +139,24 @@ def notebook_tail(path: Path, max_chars: int = 8000) -> str:
     return "...[truncated head]...\n" + text[-max_chars:]
 
 
+def _append_text(path: Path, text: str) -> None:
+    with _APPEND_LOCK, path.open("a") as stream:
+        if fcntl is not None:
+            fcntl.flock(stream, fcntl.LOCK_EX)
+        try:
+            stream.write(text)
+            stream.flush()
+        finally:
+            if fcntl is not None:
+                fcntl.flock(stream, fcntl.LOCK_UN)
+
+
 def notebook_append(path: Path, entry: str) -> None:
-    with path.open("a") as f:
-        f.write(entry.rstrip() + "\n\n")
+    _append_text(path, entry.rstrip() + "\n\n")
 
 
 def queue_push(path: Path, proposal: dict[str, Any]) -> None:
-    with path.open("a") as f:
-        f.write(json.dumps(proposal) + "\n")
+    _append_text(path, json.dumps(proposal) + "\n")
 
 
 def queue_pop(path: Path) -> dict[str, Any] | None:
@@ -157,6 +176,31 @@ def queue_pop(path: Path) -> dict[str, Any] | None:
     _atomic_write_text(inflight, json.dumps(proposal) + "\n")
     _atomic_write_text(path, "\n".join(rest) + ("\n" if rest else ""))
     return proposal
+
+
+def queue_pop_batch(path: Path, limit: int) -> list[dict[str, Any]]:
+    """Claim one proposal per idea; serial controller owns queue mutation."""
+    if not path.exists():
+        return []
+    selected, remaining, seen = [], [], set()
+    for line in path.read_text().splitlines():
+        if not line.strip():
+            continue
+        proposal = json.loads(line)
+        idea = proposal.get("student_id") or "primary"
+        if len(selected) < limit and idea not in seen:
+            selected.append(proposal)
+            seen.add(idea)
+        else:
+            remaining.append(line)
+    if selected:
+        _atomic_write_text(path.with_name("inflight.json"),
+                           "".join(json.dumps(p) + "\n" for p in selected))
+        # Rotate ideas that just ran behind waiting ideas, preserving each
+        # idea's own proposal order.
+        remaining.sort(key=lambda line: (json.loads(line).get("student_id") or "primary") in seen)
+        _atomic_write_text(path, "".join(line + "\n" for line in remaining))
+    return selected
 
 
 def queue_ack(path: Path) -> None:
@@ -456,9 +500,14 @@ def _refresh_mirrors(lab_root: Path, state: dict[str, Any]) -> None:
 
 def _atomic_write_text(path: Path, text: str) -> None:
     """Replace a small state file atomically on the same filesystem."""
-    tmp = path.with_name(path.name + ".tmp")
-    tmp.write_text(text)
-    os.replace(tmp, path)
+    fd, name = tempfile.mkstemp(prefix=path.name + ".", dir=path.parent)
+    tmp = Path(name)
+    try:
+        with os.fdopen(fd, "w") as stream:
+            stream.write(text)
+        os.replace(tmp, path)
+    finally:
+        tmp.unlink(missing_ok=True)
 
 
 class StudentStateView:
@@ -507,14 +556,20 @@ class StudentStateView:
 
 
 def append_jsonl(path: Path, record: dict[str, Any]) -> None:
-    with path.open("a") as f:
-        f.write(json.dumps(record) + "\n")
+    _append_text(path, json.dumps(record) + "\n")
 
 
 def read_jsonl(path: Path) -> list[dict[str, Any]]:
     if not path.exists():
         return []
-    return [json.loads(ln) for ln in path.read_text().splitlines() if ln.strip()]
+    with _APPEND_LOCK, path.open() as stream:
+        if fcntl is not None:
+            fcntl.flock(stream, fcntl.LOCK_SH)
+        try:
+            return [json.loads(line) for line in stream if line.strip()]
+        finally:
+            if fcntl is not None:
+                fcntl.flock(stream, fcntl.LOCK_UN)
 
 
 def retry_hint(parse_error: str, must_contain: str | None) -> str:

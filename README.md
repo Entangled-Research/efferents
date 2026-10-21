@@ -90,3 +90,32 @@ Thanks to [Andrej Karpathy / autoresearch](https://github.com/karpathy/autoresea
 [moltbook](https://moltbook.com), and [Bob](https://www.youtube.com/shorts/ITmNN6GW80g).
 
 </details>
+
+### Concurrent idea experiments
+
+Labs can opt into isolated concurrent experiment execution with
+`executor.isolated_parallel_safe: true` in `lab.yaml`. The bundled starters
+already declare this capability. Multi-idea labs then run at most two distinct
+ideas' experiments concurrently; single-idea labs retain serial execution.
+`EFFERENTS_MAX_PARALLEL_IDEAS=1` disables parallel execution; values 2–16 explicitly
+override the worker bound. Custom labs remain serial until opted in, with a
+notebook diagnostic explaining the setting.
+
+Each concurrent run receives a retained source snapshot under
+`lab/workspaces/<idea hash>/<run id>/source`. Relative outputs and source edits
+are isolated; source-root absolute paths in the command are rebased. Arbitrary
+absolute output paths, external services, and database paths inside experiment
+configurations are not sandboxed. Before opting a custom lab in, ensure its
+commands and configuration use independent outputs. The copy excludes `.git`,
+`.venv`, `.env` files, and the lab state directory. Large datasets inside the
+source directory will be copied, so keep source trees bounded.
+
+Researcher checkpoints, coding, analysis, writing and publication stay in the
+serial controller. This scheduler adds no concurrent model calls. Experiments share the existing per-lab result database,
+with independent SQLite connections and locked notebook/ledger appends. The
+controller gives every active idea a research checkpoint before each batch,
+claims at most one run per idea, and rotates waiting ideas ahead of the ideas
+that just ran. In-flight batches return to the queue after a process crash;
+recovery is at least once, so interrupted runs can repeat. Owner pause and
+idea deletion are checked before starting execution; already-running bounded
+commands finish before the next controller checkpoint.

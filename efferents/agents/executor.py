@@ -109,6 +109,7 @@ def execute(
     paths: LabPaths,
     proposal: dict[str, Any],
     base_config: dict[str, Any] | None = None,
+    isolated: bool = False,
 ) -> dict[str, Any]:
     """Run one proposal end-to-end. Returns {ok, name, rows | error}."""
     name = proposal.get("name", "unnamed")
@@ -144,6 +145,10 @@ def execute(
             "duration_seconds": 0.0,
         }
 
+    from efferents.steer import owner_paused, pending_steering
+    if owner_paused(paths.root) or any(r.get("action") == "pause" for r in pending_steering(paths.root)):
+        return {"ok": False, "deferred": True, "name": name, "error": "Owner paused execution", "duration_seconds": 0.0}
+
     cfg = _lab.get_config()
     overrides = dict(proposal.get("config_overrides", {}) or {})
     if proposal.get("campaign_id"):
@@ -169,11 +174,24 @@ def execute(
 
     started = now_iso()
     t0 = time.monotonic()
+    source_dir = None
+    if isolated:
+        from efferents.agents.workspaces import prepare_run_workspace
+        source_dir = prepare_run_workspace(paths.root, cfg.source.dir, proposal, run_id)
     result = _execute_run(
         config_path,
         smoke=bool(proposal.get("use_smoke_command")),
+        **({"source_dir": source_dir} if source_dir is not None else {}),
     )
     duration = time.monotonic() - t0
+    if source_dir is not None:
+        collections = [result.artifacts] + [o.get("artifacts", []) for o in result.observations if isinstance(o, dict)]
+        for artifacts in collections:
+            for artifact in artifacts:
+                if isinstance(artifact, dict) and isinstance(artifact.get("path"), str):
+                    raw = Path(artifact["path"])
+                    if not raw.is_absolute():
+                        artifact["path"] = str(source_dir / raw)
 
     logs_dir = paths.root / "logs"
     logs_dir.mkdir(exist_ok=True)

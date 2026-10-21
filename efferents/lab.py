@@ -150,6 +150,7 @@ class Executor:
     run_timeout_s: int = 7200
     smoke_timeout_s: int = 300
     env_passthrough: tuple[str, ...] = ()
+    isolated_parallel_safe: bool = False
 
 
 @dataclass(frozen=True)
@@ -803,6 +804,7 @@ def _build_labconfig(
             run_timeout_s=run_timeout_s,
             smoke_timeout_s=smoke_timeout_s,
             env_passthrough=env_passthrough,
+            isolated_parallel_safe=exe.get("isolated_parallel_safe") is True,
         ),
         metrics=Metrics(
             headline=Headline(
