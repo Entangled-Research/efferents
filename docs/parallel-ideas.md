@@ -38,3 +38,25 @@ an operating-system sandbox: a custom command that writes absolute paths needs
 its own safety review before enabling concurrent execution. Pauses and deletion
 are checked before work is claimed; already-running local subprocesses cannot
 be forcibly stopped by the hub.
+
+For a participant lab with a reviewed run command, opt in under `executor` in
+`lab.yaml`:
+
+```yaml
+executor:
+  isolated_parallel_safe: true
+```
+
+The run command should use `{config_path}` for the generated config and keep
+source and output paths inside the supplied source workspace. Do not opt in if
+the command writes to fixed absolute paths, shares mutable process-wide files,
+or depends on concurrent runs editing the original checkout. With multiple
+ideas, the default is two workers; `EFFERENTS_MAX_PARALLEL_IDEAS=1` forces
+serial execution, and values up to 16 set a higher local limit after resource
+review. Single-idea labs use one worker.
+
+The hub's authenticated connection configuration serves the tested participant
+wheel. Updating the hub changes the wheel offered to new connections; existing
+participant installations need to stop their local daemon, reinstall that
+SHA-pinned wheel, and restart in the same submission folder. Their state,
+queues, evidence, and billing history stay in place.
