@@ -1141,6 +1141,9 @@ def propose(
         tried=_format_tried_configs(_tried_configs(rows, base_config)),
         blocked=_format_open_blocks(open_blocks(paths.root)),
     )
+    from efferents.agents.context_queue import checkpoint
+    queued_context, _received_context_ids = checkpoint(paths.root, student_id)
+    dynamic_block += queued_context
     kb_index_block = _kb_block(kb_index)
     from efferents.agents import conference
     dynamic_block += conference.prompt_context(paths.root, _lab.get_config())

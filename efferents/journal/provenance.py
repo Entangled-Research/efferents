@@ -53,6 +53,8 @@ def record_execution(lab_root: Path, proposal: dict, outcome: dict) -> int:
     """
     if not outcome.get("ok"):
         return 0
+    from efferents.agents.context_queue import record_uses
+    context_uses = record_uses(lab_root, proposal, outcome)
     from efferents.agents.conference import _append, _locked, _rows
     from efferents.agents.state import notebook_append
     publications = received_publications(lab_root)
@@ -111,7 +113,7 @@ def record_execution(lab_root: Path, proposal: dict, outcome: dict) -> int:
                 f"replication: {row['reproduction_status']}.\n\n{row['why']}\n"))
             seen.add(identifier)
             count += 1
-    return count
+    return count + context_uses
 
 
 def campaign_citations(lab_root: Path, campaign_id: str) -> list[dict]:
