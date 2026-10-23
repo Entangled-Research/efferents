@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from efferents.agents.budget import BudgetTracker, CallUsage, billing_model
+from efferents.agents.budget import BudgetTracker, CallUsage, billing_model, model_for
 
 
 def _skill_md() -> str:
@@ -223,7 +223,7 @@ def run_gate(
     corpus_root: Path,
     client: Any,
     budget: BudgetTracker | None = None,
-    model: str = "claude-sonnet-4-6",
+    model: str | None = None,
     max_tokens: int = 4096,
     charter_dir: str | Path | None = None,
     prompted_by: str = "unrecorded",
@@ -236,6 +236,10 @@ def run_gate(
     (``<charter_dir>/popper.md``) so the design decision is tracked for
     future students and supervisors.
     """
+    from efferents.agents.model_client import configured_model, default_text_output_tokens
+
+    model = model or model_for("supervisor") or configured_model()
+    max_tokens = default_text_output_tokens(model, ordinary=max_tokens)
     out_dir = corpus_root / slug
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / "hypothesis.md"

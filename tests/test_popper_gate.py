@@ -188,3 +188,13 @@ def test_internal_validator_accepts_title_case_section_headings(tmp_path):
     from efferents.agents.popper_gate import validate_hypothesis_text
     text=(FIXTURES / "valid_hypothesis.md").read_text().replace("## Operational restatement", "## Operational Restatement").replace("## Test design", "## Test Design")
     assert validate_hypothesis_text(text,tmp_path)[0]
+
+
+def test_refinement_uses_configured_supervisor_instead_of_legacy_provider(tmp_path, monkeypatch, fake_anthropic_factory):
+    monkeypatch.setenv('EFFERENTS_MODEL', 'openai/gpt-6.1-sol')
+    monkeypatch.setenv('EFFERENTS_MODEL_SUPERVISOR', 'openai/gpt-6.1-sol')
+    client = fake_anthropic_factory([(FIXTURES / 'valid_hypothesis.md').read_text()])
+    result = run_gate(draft_claim='bounded comparison', slug='aug-depth-three', corpus_root=tmp_path, client=client)
+    assert result.ok
+    assert client.calls[0]['model'] == 'openai/gpt-6.1-sol'
+    assert client.calls[0]['max_tokens'] >= 8192
