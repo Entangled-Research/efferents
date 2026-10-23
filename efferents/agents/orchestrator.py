@@ -166,7 +166,7 @@ class Orchestrator:
         self._auto_parallel_ideas = max_parallel_ideas is None and "EFFERENTS_MAX_PARALLEL_IDEAS" not in os.environ
         if max_parallel_ideas is None:
             safe = getattr(_lab.get_config().executor, "isolated_parallel_safe", False)
-            default = "2" if len(_lab.student_ids()) > 1 and safe else "1"
+            default = "10" if len(_lab.student_ids()) > 1 and safe else "1"
             max_parallel_ideas = int(os.environ.get("EFFERENTS_MAX_PARALLEL_IDEAS", default))
         if not 1 <= max_parallel_ideas <= 16:
             raise ValueError("max_parallel_ideas must be between 1 and 16")
@@ -627,7 +627,7 @@ class Orchestrator:
         refresh_students(self.paths.root)
         if self._auto_parallel_ideas:
             safe = getattr(_lab.get_config().executor, "isolated_parallel_safe", False)
-            self.max_parallel_ideas = 2 if safe and len(_lab.student_ids()) > 1 else 1
+            self.max_parallel_ideas = 10 if safe and len(_lab.student_ids()) > 1 else 1
         from efferents.lifecycle import inactive
         if inactive(self.paths.root) or not any(
             not inactive(self.paths.root, sid) for sid in _lab.student_ids()

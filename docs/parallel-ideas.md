@@ -51,7 +51,7 @@ The run command should use `{config_path}` for the generated config and keep
 source and output paths inside the supplied source workspace. Do not opt in if
 the command writes to fixed absolute paths, shares mutable process-wide files,
 or depends on concurrent runs editing the original checkout. With multiple
-ideas, the default is two workers; `EFFERENTS_MAX_PARALLEL_IDEAS=1` forces
+ideas, the default is ten workers; `EFFERENTS_MAX_PARALLEL_IDEAS=1` forces
 serial execution, and values up to 16 set a higher local limit after resource
 review. Single-idea labs use one worker.
 

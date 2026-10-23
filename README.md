@@ -95,7 +95,7 @@ Thanks to [Andrej Karpathy / autoresearch](https://github.com/karpathy/autoresea
 
 Labs can opt into isolated concurrent experiment execution with
 `executor.isolated_parallel_safe: true` in `lab.yaml`. The bundled starters
-already declare this capability. Multi-idea labs then run at most two distinct
+already declare this capability. Multi-idea labs then run at most ten distinct
 ideas' experiments concurrently; single-idea labs retain serial execution.
 `EFFERENTS_MAX_PARALLEL_IDEAS=1` disables parallel execution; values 2–16 explicitly
 override the worker bound. Custom labs remain serial until opted in, with a

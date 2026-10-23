@@ -132,7 +132,10 @@ def test_parallel_default_requires_capability_and_multiple_ideas(tmp_path, monke
     assert custom.max_parallel_ideas == 1
     monkeypatch.setattr(lab, '_active', replace(cfg, executor=replace(cfg.executor, isolated_parallel_safe=True)))
     starter = orchestrator.Orchestrator(lab_dir=tmp_path / 'starter', dry_run=True)
-    assert starter.max_parallel_ideas == 2
+    assert starter.max_parallel_ideas == 10
     monkeypatch.setattr(lab, 'student_ids', lambda: ['a'])
     single = orchestrator.Orchestrator(lab_dir=tmp_path / 'single', dry_run=True)
     assert single.max_parallel_ideas == 1
+    monkeypatch.setenv('EFFERENTS_MAX_PARALLEL_IDEAS', '3')
+    explicit = orchestrator.Orchestrator(lab_dir=tmp_path / 'explicit', dry_run=True)
+    assert explicit.max_parallel_ideas == 3
