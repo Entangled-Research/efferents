@@ -375,3 +375,18 @@ def test_notify_event_rate_limited_per_event(harness):
     assert o._notify_event("halt:auth", "halted", "m") is True
     assert len(notes) == 2
     assert all(n["lab_id"] for n in notes)
+
+
+def test_disabled_coder_backlog_does_not_starve_existing_experiments(harness, monkeypatch):
+    from dataclasses import replace
+    from efferents import lab
+    from efferents.agents.state import save_state, now_iso
+    cfg = lab.get_config()
+    cfg = replace(cfg, autonomy=replace(cfg.autonomy, coder_enabled=False))
+    monkeypatch.setattr(lab, 'get_config', lambda: cfg)
+    save_state(harness.o.paths.state, {'last_researcher_ts':now_iso()})
+    monkeypatch.setattr(orch.coder, 'select_pending_proposal', lambda **kw: {'name':'requires-owner-code-edit'})
+    called = []
+    monkeypatch.setattr(orch.researcher, 'propose', lambda **kw: called.append(kw) or {'proposals':[{'name':'existing-executor-comparison'}]})
+    assert harness.o._refill_queue() == 1
+    assert len(called) == 1

@@ -293,7 +293,8 @@ class Orchestrator:
             if since_s < self.researcher_min_interval_s:
                 return 0
         if (
-            _hours_since(sstate.get("last_researcher_ts")) < 2.0
+            _lab.get_config().autonomy.coder_enabled
+            and _hours_since(sstate.get("last_researcher_ts")) < 2.0
             and coder.select_pending_proposal(paths=self.paths, student_id=student_id) is not None
         ):
             return 0
