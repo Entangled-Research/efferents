@@ -44,7 +44,6 @@ def test_headline_paired_comparator_config(tmp_path):
 @pytest.mark.parametrize("updates, message", [
     ({"comparator_column": "loss;drop"}, "comparator_column"),
     ({"comparator_column": "synthetic_loss"}, "must differ"),
-    ({"aggregate": "max"}, "requires comparator_column"),
     ({"comparator_column": "baseline_loss", "aggregate": "median"}, "aggregate"),
 ])
 def test_invalid_headline_paired_comparator_config(tmp_path, updates, message):

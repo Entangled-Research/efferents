@@ -129,10 +129,13 @@ def _resolve_code_sha() -> str | None:
 def _best_metric(runs: list[dict], col: str, direction: str) -> float | None:
     """Return the best value of `col` across runs. min when direction=='min',
     max otherwise. None when no run carries the column."""
-    vals = [r[col] for r in runs if r.get(col) is not None]
-    if not vals:
-        return None
-    return min(vals) if direction == "min" else max(vals)
+    return _aggregate_metric(runs, col, direction)
+
+
+def _aggregate_metric(runs: list[dict], col: str, aggregate: str) -> float | None:
+    vals = [r[col] for r in runs if isinstance(r.get(col), (int, float))
+            and not isinstance(r[col], bool) and math.isfinite(r[col])]
+    return {"min": min, "max": max, "mean": statistics.fmean}[aggregate](vals) if vals else None
 
 
 def _paired_metrics(
@@ -525,20 +528,20 @@ def write_phase_a_paper(
     comparator_col = (
         headline.comparator_column if headline and metric == headline.column else None
     )
-    aggregate = (headline.aggregate or direction) if comparator_col else None
+    aggregate = (headline.aggregate or direction) if headline and metric == headline.column else direction
     if comparator_col:
         candidate_value, baseline_value, evidence_runs = _paired_metrics(
             campaign_runs, metric, comparator_col, aggregate
         )
     else:
-        candidate_value = _best_metric(campaign_runs, metric, direction)
+        candidate_value = _aggregate_metric(campaign_runs, metric, aggregate)
         other_runs = _load_other_runs(campaign_id)
         if _cfg is not None:
             student_id = campaign.get("student_id") or _cfg.default_student_id
             other_runs = [run for run in other_runs
                           if (run.get("student_id") or _cfg.default_student_id) == student_id
                           and not constraint_failures(run, cfg=_cfg)]
-        baseline_value = _best_metric(other_runs, metric, direction)
+        baseline_value = _aggregate_metric(other_runs, metric, aggregate)
         evidence_runs = campaign_runs
 
     # If no campaign runs, nothing to publish.
@@ -623,6 +626,8 @@ def write_phase_a_paper(
             "runs": run_ids or [campaign_id],
             "seeds": list(runs_by_seed.keys()) or [0],
         }
+    if headline and headline.aggregate and metric == headline.column:
+        metric_record["aggregate"] = aggregate
     if comparator_col:
         metric_record.update(
             comparator_name=comparator_col,

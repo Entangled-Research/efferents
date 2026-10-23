@@ -181,3 +181,25 @@ def test_writer_recovers_recorded_provenance_without_reading_outside_logs(tmp_pa
     assert own['stdout_sha256'] == hashlib.sha256(output.read_bytes()).hexdigest()
     assert own['provenance_status'] == 'executor-reported, not independently verified'
     assert 'reported_provenance' not in outside
+
+
+def test_standalone_headline_uses_declared_mean_instead_of_best_seed(tmp_path, monkeypatch, fake_anthropic_factory):
+    sub=tmp_path/'submission';shutil.copytree(Path(__file__).parent/'fixtures/sample_submission',sub)
+    raw=yaml.safe_load((sub/'lab.yaml').read_text())
+    raw['metrics']={'headline':{'column':'effect','direction':'max','aggregate':'mean'}}
+    raw['falsifiers']=[]
+    (sub/'lab.yaml').write_text(yaml.safe_dump(raw))
+    monkeypatch.setattr(lab,'_active',lab.LabConfig.from_submission(sub))
+    monkeypatch.setattr(lab,'PEER_REVIEW_ENABLED',False)
+    root=sub/'lab';root.mkdir(exist_ok=True)
+    paths=writer_paths(lab=root,paper=sub/'paper',reports=root/'reports',context=sub/'context')
+    with sqlite3.connect(paths.runs_db) as db:
+        db.execute('CREATE TABLE runs (run_id TEXT,campaign_id TEXT,started_at TEXT,status TEXT,seed INTEGER,effect REAL)')
+        for i,v in enumerate([-.2,-.4,-.3]):db.execute('INSERT INTO runs VALUES (?,?,?,?,?,?)',(str(i),'new',str(i),'succeeded',i,v))
+        for i,v in enumerate([-.9,-.1]):db.execute('INSERT INTO runs VALUES (?,?,?,?,?,?)',('old'+str(i),'old','0','succeeded',i,v))
+    client=fake_anthropic_factory(['\n'.join(f'## {s}\n\nBounded negative replication.\n' for s in ('Motivation','Methods','Results','Conclusion','Next questions'))])
+    result=write_phase_a_paper(paths,{'id':'new','question':'Bounded mean replication','finding_kind':'negative_result','hypothesis_path':'hypothesis.md','hypothesis_hash':'sha256:'+hashlib.sha256((sub/'hypothesis.md').read_bytes()).hexdigest()},client)
+    fm=yaml.safe_load(result.split('---',2)[1]);metric=fm['metric_provenance'][0]
+    assert metric['value']==pytest.approx(-.3)
+    assert metric['delta_vs_baseline']==pytest.approx(.2)
+    assert metric['aggregate']=='mean'

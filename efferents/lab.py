@@ -563,8 +563,6 @@ def _build_labconfig(
     headline_aggregate = headline_raw.get("aggregate")
     if headline_aggregate is not None and headline_aggregate not in ("min", "max", "mean"):
         raise SubmissionError("metrics.headline.aggregate must be min, max or mean")
-    if headline_aggregate is not None and comparator_col is None:
-        raise SubmissionError("metrics.headline.aggregate requires comparator_column")
 
     panels_list = []
     for i, p in enumerate(metrics_raw.get("panels") or []):
