@@ -238,6 +238,17 @@ def _paper_evidence(paths: Any, campaign: dict, runs: list[dict], falsifiers: li
         metrics = {key: value for key, value in run.items()
                    if isinstance(value, (int, float)) and not isinstance(value, bool)
                    and math.isfinite(value)}
+        # Executors retain auxiliary measurements in raw_metrics_json even
+        # when they are not selected as dashboard panels. Give authors and
+        # reviewers those persisted facts, especially validity/resource checks.
+        try:
+            raw_metrics = json.loads(run.get("raw_metrics_json") or "{}")
+        except (TypeError, ValueError):
+            raw_metrics = {}
+        if isinstance(raw_metrics, dict):
+            metrics = {**{key: value for key, value in raw_metrics.items()
+                          if isinstance(value, (int, float)) and not isinstance(value, bool)
+                          and math.isfinite(value)}, **metrics}
         config = str(run.get("config_yaml") or "")
         records.append({
             "run_id": run["run_id"], "seed": run.get("seed"),

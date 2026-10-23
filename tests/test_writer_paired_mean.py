@@ -153,3 +153,16 @@ def test_large_campaign_bounds_prompt_and_paper_but_retains_exact_provenance(
     archived = json.loads(full_path.read_text())
     assert {run['run_id']: run['config_yaml'] for run in archived['runs']} == {key: value[0] for key, value in configs.items()}
     assert archived['publication_context']['split_provenance'] == 'Ω'*90000
+
+
+def test_paper_evidence_retains_auxiliary_persisted_metrics(tmp_path):
+    from types import SimpleNamespace
+    (tmp_path/'context').mkdir()
+    paths=SimpleNamespace(context=tmp_path/'context')
+    evidence=_paper_evidence(paths,{'id':'c','hypothesis_path':'missing.md'},[{
+        'run_id':'r','seed':2,'student_id':'idea','campaign_id':'c','effect':-.1,
+        'raw_metrics_json':json.dumps({'effect':999,'mean_fidelity':.84,'storage_ratio':.625,'not_a_metric':'secret string','invalid':float('nan')})}],[])
+    metrics=evidence['runs'][0]['metrics']
+    assert metrics['effect']==-.1  # Typed persisted column remains authoritative.
+    assert metrics['mean_fidelity']==.84 and metrics['storage_ratio']==.625
+    assert 'not_a_metric' not in metrics and 'invalid' not in metrics
