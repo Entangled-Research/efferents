@@ -98,7 +98,7 @@ def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def recent_runs(db_path: Path, n: int = 30) -> list[dict[str, Any]]:
+def recent_runs(db_path: Path, n: int = 30, *, student_id: str | None = None) -> list[dict[str, Any]]:
     # SELECT * lets the schema be lab-defined (per LabConfig.metrics + Phase A's
     # base meta columns). Downstream consumers use r.get(...) for lab-specific
     # columns and tolerate absence — see researcher.py:_saturation_report.
@@ -108,10 +108,15 @@ def recent_runs(db_path: Path, n: int = 30) -> list[dict[str, Any]]:
     conn.row_factory = sqlite3.Row
     try:
         cols = {row[1] for row in conn.execute("PRAGMA table_info(runs)")}
-        where = "WHERE status = 'succeeded'" if "status" in cols else ""
+        clauses = ["status = 'succeeded'"] if "status" in cols else []
+        params = []
+        if student_id is not None and "student_id" in cols:
+            clauses.append("student_id = ?")
+            params.append(student_id)
+        where = "WHERE " + " AND ".join(clauses) if clauses else ""
         rows = conn.execute(
             f"SELECT * FROM runs {where} ORDER BY started_at DESC LIMIT ?",
-            (n,),
+            (*params, n),
         ).fetchall()
     finally:
         conn.close()

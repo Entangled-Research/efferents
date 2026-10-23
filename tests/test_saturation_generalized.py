@@ -81,3 +81,24 @@ def test_saturation_report_buckets_by_config_axis(tmp_path):
         assert "model=a" in rep["saturated_axes"][0]
     finally:
         lab_mod._active = None
+
+
+def test_saturation_never_uses_another_ideas_runs_or_contract(tmp_path):
+    from efferents.agents.state import recent_runs
+    cfg = _cfg(headline_col='score', headline_dir='max')
+    lab_mod.set_config(_cfg(headline_col='loss'))
+    paths = lab_paths(tmp_path)
+    db = sqlite3.connect(paths.runs_db)
+    db.execute('CREATE TABLE runs (run_id TEXT, started_at TEXT, status TEXT, student_id TEXT, score REAL, loss REAL)')
+    db.execute("INSERT INTO runs VALUES ('own','2025','succeeded','own',1,0)")
+    for i in range(20):
+        db.execute('INSERT INTO runs VALUES (?,?,?,?,?,?)', (str(i),'2026','succeeded','other',1,0))
+    db.commit();db.close()
+    try:
+        assert [r['run_id'] for r in recent_runs(paths.runs_db, n=1, student_id='own')] == ['own']
+        report = _saturation_report(paths, student_id='own', cfg=cfg)
+        assert report['score'] == 0
+        assert report['evidence'][0]['n_runs'] == 1
+        assert set(report['evidence'][0]['per_metric']) == {'score'}
+    finally:
+        lab_mod._active = None

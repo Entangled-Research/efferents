@@ -262,13 +262,14 @@ def _stdev(xs: list[float]) -> float:
     return math.sqrt(sum((x - m) ** 2 for x in xs) / (len(xs) - 1))
 
 
-def _saturation_metrics() -> list[tuple[str, str]]:
+def _saturation_metrics(cfg=None) -> list[tuple[str, str]]:
     """(column, direction) for each metric saturation is evaluated on: the
     configured headline metric plus panel metrics, de-duplicated by column."""
-    h = mv.headline()
+    cfg = cfg or _lab.get_config()
+    h = cfg.metrics.headline
     out: list[tuple[str, str]] = [(h.column, h.direction)]
     seen = {h.column}
-    for p in mv.panels():
+    for p in cfg.metrics.panels:
         if p.column not in seen:
             seen.add(p.column)
             out.append((p.column, p.direction))
@@ -287,7 +288,7 @@ def _config_group_key(row: dict) -> str:
     )
 
 
-def _saturation_report(paths: LabPaths, *, n: int = 50) -> dict[str, Any]:
+def _saturation_report(paths: LabPaths, *, n: int = 50, student_id: str | None = None, cfg=None) -> dict[str, Any]:
     """Detect saturated experimental axes across the configured metrics.
 
     Runs are grouped into buckets by ``LabConfig.metrics.bucket_axes`` (a lab
@@ -311,19 +312,20 @@ def _saturation_report(paths: LabPaths, *, n: int = 50) -> dict[str, Any]:
     metrics are saturated — single-metric saturation can be a coincidence.
     """
     try:
-        metric_specs = _saturation_metrics()
-        axes = _lab.get_config().metrics.bucket_axes
+        cfg = cfg or _lab.get_config()
+        metric_specs = _saturation_metrics(cfg)
+        axes = cfg.metrics.bucket_axes
     except RuntimeError:
         # No active LabConfig (e.g. a bare unit test). Nothing to report on.
         return {"saturated_axes": [], "score": 0, "evidence": []}
     if not paths.runs_db.exists():
         return {"saturated_axes": [], "score": 0, "evidence": []}
     try:
-        rows = recent_runs(paths.runs_db, n=n)
+        rows = recent_runs(paths.runs_db, n=n, student_id=student_id)
     except sqlite3.OperationalError:
         return {"saturated_axes": [], "score": 0, "evidence": []}
 
-    headline_col = mv.headline().column
+    headline_col = cfg.metrics.headline.column
 
     def _bucket_key(row: dict) -> tuple[str, ...]:
         return ("all",) if not axes else tuple(str(row.get(a)) for a in axes)
@@ -1158,7 +1160,7 @@ def propose(
 
     # Build shared context once.
     ctx = read_context(context_dir)
-    rows = recent_runs(paths.runs_db, n=30)
+    rows = recent_runs(paths.runs_db, n=30, student_id=student_id)
     librarian.init_kb(paths.kb_db)
     kb_index = librarian.index_for_prompt(paths.kb_db, n=40)
     static_block = _shared_static_block(
@@ -1188,7 +1190,16 @@ def propose(
     from efferents.agents import conference
     dynamic_block += conference.prompt_context(paths.root, _lab.get_config())
 
-    saturation = _saturation_report(paths)
+    from efferents.eval_suite import resolve_idea_config
+    try:
+        idea_cfg = resolve_idea_config(Path(context_dir).parent, _lab.get_config(), student_id)
+    except (OSError, ValueError, TypeError):
+        idea_cfg = None
+    if idea_cfg is None:
+        saturation = {"saturated_axes": [], "score": 0, "evidence": []}
+        dynamic_block += "\nThis idea has no valid evaluation contract yet; do not borrow another idea's metrics or verdict.\n"
+    else:
+        saturation = _saturation_report(paths, student_id=student_id, cfg=idea_cfg)
     coder_log = _coder_log_tail(paths, n=10)
     student_model = model or model_for("student") or "claude-sonnet-4-6"
     sup_model = model_for_supervisor(streak)
