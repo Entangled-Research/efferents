@@ -114,3 +114,17 @@ def test_mode_defaults_to_refine_when_omitted(paths, fake_anthropic_factory, tmp
     )
     user_msg = client.calls[0]["messages"][0]["content"]
     assert "<<MODE: refine>>" in str(user_msg)
+
+
+def test_empty_round_fallback_keeps_existing_experiments_runnable_when_coder_disabled(paths, fake_anthropic_factory, tmp_path, monkeypatch):
+    from dataclasses import replace
+    from efferents import lab
+    from efferents.agents.state import save_state
+    cfg=lab.get_config()
+    monkeypatch.setattr(lab,'_active',replace(cfg,autonomy=replace(cfg.autonomy,coder_enabled=False)))
+    save_state(paths.state,{'researcher_consecutive_empty':2})
+    client=fake_anthropic_factory([_fake_proposals_json('refine')])
+    result=researcher.propose(paths=paths,context_dir=tmp_path,budget=FakeBudget(),client=client)
+    assert result['proposals'] and len(client.calls)==1
+    assert '"expected_proposal_shape": "refine"' in str(client.calls[0]['messages'])
+    assert 'Automatic code changes are disabled' in str(client.calls[0]['system'])

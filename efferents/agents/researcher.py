@@ -919,6 +919,8 @@ def _student_propose(
             "explicitly when a finding from outside the focus should change the "
             "direction.\n\n---\n\n"
         ) + system_text
+    if not _lab.get_config().autonomy.coder_enabled:
+        system_text += "\nAutomatic code changes are disabled. Use runnable config experiments with the existing executor for immediate work. Architectural proposals are deferred and must not replace available runnable comparisons.\n"
     system = [{
         "type": "text", "text": system_text,
         "cache_control": {"type": "ephemeral"},
@@ -1225,7 +1227,7 @@ def propose(
             "open_questions": [],
             "forbidden_axes": [],
             "encouraged_paradigms": [],
-            "expected_proposal_shape": "architectural",
+            "expected_proposal_shape": ("architectural" if _lab.get_config().autonomy.coder_enabled else "refine"),
             "post_mortem": "[bypass: supervisor disabled this iteration]",
         }
     else:
