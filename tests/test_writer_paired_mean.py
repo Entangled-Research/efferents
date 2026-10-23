@@ -166,3 +166,18 @@ def test_paper_evidence_retains_auxiliary_persisted_metrics(tmp_path):
     assert metrics['effect']==-.1  # Typed persisted column remains authoritative.
     assert metrics['mean_fidelity']==.84 and metrics['storage_ratio']==.625
     assert 'not_a_metric' not in metrics and 'invalid' not in metrics
+
+
+def test_writer_recovers_recorded_provenance_without_reading_outside_logs(tmp_path):
+    paths = writer_paths(lab=tmp_path/'lab',paper=tmp_path/'paper',reports=tmp_path/'reports',context=tmp_path/'context')
+    logs = paths.lab/'logs';logs.mkdir(parents=True)
+    output = logs/'run.stdout.log'
+    output.write_text(json.dumps({'metrics':{'score':1},'provenance':{'dataset_sha256':'a'*64,'seed':5}}))
+    rows=[{'run_id':'own','stdout_path':str(output)}, {'run_id':'outside','stdout_path':str(tmp_path/'private.json')}]
+    (tmp_path/'private.json').write_text(output.read_text())
+    evidence = _paper_evidence(paths, {}, rows, [])
+    own,outside = evidence['runs']
+    assert own['reported_provenance']['dataset_sha256'] == 'a'*64
+    assert own['stdout_sha256'] == hashlib.sha256(output.read_bytes()).hexdigest()
+    assert own['provenance_status'] == 'executor-reported, not independently verified'
+    assert 'reported_provenance' not in outside

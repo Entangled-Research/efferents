@@ -260,6 +260,24 @@ def _paper_evidence(paths: Any, campaign: dict, runs: list[dict], falsifiers: li
             "config_hash": run.get("config_hash"), "code_commit": run.get("git_commit"),
             "artifacts": run.get("artifacts_json"),
         })
+        # The executor's complete stdout is already persisted. Retain its
+        # explicit provenance separately from measured numeric metrics; a
+        # reported dataset hash is useful without pretending we verified it.
+        stdout = run.get("stdout_path")
+        try:
+            if stdout:
+                path = Path(stdout).resolve()
+                if path.is_relative_to(paths.lab.resolve() / "logs") and path.stat().st_size <= 1_000_000:
+                    from efferents.exec import _extract_trailing_json
+                    raw = path.read_bytes()
+                    payload = _extract_trailing_json(raw.decode("utf-8")) or {}
+                    provenance = payload.get("provenance")
+                    if isinstance(provenance, dict) and len(_evidence_json(provenance).encode()) <= 12000:
+                        records[-1]["reported_provenance"] = provenance
+                        records[-1]["stdout_sha256"] = hashlib.sha256(raw).hexdigest()
+                        records[-1]["provenance_status"] = "executor-reported, not independently verified"
+        except (OSError, ValueError, TypeError):
+            pass
     return _bounded_evidence(paths, {"hypothesis": hypothesis, "runs": records, "falsifiers": falsifiers,
             "publication_context": campaign.get("publication_context") or "",
             "scope": "Only these eligible campaign runs support this report. A falsifiability gate is not empirical support. Do not infer prospective preregistration or missing methods."})
