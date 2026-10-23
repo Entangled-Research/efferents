@@ -186,3 +186,12 @@ def test_litellm_conversion_carries_images_as_data_urls():
     assert _convert_messages([{"role": "user", "content": [{"type": "text", "text": "hi"}]}]) == [
         {"role": "user", "content": "hi"}
     ]
+
+
+def test_reasoning_image_review_leaves_room_for_ranking(tmp_path, fake_anthropic_factory):
+    client = fake_anthropic_factory(['{"ranking":["A"],"notes":{"A":"measured plot"}}'])
+    section = analyst.blind_image_review(rows=_rows(tmp_path),
+        budget=BudgetTracker(tmp_path / 'budget.jsonl', daily_cap_usd=5),
+        client=client, model='openai/gpt-6.1-sol', limit=1)
+    assert client.calls[0]['max_tokens'] == 8192
+    assert '| 1 | A |' in section

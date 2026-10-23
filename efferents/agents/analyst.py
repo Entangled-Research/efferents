@@ -290,7 +290,7 @@ def _review_section(images: list[dict[str, Any]], ranking: list[str], notes: dic
     order += [lb for lb in by_label if lb not in order]
     lines = [
         "## Qualitative review (blind)", "",
-        f"{len(images)} image artifact(s) ranked by a reviewer shown only letter labels "
+        f"{len(images)} image artifact(s) presented to a reviewer with only letter labels "
         "(no run ids, variants or metrics). Un-blinded here.", "",
         "| rank | image | run | observation | kind | note |", "|---|---|---|---|---|---|",
     ]
@@ -310,12 +310,15 @@ def blind_image_review(
     budget: BudgetTracker,
     client: Any,
     model: str,
-    max_tokens: int = 1024,
+    max_tokens: int | None = None,
     limit: int | None = None,
 ) -> str | None:
     """One extra model call per digest at most: rank recent image artifacts
     blind and return the un-blinded markdown section, or None when there is
     nothing to review (no images, disabled, or budget exhausted)."""
+    from efferents.agents.model_client import default_text_output_tokens
+    if max_tokens is None:
+        max_tokens = default_text_output_tokens(model, ordinary=1024)
     images = collect_review_images(rows, limit=limit)
     if not images:
         return None
