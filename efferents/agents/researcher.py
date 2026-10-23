@@ -599,6 +599,8 @@ def _simple_call(
     notes: str = "",
 ) -> str:
     """One-shot ``messages.create`` without tools. Records spend, returns text."""
+    from efferents.agents.model_client import default_text_output_tokens
+    max_tokens = default_text_output_tokens(model, ordinary=max_tokens)
     resp = client.messages.create(
         model=model,
         max_tokens=max_tokens,
@@ -891,6 +893,8 @@ def _student_propose(
 
     Returns (raw_text, parsed_dict_or_empty, consulted_topic_ids).
     """
+    from efferents.agents.model_client import default_text_output_tokens
+    max_tokens = default_text_output_tokens(student_model, ordinary=max_tokens)
     # Per-student prompt override → explicit override_path; else lab/framework default.
     override_path = None
     try:

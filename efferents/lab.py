@@ -108,8 +108,8 @@ class Headline:
     direction: Literal["max", "min"]
     # Optional within-run comparator for first-campaign publication evidence.
     comparator_column: str | None = None
-    # Aggregate both sides over the same eligible runs. None retains the
-    # historical best-run gate.
+    # Aggregate eligible runs, pairing both sides when a comparator is set.
+    # None retains the historical best-run gate.
     aggregate: Literal["min", "max", "mean"] | None = None
 
 

@@ -102,3 +102,12 @@ def test_saturation_never_uses_another_ideas_runs_or_contract(tmp_path):
         assert set(report['evidence'][0]['per_metric']) == {'score'}
     finally:
         lab_mod._active = None
+
+
+def test_supervisor_reasoning_call_has_room_for_json(tmp_path, fake_anthropic_factory):
+    from efferents.agents.researcher import _simple_call
+    from efferents.agents.budget import BudgetTracker
+    client=fake_anthropic_factory(['{"verdict":"approve"}'])
+    _simple_call(client=client,system=[],messages=[],model='openai/gpt-6.1-sol',
+                 agent='supervisor',budget=BudgetTracker(tmp_path/'budget.jsonl',daily_cap_usd=5),max_tokens=800)
+    assert client.calls[0]['max_tokens']==8192
