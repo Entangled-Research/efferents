@@ -402,7 +402,7 @@ proposals:
     hypothesis: "..."
     expected: "..."
     config_overrides:               # dotted-path overrides (a sub-object)
-    campaign_id: "<existing-or-new>"
+    campaign_id: null                 # exact registered ID for existing; null for a new campaign
 new_campaign:                       # omit entirely if not opening one
   question: "..."
   draft_hypothesis: "..."

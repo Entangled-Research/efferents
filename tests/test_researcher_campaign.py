@@ -183,3 +183,30 @@ def test_gate_reject_drops_new_campaign_but_keeps_proposals_only_if_existing_cam
     assert campaign_open_list(paths.runs_db, "qfm-diffusion") == []
     # No proposals enqueued, since they had no campaign to route to.
     assert result.get("proposals") == []
+
+
+def test_campaign_binding_resolves_registered_aliases_and_new_sentinel():
+    from efferents.agents.researcher import _bind_campaign_proposals
+    opens = [{'id':'c-real','hypothesis_path':'popper-corpus/known-slug/hypothesis.md'}]
+    for value in ('c-real','known-slug'):
+        proposals, errors = _bind_campaign_proposals([{'name':'p','campaign_id':value}], opens)
+        assert not errors and proposals[0]['campaign_id']=='c-real'
+    proposals, errors = _bind_campaign_proposals([{'name':'p','campaign_id':'new'}], opens,
+                                                new_campaign_declared=True, new_campaign_id='c-new')
+    assert not errors and proposals[0]['campaign_id']=='c-new'
+    proposals, errors = _bind_campaign_proposals([{'name':'p','config_overrides':{'run.campaign_id':'known-slug'}}], opens)
+    assert not errors and proposals[0]['campaign_id']=='c-real'
+
+
+def test_campaign_binding_refuses_ambiguous_or_unregistered_evidence():
+    from efferents.agents.researcher import _bind_campaign_proposals
+    opens = [{'id':'c-a','hypothesis_path':'ideas/a/hypothesis.md'},
+             {'id':'c-b','hypothesis_path':'ideas/b/hypothesis.md'}]
+    for value in (None,'nonexistent','another-students-campaign'):
+        proposals, errors = _bind_campaign_proposals([{'name':'p','campaign_id':value}], opens)
+        assert not proposals and errors
+    proposals, errors = _bind_campaign_proposals([{'name':'p'}], opens[:1])
+    assert not errors and proposals[0]['campaign_id']=='c-a'
+    proposals, errors = _bind_campaign_proposals([{'name':'p','campaign_id':'new'}], opens,
+                                                new_campaign_declared=True, new_campaign_id=None)
+    assert not proposals and errors

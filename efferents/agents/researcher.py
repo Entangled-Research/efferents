@@ -1090,6 +1090,39 @@ def _finalize(
 # -----------------------------------------------------------------------------
 
 
+def _bind_campaign_proposals(proposals, opens, *, new_campaign_declared=False, new_campaign_id=None):
+    """Resolve exact registered IDs/unique hypothesis-directory aliases, never invent links."""
+    known = {row["id"] for row in opens}
+    aliases = {}
+    for row in opens:
+        alias = Path(row.get("hypothesis_path") or "").parent.name
+        if alias:
+            aliases.setdefault(alias, []).append(row["id"])
+    bound, errors = [], []
+    for original in proposals:
+        proposal = dict(original)
+        requested = proposal.get("campaign_id") or (proposal.get("config_overrides") or {}).get("run.campaign_id")
+        resolved = requested if isinstance(requested, str) and requested in known else None
+        if resolved is None and isinstance(requested, str) and len(aliases.get(requested, [])) == 1:
+            resolved = aliases[requested][0]
+        if resolved is None and requested in (None, "new", "<new>", "<existing-or-new>"):
+            if new_campaign_declared:
+                resolved = new_campaign_id
+            elif requested is None and len(known) == 1:
+                resolved = next(iter(known))
+        if resolved is None:
+            # Bare legacy tests/labs without campaigns remain runnable, but an
+            # existing campaign roster must never produce unattributed evidence.
+            if not opens and not new_campaign_declared and requested is None:
+                bound.append(proposal)
+                continue
+            errors.append(f"{proposal.get('name', 'unnamed')}: campaign {requested!r} is not an unambiguous open campaign; use one of {sorted(known)}")
+            continue
+        proposal["campaign_id"] = resolved
+        bound.append(proposal)
+    return bound, errors
+
+
 def propose(
     *,
     paths: LabPaths,
@@ -1144,6 +1177,13 @@ def propose(
     from efferents.agents.context_queue import checkpoint
     queued_context, _received_context_ids = checkpoint(paths.root, student_id)
     dynamic_block += queued_context
+    try:
+        active_campaigns = _campaign_open_list_for_student(paths.runs_db, _lab.LAB_ID, student_id)
+    except sqlite3.OperationalError:
+        active_campaigns = []
+    dynamic_block += "\n\n## Registered open campaigns for this student\n\n"
+    dynamic_block += "Use these exact IDs, never hypothesis slugs. Reuse the registered hypothesis for its existing comparison. For a genuinely new campaign, emit new_campaign and campaign_id: null.\n"
+    dynamic_block += "\n".join(f"- {row['id']}: {row['question']}" for row in active_campaigns) or "(none)"
     kb_index_block = _kb_block(kb_index)
     from efferents.agents import conference
     dynamic_block += conference.prompt_context(paths.root, _lab.get_config())
@@ -1289,30 +1329,23 @@ def propose(
                 f"{gate_result.reason}\n",
             )
 
-    # Route proposals: only when the student declared a new_campaign (or
-    # proposals carry explicit campaign_ids). If the student emitted neither,
-    # proposals are passed through as-is (backward-compatible path).
-    if new_campaign is not None:
-        final_proposals: list[dict] = []
-        for p in final.get("proposals", []):
-            if p.get("campaign_id") is None:
-                if new_campaign_id is not None:
-                    p["campaign_id"] = new_campaign_id
-                else:
-                    notebook_append(
-                        paths.notebook,
-                        f"## {now_iso()} — dropped untagged proposal {p.get('name')!r}\n",
-                    )
-                    continue
-            final_proposals.append(p)
-        final["proposals"] = final_proposals
+    try:
+        opens_after_gate = _campaign_open_list_for_student(paths.runs_db, _lab.LAB_ID, student_id)
+    except sqlite3.OperationalError:
+        opens_after_gate = []
+    final["proposals"], campaign_errors = _bind_campaign_proposals(
+        final.get("proposals", []), opens_after_gate,
+        new_campaign_declared=new_campaign is not None, new_campaign_id=new_campaign_id,
+    )
+    for error in campaign_errors:
+        notebook_append(paths.notebook, f"## {now_iso()} — campaign attribution rejected\n\n{error}\n")
 
     # --- Tag proposals with the mode + student_id ---
     for p in final["proposals"]:
         p["mode"] = mode
-        p.setdefault("student_id", student_id)
+        p["student_id"] = student_id
     for p in final["architectural_proposals"]:
-        p.setdefault("student_id", student_id)
+        p["student_id"] = student_id
 
     # --- Blocked on infrastructure: the Student says the executor itself
     # needs a code change before its line of work can be tested. Sourced from
