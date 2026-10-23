@@ -105,8 +105,9 @@ Treat this distinction as a product and architecture constraint in future work.
   package to an external reference lab.
 - Do not claim the abstractions are complete without a second working example
   lab in a different domain.
-- Popper Probe is an external dependency. Resolve it through
-  `POPPER_PROBE_REPO`; do not vendor it.
+- Hypothesis refinement is model-led and internal. Ask the owner only for
+  blocking objectives or instructions; no external Popper Probe checkout is required.
+  Preserve legacy module/corpus names for existing lab compatibility.
 - Keep the single-lab framework genuinely lab-agnostic before expanding venue
   or inter-lab behavior.
 - Keep public release separate from local execution. A public action requires

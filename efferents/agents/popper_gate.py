@@ -1,18 +1,14 @@
-"""Headless Popper Probe intake for the orchestrator.
+"""Model-led hypothesis refinement with an internal measurable-contract check.
 
-Single-shot self-play: load SKILL.md as system prompt, ask the model to
-play both roles (claimant + Popperian probe) and emit ONLY the
-hypothesis.md contents. Subprocess-validate with popper-probe's existing
-CLI. One retry on validator fail.
-
-Popper-probe repo location: env POPPER_PROBE_REPO, default ~/Documents/popper-probe.
+The historical module and corpus names remain compatible with existing labs.
+No external intake skill, checkout or validator is required.
 """
 from __future__ import annotations
 
 import hashlib
-import os
-import subprocess
-import sys
+import re
+
+import yaml
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -20,72 +16,46 @@ from typing import Any
 from efferents.agents.budget import BudgetTracker, CallUsage, billing_model
 
 
-def _popper_repo() -> Path:
-    return Path(os.environ.get("POPPER_PROBE_REPO", str(Path.home() / "Documents/popper-probe")))
-
-
 def _skill_md() -> str:
-    return (_popper_repo() / "skills/intake/SKILL.md").read_text()
-
-
-def _validator() -> Path:
-    return _popper_repo() / "scripts/validate_hypothesis.py"
-
-
-_HEADLESS_INSTRUCTION = """
-HEADLESS MODE — IMPORTANT
-
-You are running without an interactive user. Play BOTH roles yourself:
-the claimant (using the draft claim below as their starting position)
-AND the Popperian probe. Run Probes 1, 2, and 3 internally. Probe 0
-(SoTA orientation) is skipped. Probe 4 (distinctiveness) is recorded as
-flagged or substantive.
-
-If Probe 1 or Probe 2 cannot be satisfied even after a real sharpening
-attempt, emit a hypothesis.md with `falsifiability_gate: failed`,
-`status: unfalsifiable`, and a `## Diagnostic` section. Otherwise emit
-`falsifiability_gate: passed`, `status: active`, and the full body
-sections per the schema.
-
-Output ONLY the hypothesis.md file contents (YAML frontmatter +
-markdown body). No commentary, no code fences, no preamble. Your first
-character must be a literal "---" opening the frontmatter.
+    """The framework's own research-contract instructions, kept inline."""
+    return """Refine the owner's research objective into a bounded, falsifiable experiment.
+Preserve the objective and instructions. Resolve routine methodological choices yourself;
+record assumptions, baselines, compute bounds and uncertainty. Ask the human only when
+an unclear objective, conflicting instruction or missing essential resource blocks work.
+Do not run a ritual interview or require a separate hypothesis approval.
+Never invent measurements, citations, literature checks or scientific acceptance.
+A passed gate means the proposed experiment is testable, not that the claim is true.
+Emit YAML frontmatter with slug, created (ISO date), status: active,
+falsifiability_gate: passed, literature_pass: none. Include nonempty sections:
+## Original framing (preserve the owner's words)
+## Operational restatement (intervention, baseline, scope, numeric metric and threshold)
+## Falsifier(s) (a measured outcome that would refute the claim)
+## Test design (dataset, split, seeds, controls, resource and stop bounds)
+## Auxiliary assumptions (label all inferred choices)
+## Distinctiveness (competing explanation and confounds)
+## References (only verified sources; otherwise empty)
+## Intake log (assumptions and decisions).
+If no measurable contract can be formed, use status: unfalsifiable,
+falsifiability_gate: failed and a nonempty ## Diagnostic explaining the blocker.
 """.strip()
 
 
-
-INTERACTIVE_INSTRUCTION = """
-INTERACTIVE WEB MODE — IMPORTANT
-
-You are the Popperian probe. The human you are sparring with types in a web
-chat and reads your replies there. Follow the protocol above with these
-adjustments:
-
-- You have NO tools: no filesystem, no web search, no papers. Probe 0's
-  paper-based pieces are unavailable; say so if the human asks. Everything
-  you know about the field comes from training, hedged as the protocol says.
-- Do not ask whether the lab should be private or public, or ask for a lab
-  visibility/placement mode. That setup branch is retired. If a previous turn
-  asked it, skip the question and continue from the existing research answers.
-  Focus on the claim and falsifier. Specific publication authorization is a
-  separate action; never infer permission to release private material.
-- Stay in ONE probe stage per turn and ask ONE question per turn. Keep each
-  reply under 150 words unless you are emitting the hypothesis file.
-- The human's claim will be tested by an automated experiment runner that
-  reports numeric metrics per run. Push the operational restatement and the
-  falsifier toward quantities such a runner could measure per run.
-- When the gate is decided (passed OR failed), emit the COMPLETE
-  hypothesis.md inside exactly one fenced block whose info string is
-  `hypothesis.md`, then ask: "Approve, or tell me what to change?" If the
-  human asks for changes, re-emit the whole corrected file the same way.
-- Frontmatter must carry `slug`, `created` (today's ISO date), `status`,
-  `falsifiability_gate`, and `literature_pass: none`. Leave the
-  `## References` section empty (no `- path:` entries) — nothing can be
-  attached from a web chat.
-- Never write about files being saved; the server stores the draft.
+_HEADLESS_INSTRUCTION = """Work autonomously from the supplied draft and instructions.
+Internally critique the claim, controls and failure criterion before writing the contract.
+Output ONLY hypothesis.md (YAML frontmatter and Markdown), without fences or preamble.
+Do not manufacture missing owner objectives; emit a failed diagnostic if they block work.
 """.strip()
 
-_HYPOTHESIS_BLOCK_RE = __import__("re").compile(
+INTERACTIVE_INSTRUCTION = """You are helping the owner scope an experiment in a web chat.
+When the objective is clear, infer reversible defaults and emit the complete contract
+inside one fenced block labelled hypothesis.md. Briefly state your assumptions.
+Ask at most one focused question only if a missing objective or instruction blocks work.
+Do not ask for routine approval or walk through named probe stages. The owner can edit
+or redirect the draft. Do not claim you browsed, saved files or ran experiments.
+Never ask for a private/public placement choice; publication authorization is separate.
+""".strip()
+
+_HYPOTHESIS_BLOCK_RE = re.compile(
     r"```(?:hypothesis\.md|hypothesis|markdown|md|yaml)?[ \t]*\r?\n(---\r?\n[\s\S]*?)\r?\n```",
 )
 
@@ -100,7 +70,7 @@ def extract_hypothesis_block(text: str) -> str | None:
 
 
 def validate_hypothesis_text(text: str, scratch_dir: Path) -> tuple[bool, str]:
-    """Run popper-probe's validator over an in-memory draft."""
+    """Check a draft with the internal measurable-contract validator."""
     scratch_dir = Path(scratch_dir)
     scratch_dir.mkdir(parents=True, exist_ok=True)
     draft = scratch_dir / "hypothesis.md"
@@ -139,8 +109,8 @@ nature: living document — guidance, not rules
 
 # Lab charter
 
-This file tracks the lab's research direction as it passes through the
-Popper Probe: the initial direction prompted by the lab's funder, and every
+This file tracks the lab's research direction as the model refines its
+experiment contracts: the initial direction prompted by the lab's funder, and every
 subsequent probed hypothesis that opened a new line of work.
 
 **How students and supervisors should use it.** Read this before proposing
@@ -212,18 +182,30 @@ def _extract_text(response: Any) -> str:
 
 
 def _validate(path: Path) -> tuple[bool, str]:
-    v = _validator()
-    if not v.exists():
-        return False, f"validator not found: {v} (check POPPER_PROBE_REPO)"
+    """Validate structure, not scientific truth; semantic critique is model-led."""
+    text = path.read_text()
+    match = re.match(r"\A---\s*\n(.*?)\n---(?:\n|$)", text, re.S)
+    if not match:
+        return False, "ERROR: hypothesis requires YAML frontmatter"
     try:
-        proc = subprocess.run(
-            [sys.executable, str(v), str(path)],
-            capture_output=True, text=True,
-            timeout=10,
-        )
-    except subprocess.TimeoutExpired:
-        return False, "validator timed out after 10s"
-    return (proc.returncode == 0, (proc.stderr or proc.stdout).strip())
+        front = yaml.safe_load(match.group(1))
+    except yaml.YAMLError as exc:
+        return False, f"ERROR: invalid YAML: {exc}"
+    if not isinstance(front, dict):
+        return False, "ERROR: frontmatter must be a mapping"
+    if not re.fullmatch(r"[a-z0-9][a-z0-9_-]*", str(front.get("slug", ""))):
+        return False, "ERROR: a lowercase hypothesis slug is required"
+    gate = front.get("falsifiability_gate")
+    if gate not in {"passed", "failed"}:
+        return False, "ERROR: falsifiability_gate must be passed or failed"
+    sections = ("Operational restatement", "Falsifier(s)", "Test design") if gate == "passed" else ("Diagnostic",)
+    for section in sections:
+        part = re.search(r"(?ms)^## " + re.escape(section) + r"[ \t]*\n(.*?)(?=^## |\Z)", text)
+        if not part or not part.group(1).strip():
+            return False, f"ERROR: nonempty ## {section} is required"
+    if gate == "passed" and front.get("status") != "active":
+        return False, "ERROR: a passed contract must have status: active"
+    return True, "OK: internal contract check passed (no scientific verdict)"
 
 
 def run_gate(
@@ -294,6 +276,9 @@ def run_gate(
         body = _extract_text(response)
         out_path.write_text(body)
         ok, errors = _validate(out_path)
+        if ok and frontmatter_value(body, "falsifiability_gate") != "passed":
+            out_path.unlink(missing_ok=True)
+            return GateResult(ok=False, path=None, hash=None, reason=body)
         if ok:
             result = GateResult(ok=True, path=out_path, hash=_hash_file(out_path), reason=None)
             if charter_dir is not None:
@@ -304,10 +289,10 @@ def run_gate(
                     hypothesis_path=out_path,
                     hypothesis_hash=result.hash,
                     design_notes=(
-                        "Headless self-play gate (probes 1–3 internal); the "
+                        "Automatic model-led refinement; the "
                         "sharpened claim and falsifier live in the gated "
                         "hypothesis file. Interactive intakes should record "
-                        "the dialogue's sharpening decisions here instead."
+                        "the model's refinement decisions here instead."
                     ),
                     title=f"campaign gate: {slug}",
                 )

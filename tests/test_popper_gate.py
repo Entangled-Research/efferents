@@ -13,25 +13,10 @@ FIXTURES = Path(__file__).parent / "fixtures"
 
 @pytest.fixture
 def popper_repo(monkeypatch, tmp_path):
-    """Build a minimal popper-probe-shaped directory with the canonical
-    SKILL.md and validate_hypothesis.py so the gate can find them without
-    depending on the user's working copy."""
-    repo = tmp_path / "popper-probe"
-    (repo / "skills" / "intake").mkdir(parents=True)
-    (repo / "scripts").mkdir()
-    real_skill = Path.home() / "Documents/popper-probe/skills/intake/SKILL.md"
-    real_validator = Path.home() / "Documents/popper-probe/scripts/validate_hypothesis.py"
-    skill_dst = repo / "skills/intake/SKILL.md"
-    if real_skill.exists():
-        skill_dst.write_text(real_skill.read_text())
-    else:
-        skill_dst.write_text("# Stub SKILL.md\n")
-    if real_validator.exists():
-        (repo / "scripts/validate_hypothesis.py").write_text(real_validator.read_text())
-    else:
-        pytest.skip("Real popper-probe validate_hypothesis.py not available")
-    monkeypatch.setenv("POPPER_PROBE_REPO", str(repo))
-    return repo
+    # Deliberately absent: production refinement must not read this location.
+    missing = tmp_path / "no-external-probe"
+    monkeypatch.setenv("POPPER_PROBE_REPO", str(missing))
+    return missing
 
 
 def test_accept_path_writes_file_and_returns_hash(
@@ -180,3 +165,20 @@ def test_static_block_carries_charter_as_guidance(tmp_path, monkeypatch):
     assert "### 2026-07-24 — initial direction" in block
     # Absent charter adds no empty section.
     assert "Lab charter" not in _shared_static_block(vision="v", decisions="d")
+
+
+def test_failed_contract_is_not_accepted(tmp_path, fake_anthropic_factory):
+    text = "---\nslug: unclear\nstatus: unfalsifiable\nfalsifiability_gate: failed\n---\n\n## Diagnostic\nThe objective is missing.\n"
+    result = run_gate(draft_claim="unclear", slug="unclear", corpus_root=tmp_path,
+                      client=fake_anthropic_factory([text]))
+    assert not result.ok and "objective is missing" in result.reason
+    assert not (tmp_path / "unclear/hypothesis.md").exists()
+
+
+def test_internal_refinement_does_not_require_a_checkout(tmp_path, monkeypatch):
+    from efferents.agents.popper_gate import _skill_md, validate_hypothesis_text, INTERACTIVE_INSTRUCTION
+    monkeypatch.setenv("POPPER_PROBE_REPO", str(tmp_path / "absent"))
+    ok, _ = validate_hypothesis_text((FIXTURES / "valid_hypothesis.md").read_text(), tmp_path / "scratch")
+    assert ok
+    assert "routine methodological choices yourself" in _skill_md()
+    assert "Do not ask for routine approval" in INTERACTIVE_INSTRUCTION
