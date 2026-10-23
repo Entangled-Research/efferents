@@ -25,6 +25,8 @@ from typing import Any
 from efferents.agents.state import append_jsonl, read_jsonl
 
 PRICING_PER_MTOK = {
+    "openai/gpt-6-luna": {"input": 0.10, "output": 0.50, "cache_read": 0.01},
+    "openai/gpt-6.1-sol": {"input": 2.00, "output": 10.00, "cache_read": 0.10},
     "claude-sonnet-5":   {"input": 2.00, "output": 10.00},
     "claude-opus-4-7":    {"input":  5.00, "output": 25.00},
     "claude-sonnet-4-6":  {"input":  3.00, "output": 15.00},

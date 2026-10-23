@@ -365,3 +365,37 @@ def test_review_and_rebuttal_allow_reasoning_without_changing_explicit_limits(tm
                                     budget=budget, model=model, max_tokens=explicit)
             assert all(call["max_tokens"] == (explicit or limit) for call in calls[-2:])
     assert default_text_output_tokens("claude-sonnet-4-6,openai/gpt-5.6-sol") == 8192
+
+
+def test_gpt6_responses_preserves_tool_roundtrip_and_usage(monkeypatch):
+    calls = []
+    response = SimpleNamespace(
+        output=[SimpleNamespace(type="function_call", call_id="call-2", name="lookup", arguments='{"q":"next"}')],
+        usage=SimpleNamespace(input_tokens=100, output_tokens=20,
+                              input_tokens_details=SimpleNamespace(cached_tokens=40)),
+    )
+    class FakeOpenAI:
+        def __init__(self, **kwargs):
+            self.responses = self
+        def create(self, **kwargs):
+            calls.append(kwargs)
+            return response
+    monkeypatch.setattr("openai.OpenAI", FakeOpenAI)
+    result = LiteLLMMessagesClient().messages.create(
+        model="openai/gpt-6.1-sol", max_tokens=8192, system="Research carefully.",
+        messages=[{"role":"assistant", "content":[{"type":"tool_use", "id":"call-1", "name":"lookup", "input":{"q":"first"}}]},
+                  {"role":"user", "content":[{"type":"tool_result", "tool_use_id":"call-1", "content":"evidence"}]}],
+        tools=[{"name":"lookup", "input_schema":{"type":"object"}}])
+    call = calls[0]
+    assert call["reasoning"] == {"effort":"high"}
+    assert call["input"][1] == {"type":"function_call", "call_id":"call-1", "name":"lookup", "arguments":'{"q": "first"}'}
+    assert call["input"][2] == {"type":"function_call_output", "call_id":"call-1", "output":"evidence"}
+    assert call["tools"][0]["strict"] is False
+    assert result.stop_reason == "tool_use"
+    assert result.content[0].input == {"q":"next"}
+    assert result.usage.input_tokens == 60
+    assert result.usage.cache_read_input_tokens == 40
+    assert cost_usd("openai/gpt-6.1-sol", CallUsage(1_000_000, 1_000_000, cache_read_input_tokens=1_000_000)) == 12.1
+    assert cost_usd("openai/gpt-6-luna", CallUsage(1_000_000, 1_000_000)) == 0.6
+    from efferents.agents.model_client import default_text_output_tokens
+    assert default_text_output_tokens("openai/gpt-6.1-sol") == 8192

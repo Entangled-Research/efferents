@@ -67,7 +67,7 @@ def resolve_chain(model: str | None = None) -> list[str]:
 def default_text_output_tokens(model: str, *, ordinary: int = 2048) -> int:
     """Leave room for text when OpenAI reasoning shares the output allowance."""
     names = [candidate.rsplit("/", 1)[-1] for candidate in parse_chain(model)]
-    reasoning = any(name.startswith(("gpt-5", "o1", "o3", "o4")) for name in names)
+    reasoning = any(name.startswith(("gpt-5", "gpt-6", "o1", "o3", "o4")) for name in names)
     return max(ordinary, 8192) if reasoning else ordinary
 
 
@@ -479,6 +479,8 @@ def _convert_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 class _Messages:
     def create(self, **kwargs: Any) -> Any:
+        if str(kwargs["model"]).split("/", 1)[-1].startswith("gpt-6"):
+            return self._responses(**kwargs)
         try:
             from litellm import completion
         except ImportError as exc:  # pragma: no cover - installation problem
@@ -535,6 +537,54 @@ class _Messages:
                 cache_read_input_tokens=cached,
             ),
         )
+
+    def _responses(self, **kwargs: Any) -> Any:
+        from openai import OpenAI
+
+        items = []
+        system = _system_text(kwargs.get("system"))
+        if system:
+            items.append({"role": "system", "content": system})
+        for message in _convert_messages(kwargs["messages"]):
+            if message["role"] == "tool":
+                items.append({"type": "function_call_output", "call_id": message["tool_call_id"],
+                              "output": message["content"]})
+                continue
+            content = message["content"]
+            if isinstance(content, list):
+                content = [({"type": "input_image", "image_url": part["image_url"]["url"]}
+                            if part["type"] == "image_url" else
+                            {"type": "output_text" if message["role"] == "assistant" else "input_text",
+                             "text": part["text"]}) for part in content]
+            if content:
+                items.append({"role": message["role"], "content": content})
+            for tool in message.get("tool_calls", []):
+                items.append({"type": "function_call", "call_id": tool["id"], **tool["function"]})
+        model = str(kwargs["model"]).split("/", 1)[-1]
+        call = {"model": model, "input": items, "max_output_tokens": kwargs.get("max_tokens"),
+                "reasoning": {"effort": "low" if "luna" in model else "high"}, "store": False}
+        tools = [{"type": "function", **tool["function"], "strict": False}
+                 for tool in _convert_tools(kwargs.get("tools") or [])]
+        if tools:
+            call["tools"] = tools
+        client = OpenAI(base_url=os.environ.get("EFFERENTS_API_BASE") or None)
+        response = client.responses.create(**call)
+        blocks = []
+        for item in response.output:
+            if item.type == "message":
+                blocks.extend(SimpleNamespace(type="text", text=part.text)
+                              for part in item.content if part.type == "output_text")
+            elif item.type == "function_call":
+                blocks.append(SimpleNamespace(type="tool_use", id=item.call_id, name=item.name,
+                                              input=json.loads(item.arguments)))
+        usage = response.usage
+        cached = min(getattr(usage.input_tokens_details, "cached_tokens", 0) or 0, usage.input_tokens)
+        return SimpleNamespace(content=blocks,
+                               stop_reason="tool_use" if any(b.type == "tool_use" for b in blocks) else "stop",
+                               usage=SimpleNamespace(input_tokens=usage.input_tokens - cached,
+                                                     output_tokens=usage.output_tokens,
+                                                     cache_creation_input_tokens=0,
+                                                     cache_read_input_tokens=cached))
 
 
 class LiteLLMMessagesClient:
