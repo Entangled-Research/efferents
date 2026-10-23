@@ -281,7 +281,25 @@ def _paper_evidence(paths: Any, campaign: dict, runs: list[dict], falsifiers: li
                         records[-1]["provenance_status"] = "executor-reported, not independently verified"
         except (OSError, ValueError, TypeError):
             pass
+    sources = {}
+    for record in records:
+        reported = record.get("reported_provenance", {})
+        source_name, expected = reported.get("executor_file"), reported.get("executor_sha256")
+        try:
+            if not isinstance(source_name, str) or not isinstance(expected, str):
+                continue
+            source = (root / source_name).resolve()
+            if not source.is_relative_to(root / "src") or source.suffix != ".py" or source.stat().st_size > 64000:
+                continue
+            body = source.read_bytes()
+            if hashlib.sha256(body).hexdigest() == expected:
+                sources[expected] = {"path": source_name, "sha256": expected,
+                    "text": body.decode("utf-8"),
+                    "status": "current source verified against executor-reported hash"}
+        except (OSError, ValueError):
+            continue
     return _bounded_evidence(paths, {"hypothesis": hypothesis, "runs": records, "falsifiers": falsifiers,
+            "verified_executor_sources": list(sources.values()),
             "publication_context": campaign.get("publication_context") or "",
             "scope": "Only these eligible campaign runs support this report. A falsifiability gate is not empirical support. Do not infer prospective preregistration or missing methods."})
 

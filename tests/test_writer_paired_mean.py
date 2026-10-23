@@ -203,3 +203,17 @@ def test_standalone_headline_uses_declared_mean_instead_of_best_seed(tmp_path, m
     assert metric['value']==pytest.approx(-.3)
     assert metric['delta_vs_baseline']==pytest.approx(.2)
     assert metric['aggregate']=='mean'
+
+
+def test_writer_supplies_source_only_if_it_matches_recorded_executor_hash(tmp_path):
+    paths=writer_paths(lab=tmp_path/'lab',paper=tmp_path/'paper',reports=tmp_path/'reports',context=tmp_path/'context')
+    logs=paths.lab/'logs';logs.mkdir(parents=True)
+    src=tmp_path/'src';src.mkdir();code=src/'experiment.py';code.write_text('print("bounded experiment")\n')
+    digest=hashlib.sha256(code.read_bytes()).hexdigest();rows=[]
+    for i,sha in enumerate([digest,digest,'0'*64]):
+        output=logs/f'{i}.stdout.log';output.write_text(json.dumps({'metrics':{'score':1},'provenance':{'executor_file':'src/experiment.py','executor_sha256':sha}}))
+        rows.append({'run_id':str(i),'stdout_path':str(output)})
+    result=_paper_evidence(paths,{},rows,[])
+    assert result['verified_executor_sources']==[{'path':'src/experiment.py','sha256':digest,'text':code.read_text(),'status':'current source verified against executor-reported hash'}]
+    code.write_text('print("changed after measurement")\n')
+    assert _paper_evidence(paths,{},rows,[])['verified_executor_sources']==[]
