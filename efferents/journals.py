@@ -1,13 +1,15 @@
 """Shared journal routing vocabulary; routing is not publication or acceptance."""
 
+import re
+
 # Ordered rules: the first matching journal wins. Keep short aliases exact so
 # that, for example, "html" does not match "ml".
 JOURNAL_TAGS = {
     "Chemistry": ("chemistry", "chemical", "reaction-mechanism", "cheminformatics"),
     "Journal of Numerical Analysis": (),
-    "ML & Autonomous Systems": ("machine-learning", "active-learning", "artificial-intelligence"),
+    "ML & Autonomous Systems": ("machine-learning", "active-learning", "artificial-intelligence", "computer-vision", "image-diffusion"),
     "Simulation & Autonomous Systems": ("vehicle", "traffic", "simulation", "routing", "transport"),
-    "Physics & Dynamics": ("physics", "orbit", "mechanics"),
+    "Physics & Dynamics": ("physics", "orbit", "mechanics", "quantum"),
     "Mathematics & Computation": ("math", "graph", "numerical", "algorithm", "optimisation", "optimization"),
 }
 JOURNAL_EXACT_TAGS = {
@@ -22,7 +24,7 @@ JOURNAL_FIELDS = {
     "Journal of Numerical Analysis": "mathematics",
 }
 FIELD_TAGS = {
-    "biology": {"biology", "biological", "ecology", "genetics", "neuroscience", "bioinformatics"},
+    "biology": {"biology", "biological", "ecology", "genetics", "neuroscience", "bioinformatics", "protein", "gfp"},
     "chemistry": {"chemistry", "chemical", "materials"},
     "earth": {"earth", "climate", "geology", "geoscience", "environmental"},
     "computing": {"computing", "computer", "robotics"},
@@ -44,7 +46,7 @@ INTERDISCIPLINARY_EVERY = 5
 
 
 def journal_for_domain(domain: str) -> str:
-    value = domain.casefold().replace("_", "-")
+    value = re.sub(r"[^a-z0-9]+", "-", domain.casefold()).strip("-")
     for journal, tags in JOURNAL_TAGS.items():
         if value in JOURNAL_EXACT_TAGS.get(journal, ()) or any(tag in value for tag in tags):
             return journal
@@ -55,7 +57,7 @@ def stem_field(domain: str) -> str | None:
     journal = journal_for_domain(domain)
     if journal in JOURNAL_FIELDS:
         return JOURNAL_FIELDS[journal]
-    tokens = set(domain.casefold().replace("_", "-").split("-"))
+    tokens = set(re.findall(r"[a-z0-9]+", domain.casefold()))
     for field, tags in FIELD_TAGS.items():
         if tokens & tags:
             return field
