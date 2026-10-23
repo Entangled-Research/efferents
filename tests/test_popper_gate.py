@@ -182,3 +182,9 @@ def test_internal_refinement_does_not_require_a_checkout(tmp_path, monkeypatch):
     assert ok
     assert "routine methodological choices yourself" in _skill_md()
     assert "Do not ask for routine approval" in INTERACTIVE_INSTRUCTION
+
+
+def test_internal_validator_accepts_title_case_section_headings(tmp_path):
+    from efferents.agents.popper_gate import validate_hypothesis_text
+    text=(FIXTURES / "valid_hypothesis.md").read_text().replace("## Operational restatement", "## Operational Restatement").replace("## Test design", "## Test Design")
+    assert validate_hypothesis_text(text,tmp_path)[0]

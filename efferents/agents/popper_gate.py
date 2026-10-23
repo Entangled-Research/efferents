@@ -26,15 +26,23 @@ Do not run a ritual interview or require a separate hypothesis approval.
 Never invent measurements, citations, literature checks or scientific acceptance.
 A passed gate means the proposed experiment is testable, not that the claim is true.
 Emit YAML frontmatter with slug, created (ISO date), status: active,
-falsifiability_gate: passed, literature_pass: none. Include nonempty sections:
-## Original framing (preserve the owner's words)
-## Operational restatement (intervention, baseline, scope, numeric metric and threshold)
-## Falsifier(s) (a measured outcome that would refute the claim)
-## Test design (dataset, split, seeds, controls, resource and stop bounds)
-## Auxiliary assumptions (label all inferred choices)
-## Distinctiveness (competing explanation and confounds)
-## References (only verified sources; otherwise empty)
-## Intake log (assumptions and decisions).
+falsifiability_gate: passed, literature_pass: none. Use these exact headings,
+with descriptions in the section bodies, never appended to the headings:
+## Original framing
+## Operational restatement
+## Falsifier(s)
+## Test design
+## Auxiliary assumptions
+## Distinctiveness
+## References
+## Intake log
+Preserve the owner's words in Original framing. In Operational restatement,
+specify intervention, baseline, scope, numeric metric and threshold. State a
+measured outcome that would refute the claim under Falsifier(s). In Test design,
+name dataset, split, seeds, controls, resource and stop bounds. Label inferred
+choices as Auxiliary assumptions. Name competing explanations in Distinctiveness.
+Use only verified sources in References (otherwise leave it empty). Record
+assumptions and decisions in Intake log.
 If no measurable contract can be formed, use status: unfalsifiable,
 falsifiability_gate: failed and a nonempty ## Diagnostic explaining the blocker.
 """.strip()
@@ -200,7 +208,7 @@ def _validate(path: Path) -> tuple[bool, str]:
         return False, "ERROR: falsifiability_gate must be passed or failed"
     sections = ("Operational restatement", "Falsifier(s)", "Test design") if gate == "passed" else ("Diagnostic",)
     for section in sections:
-        part = re.search(r"(?ms)^## " + re.escape(section) + r"[ \t]*\n(.*?)(?=^## |\Z)", text)
+        part = re.search(r"(?ims)^## " + re.escape(section) + r"[ \t]*\n(.*?)(?=^## |\Z)", text)
         if not part or not part.group(1).strip():
             return False, f"ERROR: nonempty ## {section} is required"
     if gate == "passed" and front.get("status") != "active":
