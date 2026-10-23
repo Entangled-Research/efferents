@@ -17,6 +17,7 @@ import math
 import os
 import re
 import shutil
+import shlex
 import signal
 import sqlite3
 import subprocess
@@ -242,7 +243,11 @@ def _execute_run(config_path: Path, *, smoke: bool = False, source_dir: Path | N
     )
     if source_dir is not None:
         template = template.replace(str(cfg.source.dir.resolve()), str(source_dir))
-    cmd = template.format(config_path=str(config_path))
+    # Treat the placeholder as one shell argument, even inside a submission
+    # directory containing spaces or shell metacharacters. Accept legacy
+    # templates that already quote the complete placeholder value.
+    template = template.replace('"{config_path}"', '{config_path}').replace("'{config_path}'", '{config_path}')
+    cmd = template.format(config_path=shlex.quote(str(config_path)))
     return _run_and_capture(
         cmd,
         timeout_s=(

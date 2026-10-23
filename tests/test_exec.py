@@ -127,3 +127,25 @@ def test_run_and_capture_preserves_structured_observations(tmp_path):
     assert len(result.observations) == 2
     assert result.observations[0]["dimensions"]["variant"] == "treatment"
     assert result.observations[1]["metrics"]["loss"] == 0.3
+
+
+def test_executor_passes_spaced_and_metacharacter_config_as_one_argument(tmp_path, monkeypatch):
+    from dataclasses import replace
+    from pathlib import Path
+    from efferents import lab
+    from efferents.exec import _execute_run
+    cfg = lab.LabConfig.from_submission(Path(__file__).parent / 'fixtures/sample_submission')
+    directory = tmp_path / "lab with spaces ' and $literal; name"
+    directory.mkdir()
+    config = directory / 'config.yaml'
+    config.write_text('measured: 1\n')
+    script = directory / 'reader.py'
+    script.write_text("import json, pathlib, sys; print(json.dumps({'metrics':{'synthetic_loss': int(pathlib.Path(sys.argv[1]).read_text() == 'measured: 1\\n')}}))")
+    for placeholder in ('{config_path}', '"{config_path}"', "'{config_path}'"):
+        command = f'{shlex.quote(sys.executable)} {shlex.quote(str(script))} {placeholder}'
+        active = replace(cfg, executor=replace(cfg.executor, run_command=command, smoke_command=command))
+        monkeypatch.setattr(lab, 'get_config', lambda: active)
+        for smoke in (False, True):
+            result = _execute_run(config, smoke=smoke)
+            assert result.ok, result.stderr
+            assert result.metrics['synthetic_loss'] == 1
