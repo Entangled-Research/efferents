@@ -359,11 +359,32 @@ def _fmt_stat(x: float | None) -> str:
     return "—" if x is None else f"{x:.4g}"
 
 
-def _evidence_section(rows: list[dict[str, Any]], cfg=None) -> str:
+def _evidence_section(rows: list[dict[str, Any]], cfg=None, *, submission: Path | None = None) -> str:
     """Deterministic (no-LLM) evidence block: per-bucket medians of the headline
     and panel columns, seed-paired arm deltas when a comparison axis is
     observed, the falsifier table, and the verdict line."""
     cfg = cfg or _lab.get_config()
+    if len(cfg.students) > 1:
+        from dataclasses import replace
+        from efferents.eval_suite import resolve_idea_config
+        lines = ["## Evidence (computed)", "", "Independent idea contracts; no pooled scientific verdict."]
+        for student in cfg.students:
+            sid = student["id"]
+            selected = [r for r in rows if r.get("student_id") == sid]
+            lines += ["", f"### Idea: {sid}", ""]
+            try:
+                if submission is None:
+                    raise ValueError("Submission required to resolve idea contracts")
+                scoped = resolve_idea_config(submission, cfg, sid)
+                scoped = replace(scoped, students=(student,))
+                block = _evidence_section(selected, scoped)
+                lines.append(block.removeprefix("## Evidence (computed)\n"))
+            except (OSError, ValueError, TypeError) as exc:
+                lines.append(f"Evaluation unconfigured: {exc}. No verdict.")
+        unknown = sum(r.get("student_id") not in {s["id"] for s in cfg.students} for r in rows)
+        if unknown:
+            lines += ["", f"{unknown} runs lack a configured idea identity; excluded from idea verdicts."]
+        return "\n".join(lines)
     cols: list[str] = []
     for c in (cfg.metrics.headline.column, *(p.column for p in cfg.metrics.panels)):
         if c not in cols:
@@ -479,7 +500,7 @@ def write_digest(
 
     groups = group_runs_by_campaign(rows)
     campaign_blocks = _format_campaign_blocks(groups, paths.runs_db)
-    evidence_section = _evidence_section(rows)
+    evidence_section = _evidence_section(rows, submission=context_dir.parent)
     # Blind review runs first (at most one extra call) so the narrative can cite it.
     review_section = blind_image_review(rows=rows, budget=budget, client=client, model=chosen) or ""
 

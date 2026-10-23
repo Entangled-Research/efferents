@@ -76,3 +76,38 @@ def test_write_digest_prepends_evidence_and_prompts_with_it(tmp_path, fake_anthr
     prompt = json.dumps(client.calls[0]["messages"])
     assert "Evidence summary (computed, deterministic)" in prompt
     assert "### Falsifiers" in prompt and "Verdict:** survives" in prompt
+
+
+def test_independent_ideas_never_pool_opposing_results(tmp_path, monkeypatch):
+    from dataclasses import replace
+    import efferents.eval_suite as suites
+    cfg = replace(make_cfg(tmp_path, falsifiers=FALSIFIERS[:1]),
+                  students=({"id": "a"}, {"id": "b"}))
+    monkeypatch.setattr(suites, "resolve_idea_config", lambda root, cfg, sid: cfg)
+    rows = [{**r, "student_id": sid} for sid, delta in (("a", -1.), ("b", 1.))
+            for r in make_rows(deltas_by_q={16: [delta]*5})]
+    text = analyst._evidence_section(rows, cfg, submission=tmp_path)
+    a, b = text.split("### Idea: a")[1].split("### Idea: b")
+    assert "**Verdict:** survives" in a
+    assert "**Verdict:** falsified" in b
+    assert "no pooled scientific verdict" in text
+
+
+def test_missing_idea_contract_never_borrows_global_verdict(tmp_path):
+    from dataclasses import replace
+    cfg = replace(make_cfg(tmp_path), students=({"id": "a"}, {"id": "b"}))
+    text = analyst._evidence_section(ROWS, cfg, submission=tmp_path)
+    assert text.count("No verdict.") == 2
+    assert "**Verdict:**" not in text
+
+
+def test_lab_verdict_defers_to_independent_idea_verdicts(tmp_path, monkeypatch):
+    from dataclasses import replace
+    from efferents.dashboard import ideas, reader
+    cfg = replace(make_cfg(tmp_path), students=({"id": "a"}, {"id": "b"}))
+    monkeypatch.setattr(ideas, "read_idea", lambda root, cfg, sid: {
+        "student_id": sid, "verdict": {"n_runs": 5, "verdict": "survives" if sid == "a" else "falsified"}})
+    result = reader.read_verdict(tmp_path, cfg)
+    assert result["verdict"] == "undecided" and result["n_runs"] == 10
+    assert [idea["verdict"] for idea in result["ideas"]] == ["survives", "falsified"]
+    assert result["falsifiers"] == []

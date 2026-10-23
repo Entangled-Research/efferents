@@ -453,6 +453,14 @@ def read_verdict(lab_root: Path, cfg: "LabConfig | None" = None, *, rows: list[d
     """Deterministic evidence over succeeded runs: per-bucket aggregates,
     seed-paired deltas, every declared falsifier, and the resulting verdict."""
     cfg = cfg or lab_mod.get_config()
+    if rows is None and len(cfg.students) > 1:
+        from efferents.dashboard.ideas import read_idea
+        ideas = [read_idea(Path(lab_root), cfg, student["id"]) for student in cfg.students]
+        return {"verdict": "undecided", "line": "See each idea’s independent verdict.",
+                "n_runs": sum(idea["verdict"]["n_runs"] for idea in ideas),
+                "axes": [], "comparison": {"axis": None, "labels": {}},
+                "columns": [], "buckets": [], "paired": [], "falsifiers": [],
+                "ideas": [{"student_id": idea["student_id"], **idea["verdict"]} for idea in ideas]}
     rows = rows if rows is not None else _ledger_rows(lab_root)
     status, falsifiers = _verdict(rows, cfg)
     buckets, paired = _bucket_entries(rows, cfg)
