@@ -81,3 +81,43 @@ def test_stale_open_respects_recent_runs(db):
 
     stale = campaign_stale_open(db, "qfm-diffusion", hours=48)
     assert stale == []
+
+
+def test_followup_chain_persists_failures_and_stops_at_acceptance(db):
+    from efferents.agents.state import campaign_history, campaign_pending_followup
+    campaign_insert(db, **_row(id_="root"))
+    campaign_close(db, "root", reason="falsified")
+    assert campaign_pending_followup(db, "qfm-diffusion", "primary")["id"] == "root"
+    campaign_insert(db, **_row(id_="child"), parent_campaign_id="root")
+    assert campaign_pending_followup(db, "qfm-diffusion", "primary") is None
+    campaign_close(db, "child", reason="rejected_by_review")
+    assert campaign_pending_followup(db, "qfm-diffusion", "primary")["id"] == "child"
+    campaign_insert(db, **_row(id_="grandchild"), parent_campaign_id="child")
+    campaign_close(db, "grandchild", reason="published")
+    assert campaign_pending_followup(db, "qfm-diffusion", "primary") is None
+    rows = campaign_history(db, "qfm-diffusion")
+    assert {row['id']: row['parent_campaign_id'] for row in rows} == {'root': None, 'child': 'root', 'grandchild': 'child'}
+    assert rows[0]['close_reason'] == 'falsified'
+
+
+@pytest.mark.parametrize('reason', ['published', 'stale', 'owner_deleted', None])
+def test_only_scientific_failures_request_children(db, reason):
+    from efferents.agents.state import campaign_pending_followup
+    campaign_insert(db, **_row())
+    if reason:
+        campaign_close(db, 'c1', reason=reason)
+    assert campaign_pending_followup(db, 'qfm-diffusion', 'primary') is None
+    with pytest.raises(ValueError, match='same lab and idea'):
+        campaign_insert(db, **_row(id_='invalid'), parent_campaign_id='c1')
+
+
+def test_lineage_cannot_cross_ownership_or_create_duplicate_children(db):
+    campaign_insert(db, **_row())
+    campaign_close(db, 'c1', reason='rejected_by_review')
+    for kwargs in ({'lab_id': 'other'}, {'student_id': 'other'}):
+        row = {**_row(id_='bad'), **kwargs}
+        with pytest.raises(ValueError):
+            campaign_insert(db, **row, parent_campaign_id='c1')
+    campaign_insert(db, **_row(id_='child'), parent_campaign_id='c1')
+    with pytest.raises(ValueError, match='already has a child'):
+        campaign_insert(db, **_row(id_='duplicate'), parent_campaign_id='c1')

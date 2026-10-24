@@ -2742,3 +2742,7 @@ td.status-insufficient_data {
 .efferent-lab[data-growth="wide"] .lab-idea-branch { display: grid; gap: 2px; align-content: start; }
 .map-controls button[aria-pressed="false"] { color: var(--muted); }
 @media(max-width:720px) { .efferent-lab[data-growth] { width: 336px; } .efferent-lab[data-growth="wide"] .lab-idea-branches { display: block; } }
+
+/* Scientific report equations keep their natural width on small screens. */
+.katex-display { overflow-x: auto; overflow-y: hidden; padding: .4rem 0; }
+#campaign-lineage { font-family: var(--mono); font-size: .8rem; }

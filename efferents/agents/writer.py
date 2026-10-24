@@ -21,6 +21,7 @@ import hashlib
 import json
 import math
 import statistics
+import sqlite3
 from pathlib import Path
 from typing import Any
 
@@ -594,6 +595,17 @@ def write_phase_a_paper(
                 stream.write(f"\n### Writer gate: skipped {campaign_id}\n\n"
                              f"Aggregate falsifier {result['id']}: {result['status']}; "
                              f"{result['detail']}; publication held.\n")
+            if result["status"] == "fired" and not any(
+                item["status"] == "insufficient_data" for item in falsifier_results
+            ):
+                # Close the disproved claim without erasing its evidence. The next
+                # normal researcher turn creates a gated, linked follow-up.
+                try:
+                    from efferents.agents.state import campaign_close
+                    campaign_close(paths.runs_db, campaign_id, reason="falsified",
+                                   detail="; ".join(f"{item['id']}: {item['status']}: {item['detail']}" for item in falsifier_results))
+                except (KeyError, sqlite3.OperationalError):
+                    pass
             return None
 
     existing_claims = _load_existing_claims()
@@ -879,7 +891,7 @@ def _review_draft_locked(paths: Any, campaign: dict, artifact: str, client: Any,
             notebook_append(paths.notebook, f"## {now_iso()} — paper commit failed: {type(exc).__name__}\n")
     reason = "published" if decision["accept"] else "rejected_by_review"
     try:
-        campaign_close(paths.runs_db, campaign_id, reason=reason)
+        campaign_close(paths.runs_db, campaign_id, reason=reason, detail=decision["reason"])
     except Exception:
         pass
     state.update(completed=True, decision=decision, completed_at=now_iso())

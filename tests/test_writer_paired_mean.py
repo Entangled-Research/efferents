@@ -54,6 +54,12 @@ def test_paired_mean_reports_fired_falsifier_without_cross_campaign_cherry_pick(
             conn.execute("INSERT INTO runs VALUES (?,?,?,?,?,?,?,?,?,?)", (f"r{i}", "v2", str(i), "succeeded", 101+i, .7+i*.1, .8+i*.1, -10, 2, f"seed: {101+i}\n"))
         for rid, campaign, status, revision in [("other", "v1", "succeeded", 2), ("failed", "v2", "failed", 2), ("old", "v2", "succeeded", 1)]:
             conn.execute("INSERT INTO runs VALUES (?,?,?,?,?,?,?,?,?,?)", (rid, campaign, rid, status, 1, 100, .01, 9999, revision, "excluded: true\n"))
+    from efferents.migrations.runner import apply_campaigns_migration
+    from efferents.agents.state import campaign_insert, campaign_history
+    apply_campaigns_migration(paths.runs_db)
+    campaign_insert(paths.runs_db, id="v2", lab_id=cfg.lab_id,
+                    question="Bounded result below the target", hypothesis_path="hypothesis.md",
+                    hypothesis_hash="recorded", student_id="sibling" if scoped else "primary")
     hypothesis = (sub / "hypothesis.md").read_text()
     client = fake_anthropic_factory(["\n".join(f"## {s}\n\nBounded negative result.\n" for s in ("Motivation", "Methods", "Results", "Conclusion", "Next questions"))])
     result = write_phase_a_paper(paths, {
@@ -65,6 +71,10 @@ def test_paired_mean_reports_fired_falsifier_without_cross_campaign_cherry_pick(
     }, client, publication_comparison=lab.Headline("candidate", "max", "prior", "mean") if scoped else None)
     if not expected:
         assert result is None and client.calls == []
+        saved = campaign_history(paths.runs_db, cfg.lab_id)[0]
+        assert saved["close_reason"] == ("falsified" if finding_kind == "improvement" and n_valid >= 3 else None)
+        if saved["close_reason"] == "falsified":
+            assert "gain-target: fired" in saved["outcome_detail"]
         assert "Aggregate falsifier gain-target" in paths.notebook.read_text()
         return
     fm = yaml.safe_load(result.split("---", 2)[1])

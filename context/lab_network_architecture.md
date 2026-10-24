@@ -66,8 +66,12 @@ Each reviewer call remains within the lab's existing model/budget flow.
 Persist the paper, individual reviews, confidence, rationale, rebuttal, and decision.
 `paper/<campaign>.reviews.md` is human-readable; `.reviews.json` preserves structured
 review details. Accepted papers enter `paper/journal.md`; rejected papers remain
-local in the rejected register. Rejection returns work to the lab for revision;
-it does not automatically restart a closed campaign or authorize further spending.
+local in the rejected register. Rejection and adequately evidenced falsification return work to the lab for a new,
+model-led child campaign. Parent evidence and reviews remain immutable; private
+campaign history records each parent and child. Failed children receive another
+follow-up until substantive acceptance, within the existing owner instructions,
+pause/deletion controls and budget. This never restarts a closed campaign,
+weakens acceptance standards, or authorizes spending beyond the existing allocation.
 
 ## Network visual contract
 

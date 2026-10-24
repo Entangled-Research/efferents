@@ -55,6 +55,7 @@ def read_state(lab_root: Path, cfg: "LabConfig | None" = None) -> dict:
             "cap": cfg.budget.daily_cap_usd,
         },
         "hypothesis": _current_hypothesis(lab_root, cfg.lab_id),
+        "campaign_history": state_mod.campaign_history(lab_root / "runs.sqlite", cfg.lab_id) if (lab_root / "runs.sqlite").exists() else [],
     }
 
 

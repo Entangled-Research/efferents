@@ -14,7 +14,8 @@ def render():
         pytest.skip("Node.js is needed to execute the browser renderer")
     source = (Path(__file__).resolve().parents[1] / "efferents/dashboard/static/dashboard.js").read_text()
     # Load the actual pure helpers without starting the browser application.
-    helpers = source[source.index("function esc(value)"):source.index("function text(")]
+    helpers = "const katex = require(" + json.dumps(str(Path(__file__).resolve().parents[1] / "efferents/dashboard/static/vendor/katex/katex.min.js")) + ");\n"
+    helpers += source[source.index("function esc(value)"):source.index("function text(")]
     helpers += source[source.index("function renderPublicationInline(value)"):source.index("function networkDialog(")]
 
     def run(markdown):
@@ -69,3 +70,19 @@ def test_untrusted_manuscript_never_creates_active_html(render):
         assert tag not in result
     assert "<strong>&lt;img" in result
     assert "<code>&lt;/code&gt;&lt;svg" in result
+
+
+def test_math_is_typeset_without_markdown_corruption(render):
+    result = render(r"Inline \(\alpha_i + \frac{1}{2}\) and $x_1^2$." + "\n\n" + r"\[" + "\n" + r"\sum_{i=1}^n x_i = \lVert x \rVert" + "\n" + r"\]")
+    assert result.count('class="katex"') == 3
+    assert 'class="katex-display"' in result
+    assert 'katex-error' not in result
+    assert '<em>' not in result
+
+
+def test_code_currency_and_untrusted_math(render):
+    result = render(r"Cost $100 per person. `\(x_1\)`" + "\n\n```tex\n$$x_1$$\n```\n\n" + r"\(\href{javascript:alert(1)}{x}\)")
+    assert 'Cost $100 per person.' in result
+    assert '<code>\\(x_1\\)</code>' in result
+    assert '<pre><code>$$x_1$$</code></pre>' in result
+    assert '<a ' not in result

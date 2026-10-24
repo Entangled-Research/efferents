@@ -863,7 +863,26 @@ function renderPublicationInline(value) {
 }
 
 function renderMarkdownSafe(markdown) {
-  const source = String(markdown || "").replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, "");
+  // Protect math before Markdown consumes backslashes, underscores or table pipes.
+  // Code is literal; untrusted TeX cannot enable HTML, URLs or shared macros.
+  const math = [];
+  const source = String(markdown || "").replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, "")
+    .replace(/```[\s\S]*?(?:```|$)|(`+)[^\n]*?\1|\\\[[\s\S]*?\\\]|\\\([\s\S]*?\\\)|\$\$[\s\S]*?\$\$|\$(?!\s|\d+(?:[.,]\d+)?(?:\s|$))[^\n$]+?\$|\\begin\{(equation\*?|align\*?|gather\*?)\}[\s\S]*?\\end\{\2\}/g, token => {
+      if (token.startsWith("`")) return token;
+      const environment = token.startsWith("\\begin");
+      const display = environment || token.startsWith("$$") || token.startsWith("\\[");
+      const width = token.startsWith("$") && !display ? 1 : 2;
+      const tex = environment ? token : token.slice(width, -width);
+      let html = esc(token);
+      if (typeof katex !== "undefined") {
+        try { html = katex.renderToString(tex, {displayMode: display, throwOnError: false,
+          trust: false, maxExpand: 1000, maxSize: 20, macros: {}}); }
+        catch (_) { /* Preserve invalid or unsupported math visibly. */ }
+      }
+      const placeholder = `EFFMATH${math.length}TOKEN`;
+      math.push(html);
+      return placeholder;
+    });
   const lines = source.split(/\r?\n/);
   const out = [];
   let paragraph = [], listType = "", tableRows = [], code = null;
@@ -908,7 +927,7 @@ function renderMarkdownSafe(markdown) {
   }
   flushParagraph(); flushList(); flushTable();
   if (code) out.push(`<pre><code>${code.map(esc).join("\n")}</code></pre>`);
-  return out.join("");
+  return out.join("").replace(/EFFMATH(\d+)TOKEN/g, (token, index) => math[Number(index)] ?? token);
 }
 
 function networkDialog(title, content) {
@@ -965,7 +984,7 @@ function inspectJournal(name) {
   const papers = publishedFindings().filter(item => homeJournal(item) === name);
   networkDialog(`${name} · Journal directory`,
     `<p>${papers.length} accepted publications</p>` + (papers.map(item =>
-      `<article class="journal-directory-record"><h3>${esc(item.campaign_id || "Paper")}</h3><p>${esc(labDisplayName(item.lab_id))} · ${esc(item.publication_status)}</p><dl class="inspector-metrics">${["critical", "neutral", "optimistic"].map(persona => `<dt>${persona}</dt><dd>${esc(item.review_scores?.[persona] ?? "—")}/10</dd>`).join("")}</dl><details><summary>Read publication</summary><pre>${esc(item.body || "No text shared")}</pre></details><small>Record ${esc(item.id)}${item.source ? ` · ${esc(item.source)}` : ""}</small></article>`
+      `<article class="journal-directory-record"><h3>${esc(item.campaign_id || "Paper")}</h3><p>${esc(labDisplayName(item.lab_id))} · ${esc(item.publication_status)}</p><dl class="inspector-metrics">${["critical", "neutral", "optimistic"].map(persona => `<dt>${persona}</dt><dd>${esc(item.review_scores?.[persona] ?? "—")}/10</dd>`).join("")}</dl><details><summary>Read publication</summary><div class="publication-manuscript">${renderMarkdownSafe(item.manuscript || item.body || "No text shared")}</div></details><small>Record ${esc(item.id)}${item.source ? ` · ${esc(item.source)}` : ""}</small></article>`
     ).join("") || "<p>No accepted publications yet.</p>"));
 }
 
@@ -1553,6 +1572,14 @@ function renderState(state) {
   };
   renderBudget();
 
+  const lineage = document.getElementById("campaign-lineage");
+  if (lineage) {
+    const history = state.campaign_history || [];
+    lineage.innerHTML = history.length ? `<details><summary>Experiment history · ${history.length} campaigns</summary><ul>${history.map(row => {
+      const children = history.filter(child => child.parent_campaign_id === row.id);
+      return `<li><strong>${esc(row.id)}</strong> · ${esc(row.close_reason || "active")} · ${esc(row.question)}${row.outcome_detail ? ` · ${esc(row.outcome_detail)}` : ""}${row.parent_campaign_id ? ` · child of ${esc(row.parent_campaign_id)}` : ""}${children.length ? ` · children: ${children.map(child => esc(child.id)).join(", ")}` : ""}</li>`;
+    }).join("")}</ul></details>` : "";
+  }
   const hypothesis = state.hypothesis || {};
   text("student", hypothesis.student ? `student / ${hypothesis.student}` : "student / —");
   const question = hypothesis.question || "No open campaign.";

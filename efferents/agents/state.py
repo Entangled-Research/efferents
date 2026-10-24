@@ -684,6 +684,7 @@ def campaign_insert(
     headline_metric: str | None = None,
     headline_direction: str | None = None,
     finding_kind: str | None = None,
+    parent_campaign_id: str | None = None,
 ) -> None:
     conn = sqlite3.connect(db_path)
     try:
@@ -706,6 +707,21 @@ def campaign_insert(
         if "finding_kind" in cols:
             names.append("finding_kind")
             values.append(finding_kind)
+        if parent_campaign_id is not None:
+            if "parent_campaign_id" not in cols:
+                raise ValueError("campaign lineage migration required")
+            conn.execute("BEGIN IMMEDIATE")
+            parent = conn.execute(
+                "SELECT lab_id, student_id, close_reason FROM campaigns WHERE id = ?",
+                (parent_campaign_id,),
+            ).fetchone()
+            if not parent or parent[:2] != (lab_id, student_id) or parent[2] not in ("falsified", "rejected_by_review"):
+                raise ValueError("follow-up parent must be failed work in the same lab and idea")
+            if conn.execute("SELECT 1 FROM campaigns WHERE parent_campaign_id = ?", (parent_campaign_id,)).fetchone():
+                raise ValueError("follow-up parent already has a child")
+        if "parent_campaign_id" in cols:
+            names.append("parent_campaign_id")
+            values.append(parent_campaign_id)
         placeholders = ", ".join("?" for _ in names)
         conn.execute(
             f"INSERT INTO campaigns ({', '.join(names)}) VALUES ({placeholders})",
@@ -716,13 +732,20 @@ def campaign_insert(
         conn.close()
 
 
-def campaign_close(db_path: Path, id: str, *, reason: str) -> None:
+def campaign_close(db_path: Path, id: str, *, reason: str, detail: str | None = None) -> None:
     conn = sqlite3.connect(db_path)
     try:
-        cur = conn.execute(
-            "UPDATE campaigns SET closed_at = ?, close_reason = ? WHERE id = ? AND closed_at IS NULL",
-            (now_iso(), reason, id),
-        )
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(campaigns)")}
+        if "outcome_detail" in cols:
+            cur = conn.execute(
+                "UPDATE campaigns SET closed_at = ?, close_reason = ?, outcome_detail = ? WHERE id = ? AND closed_at IS NULL",
+                (now_iso(), reason, detail, id),
+            )
+        else:
+            cur = conn.execute(
+                "UPDATE campaigns SET closed_at = ?, close_reason = ? WHERE id = ? AND closed_at IS NULL",
+                (now_iso(), reason, id),
+            )
         conn.commit()
         if cur.rowcount == 0:
             raise KeyError(f"campaign {id!r} not found or already closed")
@@ -994,3 +1017,28 @@ def mark_patch(
     if status == "applied" and hit.get("blocked_id"):
         resolve_block(lab_root, hit["blocked_id"], by=by)
     return True
+
+
+def campaign_history(db_path: Path, lab_id: str, student_id: str | None = None) -> list[dict[str, Any]]:
+    """Private, durable campaign family history; compatible with older ledgers."""
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(campaigns)")}
+        if not cols:
+            return []
+        query = "SELECT * FROM campaigns WHERE lab_id = ?"
+        args = [lab_id]
+        if student_id is not None and "student_id" in cols:
+            query += " AND student_id = ?"
+            args.append(student_id)
+        return [dict(row) for row in conn.execute(query + " ORDER BY opened_at, id", args)]
+    finally:
+        conn.close()
+
+
+def campaign_pending_followup(db_path: Path, lab_id: str, student_id: str) -> dict[str, Any] | None:
+    rows = campaign_history(db_path, lab_id, student_id)
+    parents = {row.get("parent_campaign_id") for row in rows}
+    return next((row for row in rows if row.get("close_reason") in
+                 ("falsified", "rejected_by_review") and row["id"] not in parents), None)

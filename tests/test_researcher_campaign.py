@@ -210,3 +210,36 @@ def test_campaign_binding_refuses_ambiguous_or_unregistered_evidence():
     proposals, errors = _bind_campaign_proposals([{'name':'p','campaign_id':'new'}], opens,
                                                 new_campaign_declared=True, new_campaign_id=None)
     assert not proposals and errors
+
+
+@pytest.mark.parametrize("gate_ok", [True, False])
+def test_researcher_automatically_links_gated_followup(paths, fake_anthropic_factory, tmp_path, monkeypatch, gate_ok):
+    from efferents import lab
+    from efferents.agents import popper_gate
+    from efferents.agents.state import campaign_close, campaign_history, campaign_pending_followup
+    campaign_insert(paths.runs_db, id='failed-parent', lab_id=lab.LAB_ID,
+                    question='Original mechanism', hypothesis_path='old.md', hypothesis_hash='old')
+    campaign_close(paths.runs_db, 'failed-parent', reason='rejected_by_review')
+    paths.notebook.write_text('Parent failed: missing controls.\n')
+    paper = paths.root.parent / 'paper'
+    paper.mkdir(exist_ok=True)
+    (paper / 'failed-parent.reviews.md').write_text('Material flaw: confounded comparison; require matched controls.')
+    hypothesis = paths.root.parent / 'popper-corpus' / 'child.md'
+    hypothesis.parent.mkdir(exist_ok=True)
+    hypothesis.write_text('New controlled hypothesis')
+    monkeypatch.setattr(popper_gate, 'run_gate', lambda **kw: popper_gate.GateResult(
+        ok=gate_ok, path=hypothesis if gate_ok else None, hash='sha256:'+'a'*64 if gate_ok else None, reason=None if gate_ok else 'missing falsifier'))
+    client = fake_anthropic_factory(_dialog_responses(_researcher_response_with_new_campaign()))
+    result = researcher.propose(paths=paths, context_dir=tmp_path, budget=FakeBudget(), client=client)
+    history = campaign_history(paths.runs_db, lab.LAB_ID)
+    if not gate_ok:
+        assert len(history) == 1 and result['proposals'] == []
+        assert campaign_pending_followup(paths.runs_db, lab.LAB_ID, 'primary')['id'] == 'failed-parent'
+        return
+    child = next(row for row in history if row['id'] != 'failed-parent')
+    assert child['parent_campaign_id'] == 'failed-parent'
+    assert result['proposals'][0]['campaign_id'] == child['id']
+    assert campaign_pending_followup(paths.runs_db, lab.LAB_ID, 'primary') is None
+    prompt = json.dumps(client.calls)
+    assert 'Required scientific follow-up' in prompt
+    assert 'confounded comparison' in prompt

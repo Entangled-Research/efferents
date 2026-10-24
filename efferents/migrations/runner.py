@@ -58,6 +58,8 @@ _NEW_CAMPAIGN_COLUMNS = (
     ("headline_direction", "TEXT"),
     # Explicit finding route. Existing campaigns remain ordinary improvements.
     ("finding_kind", "TEXT"),
+    ("parent_campaign_id", "TEXT"),
+    ("outcome_detail", "TEXT"),
 )
 
 
