@@ -175,6 +175,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 if STATIC_DIR in target.parents and target.is_file():
                     return self._send_file(target)
             self.send_error(404)
+        except (BrokenPipeError, ConnectionResetError):
+            # The operation can finish durably after its browser disconnects.
+            # Do not turn a failed response write into a second mutation/500.
+            return
         except ControlError as exc:
             self._send_json({"error": str(exc)}, status=exc.status)
         except Exception:  # read-only server: log server-side, return generic 500
@@ -282,6 +286,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 self._require_owner(lab)
                 return self._send_json(self._lab_mutation(lab, match.group("rest"), payload))
             self.send_error(404)
+        except (BrokenPipeError, ConnectionResetError):
+            # The operation can finish durably after its browser disconnects.
+            # Do not turn a failed response write into a second mutation/500.
+            return
         except ControlError as exc:
             self._send_json({"error": str(exc)}, status=exc.status)
         except (json.JSONDecodeError, UnicodeDecodeError, TypeError):
