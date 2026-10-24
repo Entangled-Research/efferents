@@ -34,3 +34,15 @@ def test_diffusion_alias_does_not_route_physical_diffusion_to_ml():
     assert journal_for_domain('machine learning') == 'ML & Autonomous Systems'
     assert journal_for_domain('molecular diffusion') != 'ML & Autonomous Systems'
     assert journal_for_domain('quantum data encoding and tensor networks') == 'Physics & Dynamics'
+
+
+@pytest.mark.parametrize('domain,journal', [
+    ('GFP fluorescence prediction', 'Biology & Protein Science'),
+    ('GFP mutational epistasis and protein fluorescence', 'Biology & Protein Science'),
+    ('generative modeling and flow matching', 'ML & Autonomous Systems'),
+    ('computational fluid dynamics and surrogate modeling', 'Physics & Dynamics'),
+    ('C program security and hardware-dependent behavior', 'Computing & Security'),
+])
+def test_event_research_domains_share_their_scientific_journals(domain, journal):
+    assert journal_for_domain(domain) == journal
+    assert related_stem_domains(domain, 'synthetic image diffusion and spatial reasoning')

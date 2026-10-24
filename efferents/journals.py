@@ -5,11 +5,13 @@ import re
 # Ordered rules: the first matching journal wins. Keep short aliases exact so
 # that, for example, "html" does not match "ml".
 JOURNAL_TAGS = {
+    "Biology & Protein Science": ("biology", "biological", "protein", "gfp", "genetics", "bioinformatics"),
     "Chemistry": ("chemistry", "chemical", "reaction-mechanism", "cheminformatics"),
     "Journal of Numerical Analysis": (),
-    "ML & Autonomous Systems": ("machine-learning", "active-learning", "artificial-intelligence", "computer-vision", "image-diffusion"),
+    "ML & Autonomous Systems": ("machine-learning", "active-learning", "artificial-intelligence", "computer-vision", "image-diffusion", "flow-matching", "generative-model"),
     "Simulation & Autonomous Systems": ("vehicle", "traffic", "simulation", "routing", "transport"),
-    "Physics & Dynamics": ("physics", "orbit", "mechanics", "quantum"),
+    "Physics & Dynamics": ("physics", "orbit", "mechanics", "quantum", "fluid-dynamics", "aerodynamic", "airfoil"),
+    "Computing & Security": ("program-security", "computer-security", "cybersecurity", "hardware-dependent", "software-security"),
     "Mathematics & Computation": ("math", "graph", "numerical", "algorithm", "optimisation", "optimization"),
 }
 JOURNAL_EXACT_TAGS = {
@@ -17,6 +19,8 @@ JOURNAL_EXACT_TAGS = {
     "ML & Autonomous Systems": ("ml",),
 }
 JOURNAL_FIELDS = {
+    "Biology & Protein Science": "biology",
+    "Computing & Security": "computing",
     "ML & Autonomous Systems": "computing",
     "Simulation & Autonomous Systems": "engineering",
     "Physics & Dynamics": "physics",
