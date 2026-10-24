@@ -53,10 +53,9 @@ def create_lab(destination: Path, *, starter: str = "auto", idea: str = "",
                goal: str = "", approach: str = "", exchange: bool = False,
                name: str = "") -> dict:
     """Infer reversible choices, preserve the owner's idea, record every default."""
-    for field, value, limit in (("idea", idea, 4000), ("goal", goal, 160), ("approach", approach, 160),
-                                ("name", name, 128)):
-        if not isinstance(value, str) or len(value) > limit or "\x00" in value:
-            raise ValueError(f"{field} must be text of at most {limit} characters")
+    for field, value in (("idea", idea), ("goal", goal), ("approach", approach), ("name", name)):
+        if not isinstance(value, str) or "\x00" in value:
+            raise ValueError(f"{field} must be text without null bytes")
     if starter == "auto":
         words = idea.lower()
         inferred = next((name for name, keys in (

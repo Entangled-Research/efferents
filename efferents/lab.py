@@ -929,8 +929,8 @@ class LabConfig:
             raise SubmissionError("hypothesis_validation must be lightweight or popper")
         for field_name in ("research_goal", "approach"):
             value = raw.get(field_name, "")
-            if not isinstance(value, str) or len(value) > 160:
-                raise SubmissionError(f"{field_name} must be text of at most 160 characters")
+            if not isinstance(value, str):
+                raise SubmissionError(f"{field_name} must be text")
         fm = _parse_hypothesis(submission_dir / "hypothesis.md", validation=validation)
         if validation == "lightweight" and not raw.get("falsifiers"):
             raise SubmissionError("lightweight labs require at least one measurable falsifier")

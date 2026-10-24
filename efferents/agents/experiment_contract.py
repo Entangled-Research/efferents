@@ -11,8 +11,8 @@ from efferents.lab import LabConfig
 
 
 def write_contract(*, claim: str, slug: str, root: Path, cfg: LabConfig) -> GateResult:
-    if not isinstance(claim, str) or not claim.strip() or len(claim) > 12000:
-        return GateResult(False, None, None, "A concrete claim is required (1–12000 characters).")
+    if not isinstance(claim, str) or not claim.strip():
+        return GateResult(False, None, None, "A concrete claim is required.")
     if not cfg.falsifiers:
         return GateResult(False, None, None, "Configure a measurable falsifier before opening a campaign.")
     measurement = f"Measure {cfg.metrics.headline.column}; direction: {cfg.metrics.headline.direction}."
