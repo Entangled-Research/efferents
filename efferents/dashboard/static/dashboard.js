@@ -2339,18 +2339,7 @@ const RUNTIME_COPY = {
     label: "Authorize this stop request.", button: "Confirm stop",
     progress: "Stopping the daemon…",
   },
-  pause: {
-    kicker: "Pause spending", title: "Pause lab?",
-    copy: "Recorded as owner steering · takes effect at the next agent step · evidence preserved",
-    label: "Authorize this pause.", button: "Confirm pause",
-    progress: "Queuing the pause…",
-  },
-  resume: {
-    kicker: "Resume spending", title: "Resume lab?",
-    copy: "Lifts the owner pause · recorded as owner steering",
-    label: "Authorize this resume.", button: "Confirm resume",
-    progress: "Queuing the resume…",
-  },
+
 };
 
 function openRuntimeDialog(action) {
@@ -2369,14 +2358,36 @@ function openRuntimeDialog(action) {
   document.getElementById("runtime-dialog").showModal();
 }
 
+async function setLabPaused(action) {
+  const labId = selectedLabId;
+  const pause = document.getElementById("pause-lab");
+  const unpause = document.getElementById("resume-lab");
+  if (pause.disabled || unpause.disabled) return;
+  pause.disabled = unpause.disabled = true;
+  try {
+    const base = labId ? `/api/labs/${encodeURIComponent(labId)}` : "/api/lab";
+    await postJSON(`${base}/${action}`, {});
+    const latest = await getJSON(labId ? `${base}/control` : "/api/control");
+    if (selectedLabId === labId) {
+      latest.mine = Boolean(portfolioState.labs.find(lab => lab.lab_id === labId)?.mine);
+      renderControl(latest);
+    }
+    await refreshObserver();
+  } catch (error) {
+    showMessage("steer-message-state", error.message, "error");
+  } finally {
+    pause.disabled = unpause.disabled = false;
+  }
+}
+
 function initRuntimeControls() {
   const dialog = document.getElementById("runtime-dialog");
   const checkbox = document.getElementById("runtime-confirm-check");
   const confirm = document.getElementById("runtime-confirm-button");
   document.getElementById("start-lab").addEventListener("click", () => openRuntimeDialog("start"));
   document.getElementById("stop-lab").addEventListener("click", () => openRuntimeDialog("stop"));
-  document.getElementById("pause-lab").addEventListener("click", () => openRuntimeDialog("pause"));
-  document.getElementById("resume-lab").addEventListener("click", () => openRuntimeDialog("resume"));
+  document.getElementById("pause-lab").addEventListener("click", () => setLabPaused("pause"));
+  document.getElementById("resume-lab").addEventListener("click", () => setLabPaused("resume"));
   document.getElementById("delete-lab").addEventListener("click", () => openRuntimeDialog("delete"));
   document.getElementById("delete-idea").addEventListener("click", () => openRuntimeDialog("deleteidea"));
   checkbox.addEventListener("change", () => {

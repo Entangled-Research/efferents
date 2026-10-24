@@ -203,3 +203,23 @@ console.log(JSON.stringify({{
 """)
     allowed = can_control and not paused_demo
     assert result == {"pause": allowed and not owner_paused, "resume": allowed and owner_paused}
+
+
+@pytest.mark.parametrize('action', ['pause', 'resume'])
+def test_pause_and_unpause_submit_directly_without_opening_a_dialog(action):
+    result = run_js("""
+selectedLabId = 'lab with spaces';
+portfolioState.labs = [{lab_id:selectedLabId,mine:true}];
+const calls = [];
+postJSON = async (path, body) => {calls.push({path,body}); return {queued:true};};
+getJSON = async path => {calls.push({get:path}); return {connected:true};};
+renderControl = info => {calls.push({render:info.mine});};
+refreshObserver = async () => {};
+document.getElementById('runtime-dialog').showModal = () => {throw Error('Unexpected dialog');};
+setLabPaused(ACTION).then(() => console.log(JSON.stringify({calls,
+ pauseDisabled:document.getElementById('pause-lab').disabled,
+ unpauseDisabled:document.getElementById('resume-lab').disabled})));
+""".replace('ACTION', json.dumps(action)))
+    assert result == {'calls': [{'path': f'/api/labs/lab%20with%20spaces/{action}', 'body': {}},
+                                {'get': '/api/labs/lab%20with%20spaces/control'}, {'render': True}],
+                      'pauseDisabled': False, 'unpauseDisabled': False}
