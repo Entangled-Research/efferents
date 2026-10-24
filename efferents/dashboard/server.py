@@ -42,7 +42,6 @@ _PROTOTYPE_CANDIDATES = (
     Path("/opt/efferents/docs/prototypes/event-network.html"),
 )
 PROTOTYPE_PATH = next((path for path in _PROTOTYPE_CANDIDATES if path.is_file()), _PROTOTYPE_CANDIDATES[0])
-_MAX_BODY_BYTES = 32_768
 
 _log = logging.getLogger(__name__)
 
@@ -368,16 +367,16 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if not secrets.compare_digest(supplied, self.csrf_token):
             raise ControlError("Missing or invalid local control token.", status=403)
 
-    def _read_body(self, limit: int = _MAX_BODY_BYTES) -> bytes:
+    def _read_body(self, limit: int | None = None) -> bytes:
         try:
             length = int(self.headers.get("Content-Length", "0"))
         except ValueError as exc:
             raise ControlError("Content-Length is invalid.") from exc
-        if length <= 0 or length > limit:
+        if length <= 0 or (limit is not None and length > limit):
             raise ControlError("Request body is empty or too large.", status=413)
         return self.rfile.read(length)
 
-    def _read_json(self, limit: int = _MAX_BODY_BYTES) -> dict:
+    def _read_json(self, limit: int | None = None) -> dict:
         content_type = self.headers.get("Content-Type", "").split(";", 1)[0].strip()
         if content_type != "application/json":
             raise ControlError("Content-Type must be application/json.", status=415)

@@ -782,8 +782,8 @@ class ControlContext:
         """
         self._require_mutable()
         message = message.strip()
-        if not message or len(message) > 4000:
-            raise ControlError("Steering instructions must be between 1 and 4,000 characters.")
+        if not message:
+            raise ControlError("Provide steering instructions.")
         if "\x00" in message:
             raise ControlError("Steering instructions contain an invalid null byte.")
         if mode not in STEERING_MODES:
@@ -831,7 +831,7 @@ class ControlContext:
     ) -> dict:
         self._require_mutable()
         by = by.strip()[:120] or "lab owner"
-        reason = reason.strip()[:4000] or f"{action} requested by {by}"
+        reason = reason.strip() or f"{action} requested by {by}"
         try:
             steer_mod.steer(
                 lab.submission_dir, text=reason, by=by, action=action,

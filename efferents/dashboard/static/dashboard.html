@@ -97,7 +97,7 @@
                aria-labelledby="intake-tab-idea" data-intake-panel="idea">
             <form id="onboard-form" class="connector-form">
               <label for="onboard-idea">What would you like to explore? <small>Optional</small></label>
-              <textarea id="onboard-idea" rows="3" maxlength="4000" placeholder="For example: Can a trapezoidal rule with adaptive step sizes improve error bounds?"></textarea>
+              <textarea id="onboard-idea" rows="3" placeholder="For example: Can a trapezoidal rule with adaptive step sizes improve error bounds?"></textarea>
               <label for="onboard-mode">How should this lab participate?</label>
               <select id="onboard-mode">
                 <option value="independent">Independent research question · its own research focus</option>
@@ -105,7 +105,7 @@
               </select>
               <div id="onboard-goal-field" hidden>
                 <label for="onboard-goal">Shared goal</label>
-                <input id="onboard-goal" maxlength="160" placeholder="Reduce congestion" list="known-goals">
+                <input id="onboard-goal" placeholder="Reduce congestion" list="known-goals">
                 <datalist id="known-goals"></datalist>
               </div>
               <details class="onboard-options">
@@ -117,7 +117,7 @@
                   <option value="integration">Numerical integration · analytic ground truth</option>
                 </select>
                 <label for="onboard-approach">Approach <small>Optional</small></label>
-                <input id="onboard-approach" maxlength="160" placeholder="Infer from the starter">
+                <input id="onboard-approach" placeholder="Infer from the starter">
               </details>
               <label class="execution-confirm"><input id="onboard-exchange" type="checkbox" checked>
                 <span>Share accepted journal papers with this private event.</span></label>
@@ -307,7 +307,7 @@
           </header>
           <form id="steer-form" class="steer-form">
             <label for="steer-message">Research instruction</label>
-            <textarea id="steer-message" name="message" maxlength="4000" required
+            <textarea id="steer-message" name="message" required
               placeholder="Example: Verify the current best result on a held-out seed before broadening the sweep."></textarea>
             <div class="steer-options">
               <label for="steer-mode">
@@ -320,7 +320,6 @@
                   <option value="escape_to_code">Escape to code</option>
                 </select>
               </label>
-              <span class="char-count"><span id="steer-count">0</span> / 4000</span>
               <button class="primary-button" type="submit">Record direction</button>
             </div>
           </form>
