@@ -186,3 +186,20 @@ console.log(JSON.stringify({summary:document.getElementById('budget').textConten
 """)
     assert "$3.00 / $5.00 daily" in result["summary"]
     assert "$3.00" in result["lab"] and "$5.00" not in result["lab"]
+
+
+@pytest.mark.parametrize("status", ["running", "paused", "stopped"])
+@pytest.mark.parametrize("owner_paused", [False, True])
+@pytest.mark.parametrize("can_control,paused_demo", [(True, False), (False, False), (True, True)])
+def test_playback_controls_remain_accessible_beside_delete_for_authorized_labs(
+    status, owner_paused, can_control, paused_demo,
+):
+    result = run_js(f"""
+renderPlaybackControls({json.dumps({'status': status, 'owner_paused': owner_paused, 'paused_demo': paused_demo})}, {json.dumps(can_control)});
+console.log(JSON.stringify({{
+  pause: !document.getElementById('pause-lab').hidden,
+  resume: !document.getElementById('resume-lab').hidden,
+}}));
+""")
+    allowed = can_control and not paused_demo
+    assert result == {"pause": allowed and not owner_paused, "resume": allowed and owner_paused}

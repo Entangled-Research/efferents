@@ -376,6 +376,12 @@ th {
   gap: 14px;
 }
 
+.lab-runtime-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .key-state {
   color: var(--dim);
   font-size: 10px;

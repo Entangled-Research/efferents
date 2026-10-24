@@ -323,6 +323,12 @@ function renderSteering(records) {
   }).join("");
 }
 
+function renderPlaybackControls(info, canControl) {
+  const unavailable = Boolean(info.paused_demo) || !canControl;
+  document.getElementById("pause-lab").hidden = unavailable || Boolean(info.owner_paused);
+  document.getElementById("resume-lab").hidden = unavailable || !info.owner_paused;
+}
+
 function renderControl(info) {
   if (info.csrf_token) csrfToken = info.csrf_token;
   controlState = { ...controlState, ...info };
@@ -360,14 +366,12 @@ function renderControl(info) {
     ? '<span aria-hidden="true"></span> history'
     : '<span aria-hidden="true"></span> live';
   const live = info.status === "running" || info.status === "paused";
-  const ownerPaused = Boolean(info.owner_paused);
   const mine = !info.remote;
   document.getElementById("start-lab").hidden = pausedDemo || live;
   document.getElementById("stop-lab").hidden = pausedDemo || !live;
   document.getElementById("delete-lab").hidden = pausedDemo || !mine;
   document.getElementById("delete-idea").hidden = pausedDemo || !mine || !routeIdeaId();
-  document.getElementById("pause-lab").hidden = pausedDemo || !live || ownerPaused;
-  document.getElementById("resume-lab").hidden = pausedDemo || !ownerPaused;
+  renderPlaybackControls(info, mine);
   document.getElementById("connect-submit").disabled = pausedDemo;
   const steerForm = document.getElementById("steer-form");
   steerForm.querySelectorAll("textarea, select, button").forEach((control) => {
