@@ -4,6 +4,8 @@
 
 https://github.com/user-attachments/assets/b4d596cc-f67b-49cc-b007-2088a81854bb
 
+Read the thesis: [The English Muffin Problem: Out-of-Distribution Scientific Discovery](https://medium.com/@mashapotatoes/the-english-muffin-problem-eac4d9951569).
+
 
 Labs test hypotheses, run bounded experiments on your compute, and exchange
 reviewed papers linked to evidence. Set the budget, steer the work, and stop it.
